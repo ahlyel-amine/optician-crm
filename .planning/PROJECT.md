@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A multi-tenant SaaS for Moroccan opticians. One platform where an optician business runs its whole day — clients and their ordonnances, stock, fournisseurs and achats, facturation, and a per-magasin caisse — on both web and mobile. Opticians sign up themselves; each client is a tenant that may run one or several magasins, under their own branding.
+A multi-tenant SaaS for Moroccan opticians. One platform where an optician business runs its whole day — clients and their ordonnances, stock, fournisseurs and achats, facturation, and a per-magasin caisse — on both web and mobile. Opticians sign up themselves; each client gets their own database, may run one or several magasins, and appears under their own branding.
 
 ## Core Value
 
@@ -21,8 +21,9 @@ A vendeur at the counter can complete a sale end to end — find or create the c
 <!-- Current scope. Building toward these. -->
 
 **Tenancy & platform**
-- [ ] Multi-tenant: one app, one shared database, data separated by tenant. Onboarding a new optician is a record, not a deploy.
-- [ ] A tenant can have several magasins; stock and caisse are scoped per magasin
+- [ ] One shared application serving every client, with one database per client business. Onboarding an optician provisions their database — it never means a new deployment.
+- [ ] A client can have several magasins; inside that client's database, stock and caisse are scoped per magasin
+- [ ] Provisioning and schema migrations run across every client database automatically, so no client is left on an old schema
 - [ ] Self-serve signup: an optician creates an account, trials, and subscribes with no manual setup from us
 - [ ] Subscription billing through Moroccan payment methods (CharriPay-style)
 - [ ] Per-tenant branding: logo, colors and shop name applied to the UI and to printed documents
@@ -73,7 +74,8 @@ A vendeur at the counter can complete a sale end to end — find or create the c
 
 - Mutuelle / tiers payant — client pays in full in v1; splitting invoices and reconciling insurer claims is a large surface for a segment not targeted yet
 - Arabic / RTL interface — French only in v1; Arabic can follow once the product is proven
-- Per-client deploys or a database per client — multi-tenant chosen so onboarding is instant; isolation is handled at the data layer
+- A separate deployment per client — one shared application serves everyone; only the database is per client
+- A database per magasin — magasins live inside their client's database, so the owner can see across all of their stores without cross-database queries, and a client record is shared between the stores
 - Full white-label (custom domains, deep theming) — branding only in v1
 - An app for the shop's own customers — mobile is a staff tool, not an end-customer product
 - Formal clôture Z with écarts de caisse — the caisse is deliberately just a running ledger of the actual cash, with totals read off it
@@ -96,7 +98,7 @@ A vendeur at the counter can complete a sale end to end — find or create the c
 - **Locale**: MAD and French UI — drives currency/date formatting and the domain vocabulary
 - **Offline**: caisse and sales must work with no connection and sync afterwards — pushes toward local-first storage, queued writes, and explicit conflict handling
 - **Platforms**: web and mobile at full parity — favors one shared API and as much shared code as possible over two separate products
-- **Tenancy**: one app and one database, tenant-scoped — every query must be tenant-safe; a leak across tenants is a security failure, not a bug
+- **Tenancy**: one shared application, one database per client — every request must resolve to the right client database, and migrations must fan out across all of them; a leak across clients is a security failure, not a bug
 - **Payments**: Moroccan payment methods for subscriptions — international gateways do not reliably accept locally issued Moroccan cards
 - **Timeline**: no hard deadline — build it right rather than fast
 
@@ -106,7 +108,7 @@ A vendeur at the counter can complete a sale end to end — find or create the c
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Multi-tenant: one app, tenant per client | Onboarding a client should be a record, not a deployment; keeps operations sane as client count grows | — Pending |
+| One shared app, one database per client business | Gives each paying client real isolation without running a deployment each; magasins sit inside their client's database so owner-wide views stay ordinary queries instead of cross-database aggregation | — Pending |
 | Sold as SaaS to many opticians, 1+ magasins each | Target is independent opticians, but chains must not be excluded | — Pending |
 | Morocco first: French UI, MAD, Moroccan TVA | Home market; legal invoicing rules are market-specific and must be right | — Pending |
 | Caisse is a running cash ledger, one per magasin | User was explicit: it should just track the actual cash, not act as a formal register with Z closes | — Pending |
