@@ -37,7 +37,7 @@ Calendar-driven work. Starts day one and runs in parallel with build — no amou
 - [ ] **PERM-03**: An owner can grant or revoke individual permissions for a specific gérant, without those permissions being fixed to a role tier
 - [ ] **PERM-04**: A gérant sees only the magasins and data the owner has granted them
 - [ ] **PERM-05**: Prix d'achat, margin and business-wide revenue are hidden from a gérant unless the owner explicitly grants access
-- [ ] **PERM-06**: A single projection layer enforces field-level permissions for the API, the offline sync bundle, exports and printed documents alike
+- [ ] **PERM-06**: A single projection layer enforces field-level permissions for the API, exports and printed documents alike
 - [ ] **PERM-07**: A sale records which vendeur made it as a data field, entered by the signed-in user — vendeurs have no login
 
 ### Clients & Ordonnances (CLIENT)
@@ -56,7 +56,7 @@ Calendar-driven work. Starts day one and runs in parallel with build — no amou
 - [ ] **STOCK-01**: A user can add articles (montures, accessoires, verres stockés) to a magasin's stock with a reference and a price
 - [ ] **STOCK-02**: Stock movements are recorded in an append-only ledger, and the current quantity is derived from it rather than stored as a mutable column
 - [ ] **STOCK-03**: A sale decrements stock and a réception increments it, automatically
-- [ ] **STOCK-04**: Stock is allowed to go negative, and doing so raises an anomaly in a réconciliation queue the owner can see and clear
+- [ ] **STOCK-04**: A sale warns before it would take stock negative; a shortfall the user accepts anyway raises an anomaly in a réconciliation queue the owner can see and clear
 - [ ] **STOCK-05**: A user can search stock by exact reference, and the search submits on Enter so a keyboard-wedge scanner works without a UI change
 - [ ] **STOCK-06**: A user can see the status of a client's special order as commandé → prêt → client prévenu → livré, and change it
 - [ ] **STOCK-07**: A user can set a réappro threshold per article
@@ -75,7 +75,7 @@ Calendar-driven work. Starts day one and runs in parallel with build — no amou
 
 - [ ] **FACT-01**: A user can create a sale with separate lines for monture and verres, each with its own price
 - [ ] **FACT-02**: A facture receives a sequential legal number issued by the server, from a counter scoped per client, série and exercice
-- [ ] **FACT-03**: Facture numbers contain no gaps and no duplicates, including after concurrent creation and after an offline sync
+- [ ] **FACT-03**: Facture numbers contain no gaps and no duplicates, including under concurrent creation and under retried requests
 - [ ] **FACT-04**: TVA is configured per article and broken out per rate on the facture, with no hardcoded global rate
 - [ ] **FACT-05**: A facture records the buyer's ICE
 - [ ] **FACT-06**: A facture moves through an explicit lifecycle — brouillon, émise, transmise, validée — rather than being considered final once printed
@@ -84,6 +84,7 @@ Calendar-driven work. Starts day one and runs in parallel with build — no amou
 - [ ] **FACT-09**: A user can take an acompte at order time and record the balance paid at retrait, with the remainder visible until settled
 - [ ] **FACT-10**: Payments are recorded as an append-only ledger of lines, each line carrying its payer and payment mode
 - [ ] **FACT-11**: The facture is stored as structured data (not as a rendered PDF record), so it stays convertible to UBL for the DGI mandate
+- [ ] **FACT-12**: Submitting the same sale twice — a retried request on a flaky link — never produces two factures; sale creation is idempotent
 
 ### Caisse (CAISSE)
 
@@ -92,20 +93,6 @@ Calendar-driven work. Starts day one and runs in parallel with build — no amou
 - [ ] **CAISSE-03**: A user can read daily and monthly totals off the caisse ledger, broken down by payment mode
 - [ ] **CAISSE-04**: An owner can see the caisse of every magasin in their business
 - [ ] **CAISSE-05**: Caisse entries are append-only; a mistake is corrected by a compensating entry, never by editing history
-
-### Offline Sync (SYNC)
-
-The highest-risk work in the project. Deliberately scoped to the sale path only.
-
-- [ ] **SYNC-01**: A user can complete a sale — client lookup, ordonnance attach, payment, caisse entry — with no network connection
-- [ ] **SYNC-02**: An offline sale prints a non-fiscal provisional document with a device-local reference, and displays no facture number at all
-- [ ] **SYNC-03**: Queued offline operations sync automatically when the connection returns, and the user can see what is still pending
-- [ ] **SYNC-04**: Syncing the same operation twice never creates a duplicate sale, facture or caisse entry
-- [ ] **SYNC-05**: The server never rejects a synced sale for insufficient stock — the sale is recorded and any shortfall becomes a stock anomaly
-- [ ] **SYNC-06**: A synced sale receives its legal facture number at acceptance, and the user can see which sales are awaiting numbering
-- [ ] **SYNC-07**: The offline data held on a device contains only fields that device's user is permitted to see
-- [ ] **SYNC-08**: Losing or reinstalling a device does not lose sales that had already synced, and pending operations survive an app restart
-- [ ] **SYNC-09**: Only the sale path works offline; achats, réception, reporting and administration require a connection
 
 ### Reminders (RAPPEL)
 
@@ -168,7 +155,7 @@ With reasoning, to prevent re-adding.
 - **Formal clôture Z with écarts de caisse** — the caisse stays a pure ledger of the actual cash, as specified.
 - **Ticket de caisse on thermal printers** — the client needs an itemized A4 original for AMO, and thermal paper fades against a 60-day filing deadline.
 - **Barcode scanning as a feature** — no hardware assumed; STOCK-05 keeps it free to add.
-- **Off-the-shelf sync engines and CRDTs** — they assume schema-per-tenant, replicate rows (leaking prix d'achat), and auto-convergence is the wrong behaviour for stock, caisse and legal numbering.
+- **Offline operation** — the application requires a connection. Taken deliberately: it removes the single riskiest phase (a purpose-built sync layer budgeted at 4–8 weeks) and every sync-conflict failure mode with it. Accepted costs: the counter stops during an outage, and a competitor advertising local-first sync at 800 DH/year wins that comparison. Reversing it later means retrofitting local storage plus a sync layer, not flipping a flag.
 
 ---
 

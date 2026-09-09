@@ -1,3 +1,23 @@
+> **⚠️ DECISIONS TAKEN AFTER THIS RESEARCH — these override what follows**
+>
+> 1. **Offline operation is OUT OF SCOPE, permanently.** The application requires a connection.
+>    Ignore every recommendation below concerning offline sync, local SQLite, sync engines, CRDTs,
+>    provisional documents, device-local references, sync conflict handling, and the offline phase in
+>    the suggested build order. The facture number is still server-issued from a counter under
+>    `FOR UPDATE` (that reasoning holds for concurrent online creation); sale creation must be
+>    idempotent so a retried request cannot mint a second number.
+> 2. **Tenancy stays one database per client business.** The schema-per-client proposal was
+>    considered and declined.
+> 3. **Only the optician (owner) and gérants have logins.** Floor vendeurs never sign in — a vendeur
+>    is a data field on a sale. Permissions are granted per gérant individually, not by role tier.
+> 4. **Manual onboarding comes first**; self-serve remains the platform bar but does not gate the
+>    first paying customer.
+> 5. **Added to v1:** facture itemisée + buyer ICE, prescripteur + relance AMO, suivi de commande
+>    client, avoir/retour.
+>
+> `.planning/PROJECT.md` and `.planning/REQUIREMENTS.md` are authoritative. This file is the research
+> record as written, kept for its reasoning and sources.
+
 # Project Research Summary
 
 **Project:** Optician Management Platform (Morocco)

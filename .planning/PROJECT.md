@@ -6,7 +6,7 @@ A multi-tenant SaaS for Moroccan opticians. One platform where an optician busin
 
 ## Core Value
 
-The counter can complete a sale end to end — find or create the client, attach the ordonnance, take payment (including an acompte), and have it land in that magasin's caisse — even when the shop's internet is down, and still produce a legally valid facture afterwards.
+The counter can complete a sale end to end — find or create the client, attach the ordonnance, take payment (including an acompte), and have it land in that magasin's caisse — producing a facture that is legally valid in Morocco every time.
 
 ## Requirements
 
@@ -56,7 +56,7 @@ The counter can complete a sale end to end — find or create the client, attach
 - [ ] Common lens corrections held in stock; unusual corrections ordered specially from the fournisseur/labo
 - [ ] Stock is an append-only ledger with derived balances, never a mutable quantity column
 - [ ] Stock decrements on sale and increments on réception of a fournisseur delivery
-- [ ] Negative stock is permitted and raises an anomaly for the owner to reconcile — an offline oversell is detected, not rejected
+- [ ] A sale warns before it would take stock negative rather than silently overselling; a shortfall the user accepts anyway is recorded as an anomaly for the owner to reconcile
 - [ ] Suivi de commande client: statut commandé → prêt → client prévenu → livré
 - [ ] Search accepts an exact reference and submits on Enter, so a keyboard-wedge barcode scanner works later without a UI rewrite
 
@@ -69,7 +69,7 @@ The counter can complete a sale end to end — find or create the client, attach
 **Facturation**
 - [ ] Facture in MAD with Moroccan TVA and a sequential legal number
 - [ ] The legal number is issued server-side only, from a counter per (client, série, exercice) — never by a device, never from a database sequence, never pre-leased in blocks
-- [ ] An offline device shows no facture number at all and prints a non-fiscal provisional document with a device-local reference
+- [ ] Submitting the same sale twice — a retried request on a flaky link — never produces two factures; sale creation is idempotent
 - [ ] Facture itemisée: monture and verres on separate lines, because AMO reimburses per line
 - [ ] Buyer ICE recorded as a first-class field
 - [ ] TVA modeled per article and broken out per rate on the facture — never a hardcoded global rate
@@ -82,8 +82,6 @@ The counter can complete a sale end to end — find or create the client, attach
 **Caisse**
 - [ ] One caisse per magasin — a running cash ledger of entries in and out with a current balance
 - [ ] Daily and monthly totals read off that ledger
-- [ ] The caisse keeps working offline: sales queue locally and sync when the connection returns
-- [ ] Offline sync is scoped to the sale path only — achats, réception, reporting and administration stay online
 
 **Reminders**
 - [ ] Stock réappro — item below its threshold, time to reorder
@@ -99,6 +97,7 @@ The counter can complete a sale end to end — find or create the client, attach
 
 <!-- Explicit boundaries. Includes reasoning to prevent re-adding. -->
 
+- **Offline operation** — the application requires a connection. Taken deliberately: it removes the single riskiest phase (a purpose-built sync layer budgeted at 4–8 weeks) and every sync-conflict failure mode with it. The accepted costs are that the counter stops during an outage, and that a competitor advertising local-first sync at 800 DH/year wins that comparison. Reversing this later means retrofitting local storage plus a sync layer, not flipping a flag.
 - Mutuelle / tiers payant — in Morocco the patient claims, not the optician, and no local competitor offers a claims module. Kept cheap to add later by modelling payments as lines with a payer.
 - Arabic / RTL interface — every local competitor is French-only and sells it as a feature. Arabic *data* must still render (UTF-8 and an Arabic-capable font in the PDF pipeline), since names appear on documents handed to government insurers.
 - Logins for floor vendeurs — the optician and gérants operate the system; a vendeur is data recorded on a sale
@@ -116,10 +115,10 @@ The counter can complete a sale end to end — find or create the client, attach
 
 - **Market**: Morocco. French UI, MAD, Moroccan TVA and facture numbering rules.
 - **The market is crowded and cheap, not empty.** Eight live Moroccan competitors, priced between roughly 800 and 4 000 DH/year. That ARPU is why feature bloat is unaffordable and why the exclusions above matter.
-- **Offline is parity, not a moat** — a competitor already advertises local-first sync at 800 DH/year. What nobody advertises solving is gapless legal invoice numbering surviving an offline sale, and that is the defensible part.
+- **A competitor advertises local-first offline sync at 800 DH/year**, and that comparison is conceded deliberately (see Out of Scope). The differentiation is depth instead: structured ordonnance, compte fournisseur with échéances, margins hidden from staff, per-gérant permissions.
 - **The real local gap is depth**: no competitor advertises a structured ordonnance, compte fournisseur with échéances, per-sale margin hidden from staff, or per-gérant permissions.
 - **Buyers**: independent opticians. A client may run a single shop or several magasins; the product must not assume one.
-- **Connectivity**: shop internet is not dependable. The counter cannot stop when it drops.
+- **Connectivity**: shop internet is not always dependable, and the application requires it. The counter stops during an outage — an accepted trade-off, taken to remove the riskiest work in the project.
 - **Domain language is French** — ordonnance, magasin, caisse, fournisseur, facture, acompte, bon de commande, réappro. Keep that vocabulary in the UI and in the domain model.
 - **Team**: solo developer, no hard deadline. The scope is ERP-shaped, so sequencing matters more than speed.
 - **Trust boundary inside a client**: opticians do not want gérants seeing purchase prices, margins or business-wide revenue. Permissions are a product requirement, not hygiene.
@@ -130,7 +129,7 @@ The counter can complete a sale end to end — find or create the client, attach
 - **Legal — health data**: ordonnances require CNDP prior authorization before processing, on a 2–4 month calendar
 - **Legal — retention**: 10 years (art. 211 CGI), which constrains offboarding and the cost model
 - **Locale**: MAD and French UI — drives formatting and vocabulary
-- **Offline**: the sale path must work with no connection and sync afterwards — local-first storage, idempotent queued writes, explicit conflict handling. Budget this as its own phase; it is the highest-risk work in the project.
+- **Connectivity**: the application requires a connection. Sale submission must still be idempotent, since a retried request on a flaky link must never mint a second facture number.
 - **Platforms**: web and mobile at full parity — one shared codebase and API rather than two products
 - **Tenancy**: one shared application, one database per client — every request must resolve to the right client database, migrations must fan out across all of them, and a leak across clients is a security failure, not a bug
 - **Payments**: Moroccan rails for subscriptions; recurring card-on-file is a vendor claim that must be proven in sandbox before the billing model depends on it
@@ -143,14 +142,11 @@ The counter can complete a sale end to end — find or create the client, attach
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
 | One shared app, one database per client business | Real isolation per paying client without a deployment each; magasins sit inside their client's database so owner-wide views stay ordinary queries. Reconfirmed against a proposal to relax it to schema-per-client. | — Pending |
-| Only the optician and gérants log in; permissions granted per gérant | Floor vendeurs never touch the system, so a vendeur is data on a sale rather than an account. Shrinks the permission surface and removes the largest offline-sync leak risk. | — Pending |
+| Only the optician and gérants log in; permissions granted per gérant | Floor vendeurs never touch the system, so a vendeur is data on a sale rather than an account. Shrinks the permission surface considerably. | — Pending |
 | Manual onboarding first; self-serve stays the platform bar | Letting self-serve gate first revenue risks building everything to 80% with zero validation. The manual path calls the same provisioning primitives. | — Pending |
-| Server-issued facture numbers, never device-issued | Art. 145 CGI needs a gapless chronological series; two offline devices cannot both mint the next number, and pre-leased blocks leave legal gaps | — Pending |
-| Offline devices print a non-fiscal provisional document | A facture number cannot exist before the server issues one, and showing a fake number would be read aloud to a customer. Matches the real workflow: acompte on visit one, facture at retrait. | — Pending |
-| Purpose-built sync — not PowerSync, ElectricSQL or CRDTs | Those engines assume schema-per-tenant and replicate rows, which would leak prix d'achat onto devices; CRDT auto-convergence is precisely the bug for stock, caisse and legal numbering | — Pending |
-| Stock, caisse and payments as append-only ledgers | Decides whether late-arriving offline writes are absorbable or corrupting. Oversell can only be detected, never prevented — rejecting a synced sale deletes real money. | — Pending |
-| Build online-only through a complete sale, then add offline | The fiscal core must be correct first. The API still uses client-generated UUIDs, idempotency keys and nullable facture numbers from day one, so offline is an addition rather than a rewrite. | — Pending |
-| Offline scoped to the sale path only | Every additional offline entity multiplies conflict cases | — Pending |
+| Server-issued facture numbers, never device-issued | Art. 145 CGI needs a gapless chronological series, so the number must come from a single authority under concurrent creation; a database sequence gaps on rollback | — Pending |
+| Stock, caisse and payments as append-only ledgers | Gives full movement history and audit traceability, makes corrections compensating entries rather than edits, and keeps a future insurer split from needing a schema rewrite | — Pending |
+| Online only, permanently | Decided after seeing the cost: a purpose-built sync layer was budgeted at 4–8 weeks and rated the project's highest-risk work. Removing it deletes that phase and the whole class of sync-conflict bugs. Accepted costs are recorded in Out of Scope. | — Pending |
 | Facture itemisée, per-line TVA, buyer ICE | AMO ceilings are per line, so a lump sum under-reimburses the customer; it also keeps the facture convertible to UBL for the DGI mandate | — Pending |
 | Structured ordonnance with prescripteur and source | Prescriptions must feed lens orders and reminders, and Moroccan law distinguishes a medical ordonnance from an optician's refraction | — Pending |
 | Morocco first: French UI, MAD, Moroccan TVA | Home market; legal invoicing rules are market-specific and must be right | — Pending |
