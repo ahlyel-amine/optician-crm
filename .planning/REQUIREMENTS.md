@@ -179,8 +179,85 @@ These block schema decisions and need a Moroccan comptable, the DGI, or optician
 
 ## Traceability
 
-Filled in by the roadmapper: every v1 requirement maps to exactly one phase.
+Every v1 requirement maps to exactly one phase. Source of truth for phase structure: `.planning/ROADMAP.md`.
+
+**Coverage: 76/76 requirements mapped — no orphans, no duplicates.**
 
 | Requirement | Phase |
 |-------------|-------|
-| _(pending roadmap)_ | |
+| LEGAL-01 | Phase 1 — Legal & Compliance Track |
+| LEGAL-02 | Phase 1 — Legal & Compliance Track |
+| LEGAL-03 | Phase 1 — Legal & Compliance Track |
+| LEGAL-04 | Phase 12 — Self-Serve Subscription & Opérations Client |
+| LEGAL-05 | Phase 6 — Vente & Facturation |
+| TENANT-01 | Phase 2 — Tenancy Foundation & Control Plane |
+| TENANT-02 | Phase 2 — Tenancy Foundation & Control Plane |
+| TENANT-03 | Phase 2 — Tenancy Foundation & Control Plane |
+| TENANT-04 | Phase 2 — Tenancy Foundation & Control Plane |
+| TENANT-05 | Phase 2 — Tenancy Foundation & Control Plane |
+| TENANT-06 | Phase 2 — Tenancy Foundation & Control Plane |
+| TENANT-07 | Phase 2 — Tenancy Foundation & Control Plane |
+| TENANT-08 | Phase 2 — Tenancy Foundation & Control Plane |
+| PERM-01 | Phase 3 — Comptes, Permissions & App Shell |
+| PERM-02 | Phase 3 — Comptes, Permissions & App Shell |
+| PERM-03 | Phase 3 — Comptes, Permissions & App Shell |
+| PERM-04 | Phase 3 — Comptes, Permissions & App Shell |
+| PERM-05 | Phase 3 — Comptes, Permissions & App Shell |
+| PERM-06 | Phase 3 — Comptes, Permissions & App Shell |
+| PERM-07 | Phase 6 — Vente & Facturation |
+| CLIENT-01 | Phase 4 — Clients & Ordonnances |
+| CLIENT-02 | Phase 4 — Clients & Ordonnances |
+| CLIENT-03 | Phase 4 — Clients & Ordonnances |
+| CLIENT-04 | Phase 4 — Clients & Ordonnances |
+| CLIENT-05 | Phase 4 — Clients & Ordonnances |
+| CLIENT-06 | Phase 4 — Clients & Ordonnances |
+| CLIENT-07 | Phase 4 — Clients & Ordonnances |
+| CLIENT-08 | Phase 4 — Clients & Ordonnances |
+| STOCK-01 | Phase 5 — Stock & Catalogue |
+| STOCK-02 | Phase 5 — Stock & Catalogue |
+| STOCK-03 | Phase 6 — Vente & Facturation |
+| STOCK-04 | Phase 6 — Vente & Facturation |
+| STOCK-05 | Phase 5 — Stock & Catalogue |
+| STOCK-06 | Phase 5 — Stock & Catalogue |
+| STOCK-07 | Phase 5 — Stock & Catalogue |
+| ACHAT-01 | Phase 8 — Fournisseurs & Achats |
+| ACHAT-02 | Phase 8 — Fournisseurs & Achats |
+| ACHAT-03 | Phase 8 — Fournisseurs & Achats |
+| ACHAT-04 | Phase 8 — Fournisseurs & Achats |
+| ACHAT-05 | Phase 8 — Fournisseurs & Achats |
+| ACHAT-06 | Phase 8 — Fournisseurs & Achats |
+| ACHAT-07 | Phase 8 — Fournisseurs & Achats |
+| FACT-01 | Phase 6 — Vente & Facturation |
+| FACT-02 | Phase 6 — Vente & Facturation |
+| FACT-03 | Phase 6 — Vente & Facturation |
+| FACT-04 | Phase 6 — Vente & Facturation |
+| FACT-05 | Phase 6 — Vente & Facturation |
+| FACT-06 | Phase 6 — Vente & Facturation |
+| FACT-07 | Phase 9 — Branding & Documents Imprimés |
+| FACT-08 | Phase 6 — Vente & Facturation |
+| FACT-09 | Phase 7 — Paiements & Caisse |
+| FACT-10 | Phase 7 — Paiements & Caisse |
+| FACT-11 | Phase 6 — Vente & Facturation |
+| FACT-12 | Phase 6 — Vente & Facturation |
+| CAISSE-01 | Phase 7 — Paiements & Caisse |
+| CAISSE-02 | Phase 7 — Paiements & Caisse |
+| CAISSE-03 | Phase 7 — Paiements & Caisse |
+| CAISSE-04 | Phase 7 — Paiements & Caisse |
+| CAISSE-05 | Phase 7 — Paiements & Caisse |
+| RAPPEL-01 | Phase 10 — Rappels & Relances |
+| RAPPEL-02 | Phase 10 — Rappels & Relances |
+| RAPPEL-03 | Phase 10 — Rappels & Relances |
+| RAPPEL-04 | Phase 10 — Rappels & Relances |
+| RAPPEL-05 | Phase 10 — Rappels & Relances |
+| BRAND-01 | Phase 9 — Branding & Documents Imprimés |
+| BRAND-02 | Phase 9 — Branding & Documents Imprimés |
+| BRAND-03 | Phase 9 — Branding & Documents Imprimés |
+| BRAND-04 | Phase 9 — Branding & Documents Imprimés |
+| APP-01 | Phase 3 — Comptes, Permissions & App Shell |
+| APP-02 | Phase 11 — Mobile Parity |
+| APP-03 | Phase 3 — Comptes, Permissions & App Shell |
+| BILL-01 | Phase 12 — Self-Serve Subscription & Opérations Client |
+| BILL-02 | Phase 12 — Self-Serve Subscription & Opérations Client |
+| BILL-03 | Phase 12 — Self-Serve Subscription & Opérations Client |
+| BILL-04 | Phase 12 — Self-Serve Subscription & Opérations Client |
+| BILL-05 | Phase 12 — Self-Serve Subscription & Opérations Client |
