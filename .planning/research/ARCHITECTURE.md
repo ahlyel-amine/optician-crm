@@ -1,3 +1,14 @@
+> **⚠️ Read with two later decisions in mind.**
+>
+> 1. **Offline is out of scope permanently** — ignore every offline, sync, local-storage, provisional
+>    document and device-conflict recommendation below. What survives: server-issued facture numbers
+>    from a counter row locked `FOR UPDATE`, append-only ledgers, and idempotent sale creation.
+> 2. **The stack is Django + DRF**, not Laravel — with PostgreSQL (one database per client),
+>    Celery, WeasyPrint, a React + Vite web SPA, and Expo mobile at Phase 11. Any Laravel, PHP or
+>    React Native Web specifics below do not apply; the reasoning usually still does.
+>
+> `.planning/PROJECT.md` and `CLAUDE.md` are authoritative.
+
 # Architecture Research
 
 **Domain:** Multi-tenant vertical SaaS (retail optician management) — database-per-tenant, offline-capable POS/caisse, web + mobile parity, Moroccan fiscal invoicing

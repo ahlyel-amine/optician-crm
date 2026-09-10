@@ -1,3 +1,22 @@
+> **⚠️ SUPERSEDED — the stack below was NOT adopted.**
+>
+> Decided 2026-09-10. **Django + Django REST Framework (Python)**, PostgreSQL with one database per
+> client, PgBouncer, Celery + Celery Beat on Redis, **WeasyPrint** for A4 PDF, a **React + Vite +
+> TypeScript SPA** for web with a typed client generated from `drf-spectacular`, and **Expo mobile at
+> Phase 11** against the same API. Chari Pay primary with CMI fallback still stands.
+>
+> Not adopted: Laravel, `stancl/tenancy`, the universal Expo Router / React Native Web app, Gotenberg,
+> Drizzle, `expo-sqlite`, `sqlocal`, and **every offline-sync recommendation** — offline is out of scope
+> permanently. `django-tenants` is also rejected: it is schema-per-client and contradicts the
+> database-per-client decision. The tenancy layer is hand-built on Django's router (~2-3 weeks).
+>
+> One correction that matters: this file suggests Postgres **sequences** for facture numbering. That is
+> wrong and contradicted by ARCHITECTURE.md and PITFALLS.md — a `SEQUENCE` gaps on rollback, which
+> art. 145 forbids. Use a counter row locked `FOR UPDATE` inside the inserting transaction.
+>
+> Kept for its reasoning, its comparisons and its sources. `.planning/PROJECT.md` and `CLAUDE.md` are
+> authoritative.
+
 # Stack Research
 
 **Domain:** Multi-tenant SaaS de gestion pour opticiens (Maroc) — POS/caisse offline-capable, web + mobile à parité

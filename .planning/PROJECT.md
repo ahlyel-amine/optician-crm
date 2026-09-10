@@ -41,7 +41,7 @@ The counter can complete a sale end to end — find or create the client, attach
 - [ ] The owner grants permissions per gérant individually; permissions are data, not fixed role tiers
 - [ ] Prix d'achat, margins and business-wide money are owner-only unless the owner explicitly grants them
 - [ ] The vendeur who made a sale is recorded as a field on the sale, for tracking rather than access
-- [ ] One permission-filtered projection layer shared by the API, the sync bundle, exports and printing — so a field hidden in the UI cannot leak through another route
+- [ ] One permission-filtered projection layer shared by the API, exports and printing — so a field hidden in the UI cannot leak through another route
 
 **Clients & ordonnances**
 - [ ] Client records with contact details and purchase history
@@ -135,12 +135,92 @@ The counter can complete a sale end to end — find or create the client, attach
 - **Payments**: Moroccan rails for subscriptions; recurring card-on-file is a vendor claim that must be proven in sandbox before the billing model depends on it
 - **Timeline**: no hard deadline — build it right rather than fast
 
+## Technology Stack
+
+Decided 2026-09-10 after reviewing the stack research. The research files recommend Laravel and an
+offline sync layer; **both were superseded** — see "Rejected" below.
+
+| Layer | Choice |
+|---|---|
+| Language | Python |
+| Backend | Django + Django REST Framework |
+| Database | PostgreSQL, **one database per client business** |
+| Pooling | PgBouncer in transaction mode; Django `CONN_MAX_AGE = 0` |
+| Tenancy | Hand-built: control-plane app, runtime connection registry, fail-closed `DATABASE_ROUTERS`, `migrate_all` command |
+| Queue / scheduler | Celery + Celery Beat on Redis |
+| PDF A4 | WeasyPrint (facture, bon de commande) |
+| Web | React + Vite + TypeScript SPA |
+| API types | `drf-spectacular` → OpenAPI → generated TypeScript client |
+| Mobile | Expo (React Native) at Phase 11, against the same API and generated client |
+| Auth | DRF with short-lived JWT (`djangorestframework-simplejwt`) |
+| Money | `Decimal` / `DecimalField` — never float, never binary float |
+| Errors | Sentry, every event tagged with client and magasin |
+| Payments | Chari Pay primary, CMI fallback, behind one gateway interface |
+
+**Pin exact versions at project start.** The research verified PostgreSQL 18.6 as current; Django and
+the JS packages were never version-checked for this stack, so verify them rather than trusting a
+number written here.
+
+### The tenancy layer is yours to build (~2-3 weeks)
+
+There is no Django equivalent of `stancl/tenancy`. What you build:
+
+1. **Control plane** in the default database: `Client` with `db_name`, `db_host`, `db_port`, `db_user`,
+   encrypted `db_password`, `status`, `schema_version`. `db_host` from day one.
+2. **Connection registry** — register a client's connection into `connections.databases` at runtime,
+   then `connections.ensure_defaults(alias)`. `CONN_MAX_AGE = 0` so PgBouncer owns pooling.
+3. **Router** — `db_for_read`/`db_for_write` read the alias from a `contextvar` and **raise** when none
+   is bound. Returning `None` falls through to `default`, which is a silent cross-client leak.
+   `allow_migrate` keeps control-plane apps on `default` and business apps off it.
+4. **Middleware** — resolve client, set the contextvar, and **reset it in a `finally`**. Worker threads
+   are reused, so a missed reset means the next request reads the previous client's database. This is
+   the single highest-risk line in the layer.
+5. **Provisioning** — `CREATE DATABASE` cannot run inside a transaction block, so this is a status
+   state machine with compensating cleanup, not one atomic transaction. The same function serves
+   manual onboarding (TENANT-06) and later self-serve signup.
+6. **`migrate_all` command** — loop active clients, `migrate --database=<alias>`, record
+   `schema_version`, report who failed and who is behind (TENANT-02, TENANT-03).
+7. **Celery** — never pass model instances; pass `client_id` plus primary keys and re-bind context in a
+   prerun hook. A task with no context must fail closed.
+
+Tests that must exist: router raises with no context; `allow_migrate` keeps the two schemas apart;
+context does not leak between two requests on one worker thread; no tenant table is ever touched on
+the `default` connection.
+
+### Rejected, and why
+
+| Rejected | Why |
+|---|---|
+| **Laravel 13 + `stancl/tenancy`** | The package genuinely saves ~3 weeks of security-critical tenancy work and was the research's recommendation. Outweighed by Django fluency on a 12-phase solo project, plus the admin, WeasyPrint and native `Decimal`. |
+| **NestJS + Drizzle** | No tenancy package, no admin, no decimal type on a fiscal product. Its one-language advantage is recovered by generating a typed TS client from `drf-spectacular`. |
+| **`django-tenants`** | Schema-per-client via `search_path`. Contradicts the database-per-client decision. **Do not reach for it** when the hand-built layer feels like work. |
+| **Prisma** | One client instance per database URL spawns a query engine each; memory blows up across many clients. |
+| **One universal Expo Router app (React Native Web)** | Chosen in the research largely to share an offline sync client, which no longer exists. RNW is weakest at dense tables, keyboard flows and print CSS — exactly the counter UI — and mobile is Phase 11, so it would cost ten phases of friction to serve a late requirement. |
+| **Gotenberg / Puppeteer sidecar** | Unnecessary once WeasyPrint is available; deletes a container from the deployment. |
+| **Offline sync of any kind** (purpose-built, PowerSync, ElectricSQL, CRDTs, RxDB) | Offline is out of scope permanently. |
+
+### What survived from the research
+
+- Facture numbers come from a **counter row locked `FOR UPDATE`** inside the inserting transaction
+  (`select_for_update()` in `transaction.atomic()`) — **never a Postgres `SEQUENCE`**, which gaps on
+  rollback. The stack research's mention of sequences for numbering is wrong and contradicted by the
+  architecture and pitfalls research.
+- PgBouncer is mandatory, not optional, with a database per client.
+- Sale creation must be idempotent so a retried request cannot mint a second facture number.
+- Verify PgBouncer transaction pooling against the driver's prepared statements early, in Compose.
+
 ## Key Decisions
 
 <!-- Decisions that constrain future work. Add throughout project lifecycle. -->
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
+| Django + DRF, not Laravel | Laravel's `stancl/tenancy` would save ~3 weeks of tenancy work, but the developer is fluent in Django and new to Laravel. Django also brings the admin (much of the operator tooling), WeasyPrint, and native `Decimal` for fiscal correctness. | — Pending |
+| Tenancy layer hand-built on Django's router | No Django equivalent to `stancl/tenancy` exists, and `django-tenants` is schema-per-client, which contradicts the database-per-client decision. Costed at 2-3 weeks with tests. | — Pending |
+| WeasyPrint for A4, not a Chromium sidecar | Pure Python, built for CSS paged media, good accent and Arabic font handling — and it removes a container from the deployment | — Pending |
+| React + Vite web SPA now, Expo mobile at Phase 11 | React Native Web is weakest at dense tables, keyboard flows and print CSS, which is exactly the counter UI. Mobile is Phase 11, so a universal app would cost ten phases of friction for a late requirement. | — Pending |
+| Typed TS client generated from `drf-spectacular` | Recovers most of the one-language benefit of a TypeScript backend without giving up Django's admin, migrations and `Decimal` | — Pending |
+| Money as `Decimal`, never float | TVA per rate, per-line AMO ceilings and MAD rounding are where invoicing software silently goes wrong | — Pending |
 | One shared app, one database per client business | Real isolation per paying client without a deployment each; magasins sit inside their client's database so owner-wide views stay ordinary queries. Reconfirmed against a proposal to relax it to schema-per-client. | — Pending |
 | Only the optician and gérants log in; permissions granted per gérant | Floor vendeurs never touch the system, so a vendeur is data on a sale rather than an account. Shrinks the permission surface considerably. | — Pending |
 | Manual onboarding first; self-serve stays the platform bar | Letting self-serve gate first revenue risks building everything to 80% with zero validation. The manual path calls the same provisioning primitives. | — Pending |

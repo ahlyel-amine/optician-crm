@@ -15,6 +15,12 @@
 > 5. **Added to v1:** facture itemisée + buyer ICE, prescripteur + relance AMO, suivi de commande
 >    client, avoir/retour.
 >
+> 6. **The stack is Django + DRF (Python)** — PostgreSQL with one database per client, PgBouncer,
+>    Celery + Celery Beat, WeasyPrint for A4 PDF, a React + Vite + TypeScript SPA for web with a typed
+>    client generated from `drf-spectacular`, and Expo mobile at Phase 11. **Not Laravel**, not
+>    `stancl/tenancy`, not a universal React Native Web app, not `django-tenants` (schema-per-client).
+>    The tenancy layer is hand-built on Django's router, costed at 2-3 weeks.
+>
 > `.planning/PROJECT.md` and `.planning/REQUIREMENTS.md` are authoritative. This file is the research
 > record as written, kept for its reasoning and sources.
 
