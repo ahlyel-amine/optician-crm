@@ -20,6 +20,49 @@ A multi-tenant SaaS for Moroccan opticians. One platform where an optician busin
 - **Timeline**: no hard deadline — build it right rather than fast
 <!-- GSD:project-end -->
 
+## Scope & Status
+
+**90 v1 requirements across 12 phases.** Nothing is built yet — Phase 1 (legal filings, calendar-driven)
+and Phase 2 (tenancy foundation) are next.
+
+- Requirements and full traceability: `.planning/REQUIREMENTS.md`
+- Phase structure, goals and success criteria: `.planning/ROADMAP.md`
+- Phases flagged as needing research before planning: 1, 6, 7, 12
+
+## Non-negotiables
+
+Decisions already taken, with reasons recorded in `.planning/PROJECT.md`. Do not quietly reverse one
+inside a phase plan — raise it instead.
+
+1. **Online only, permanently.** No offline mode, no local storage, no sync layer. Sale submission is
+   still idempotent, because a retried request must never mint a second facture number.
+2. **One database per client business.** Never schema-per-client. **Never `django-tenants`** — it is
+   schema-based and would silently reverse this.
+3. **The facture number is server-issued** from a counter row locked `FOR UPDATE` inside the inserting
+   transaction. Never a Postgres `SEQUENCE` (it gaps on rollback), never issued by a client.
+4. **Stock, caisse and payments are append-only ledgers** with derived balances. No mutable
+   `quantite` / `solde` / `montant_paye` columns. Corrections are compensating entries.
+5. **A chèque is not cash until `encaissé`.** Post-dated chèques are normal here; counting one as cash
+   on the day it is taken makes the caisse balance wrong.
+6. **Only the optician (owner) and gérants log in.** Floor vendeurs never sign in — a vendeur is a field
+   on a sale. Permissions are granted per gérant individually, as data, not as role tiers.
+7. **Money is `Decimal`**, never float. TVA is per article, never a hardcoded global rate.
+8. **Tenant context fails closed** and is reset in a `finally`. A router returning `None` falls through
+   to `default`, which is a cross-client leak; worker threads are reused, so a missed reset leaks too.
+9. **The facture is itemised** — monture and verres on separate lines. AMO reimburses per line, so a
+   single lump line under-reimburses the customer.
+10. **Devis, facture and avoir are one document model**, built together in Phase 6.
+
+## Open Questions Blocking Phase 6
+
+Need a Moroccan comptable, not more research. Start them during Phase 1.
+
+1. Which TVA rate applies to montures, verres, lentilles and prestations after the 2026 reform
+2. Whether a facture série per magasin is legal, or one continuous série per company is required
+3. TVA treatment of the acompte, and whether a facture d'acompte needs its own fiscal number
+4. Whether the facture is issued at commande or at délivrance
+
+
 <!-- GSD:stack-start source:research/STACK.md -->
 ## Technology Stack
 

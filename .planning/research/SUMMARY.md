@@ -21,6 +21,12 @@
 >    `stancl/tenancy`, not a universal React Native Web app, not `django-tenants` (schema-per-client).
 >    The tenancy layer is hand-built on Django's router, costed at 2-3 weeks.
 >
+> 7. **Scope widened after a competitor gap review (2026-09-11): v1 is 90 requirements, not 76.**
+>    Added: devis, remise, chèque with a date d'échéance, non-blocking comptage de caisse, owner
+>    tableau de bord, inventaire physique, étiquettes prix, reçu d'acompte A5, photo de l'ordonnance,
+>    transliteration-tolerant search, and per-client backup/restore. Phase 10 is now
+>    "Rappels, Relances & Tableau de Bord". The suggested phase list below predates all of this.
+>
 > `.planning/PROJECT.md` and `.planning/REQUIREMENTS.md` are authoritative. This file is the research
 > record as written, kept for its reasoning and sources.
 

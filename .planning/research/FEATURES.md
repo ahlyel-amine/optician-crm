@@ -1,3 +1,26 @@
+> **⚠️ DISPOSITIONS TAKEN AFTER THIS RESEARCH — read before acting on anything below.**
+>
+> **Adopted into v1:** G1 suivi de commande (STOCK-06) · G2 devis (FACT-13) · G3 avoir (FACT-08) ·
+> G4 facture itemisée (FACT-01, LEGAL-05) · G5 prescripteur + date (CLIENT-04/05) and the relance AMO
+> 24 mois (RAPPEL-04) · G6 tableau de bord owner (DASH-01…03) · G7 inventaire physique (STOCK-08).
+> Also adopted beyond the G-list: étiquettes prix (STOCK-09), remise sur ligne (FACT-14), chèque avec
+> date d'échéance (CAISSE-06/07), reçu d'acompte A5 (BRAND-05), photo de l'ordonnance (CLIENT-09),
+> recherche tolérante aux variantes de translittération (CLIENT-10), sauvegarde et restauration par
+> client (TENANT-09).
+>
+> **Deferred to v2:** G8 export comptable.
+>
+> **Exclusion verdicts acted on:** the comptage de caisse reversal was accepted — a *non-blocking*
+> attendu-vs-compté check is in v1 (CAISSE-08); formal clôture Z / NF525 stays out. Label printing is
+> in v1; barcode *scanning* stays out, with search built scanner-ready.
+>
+> **Two things below no longer apply.** Offline is **out of scope permanently** — ignore the
+> offline rows, the "Offline-first" differentiator and the OpticWizard parity argument that rests on
+> it. And only the optician and gérants log in; floor vendeurs have no account, so "vendeur-scoped
+> permissions" means per-gérant grants.
+>
+> v1 is **90 requirements**. `.planning/PROJECT.md` and `.planning/REQUIREMENTS.md` are authoritative.
+
 # Feature Research
 
 **Domain:** Optician shop management SaaS (logiciel de gestion pour opticiens), Morocco
