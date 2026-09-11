@@ -16,7 +16,7 @@ Calendar-driven work. Starts day one and runs in parallel with build — no amou
 - [ ] **LEGAL-01**: The correct CNDP route for processing ordonnances as health data is established (art. 12-1-a + art. 21 authorisation, or the art. 22 déclaration derogation) and the filing is made, with the dossier tracked to a decision
 - [ ] **LEGAL-06**: It is established whether the optician or the platform is responsable du traitement, because if each optician must file their own authorisation then self-serve signup cannot provision the ordonnance module (blocks BILL-01)
 - [ ] **LEGAL-07**: A data processing agreement with each optician satisfying art. 23 (security and sous-traitant obligations) is in place before any client data is stored
-- [ ] **LEGAL-02**: Hosting jurisdiction is chosen and documented, with the reasoning recorded, before any client data is stored
+- [ ] **LEGAL-02**: Hosting jurisdiction is chosen and documented, with the reasoning recorded, before any client data is stored. Two checks must close first: whether OCI Database with PostgreSQL is available in Oracle's live `af-casablanca-1` region at a viable price, and whether décrets 2-24-921 / 2-23-1047 mandate Moroccan-territory hosting for a private SaaS handling health data.
 - [ ] **LEGAL-03**: A payment merchant contract is opened with a Moroccan acquiring bank, and its lead time is tracked as a project dependency
 - [ ] **LEGAL-04**: Client offboarding archives the client's data for the 10-year retention period instead of dropping their database
 - [ ] **LEGAL-05**: The facture entity carries every mention obligatoire required by art. 145 CGI, including buyer ICE
@@ -31,7 +31,7 @@ Calendar-driven work. Starts day one and runs in parallel with build — no amou
 - [ ] **TENANT-06**: An operator can onboard an optician manually, using the same provisioning path the self-serve flow will call
 - [ ] **TENANT-07**: A client business can have several magasins, and stock and caisse are scoped to a magasin within that client's database
 - [ ] **TENANT-08**: Database connections are pooled so that adding clients does not exhaust the database server's connection limit
-- [ ] **TENANT-09**: Every client database is backed up on a schedule, and restoring a single client has been performed and verified — not assumed
+- [ ] **TENANT-09**: Every client database is backed up on a schedule, and restoring **one client's logical database alone** has been performed and verified — not assumed. Per-instance PITR that only restores a whole server does not satisfy this, because many client databases share one instance.
 
 ### Accounts & Permissions (PERM)
 
@@ -195,6 +195,9 @@ These block schema decisions and need a Moroccan comptable, the DGI, or optician
 6. The CNDP controller/processor split between the platform and the optician — see `.planning/research/CNDP.md` for 15 priority-ordered questions to put to a lawyer
 7. Whether Moroccan rails genuinely support recurring card-on-file — a vendor claim needing sandbox proof (blocks BILL-02)
 8. Payment-mode to caisse mapping, worth an hour with two or three real opticians (informs CAISSE-03)
+9. Do décrets 2-24-921 / 2-23-1047 mandate Moroccan-territory hosting for a private SaaS holding health data, or are they scoped to public bodies and OIV in the DGSSI national-security sense? **Decision-invalidating for LEGAL-02** — a counsel question, added to the CNDP list.
+10. Does Oracle's `af-casablanca-1` offer OCI Database with PostgreSQL, and at what price? One email to Oracle. If yes, Morocco likely wins outright — managed Postgres with no cross-border filing.
+11. Does the chosen EU provider genuinely support per-logical-database restore and PITR? Scaleway documents per-database restore; OVH explicitly advertises PITR. Verify before committing (blocks TENANT-09).
 
 ---
 

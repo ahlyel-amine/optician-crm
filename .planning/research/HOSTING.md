@@ -535,3 +535,213 @@ instance**. Both matter. OVHcloud explicitly advertises PITR for PostgreSQL via 
    untouched. This is TENANT-05, and it is the acceptance test for the whole hosting choice.
 6. **Record the decision and its reasoning** — LEGAL-02 is satisfied by the documented reasoning, not
    by the choice alone.
+
+---
+
+## 9. What to ask each provider directly
+
+Moroccan provider documentation is thin and often marketing-only. Several questions above are only
+answerable by a human. These are the exact questions.
+
+### Oracle Morocco / OCI sales — highest value, ask first
+
+1. Is **OCI Database with PostgreSQL** available in `af-casablanca-1` today? If not, is it on the
+   roadmap, with a date?
+2. Can I create and drop **logical databases programmatically** inside one PostgreSQL DB system, via
+   API or CLI? Is there a limit on the number per system?
+3. Can I **restore a single logical database** from backup without restoring or disturbing the whole DB
+   system? If not, what is the documented procedure?
+4. Is **point-in-time recovery** supported, as distinct from scheduled snapshots? What granularity?
+5. The docs state **10 backups per tenancy per region**. Does that limit interact with per-database
+   restore, and can it be raised?
+6. What does the **smallest viable production shape** cost per month in `af-casablanca-1` — OCPU plus
+   storage plus backup object storage?
+7. Casablanca has **one availability domain**. What is the durability and failover story, and can
+   backups be copied cross-region?
+8. Is data in `af-casablanca-1` **subject only to Moroccan jurisdiction**, and can you state that in
+   the contract? (This is the whole reason to consider it.)
+9. Is there a free tier or startup-credit programme applicable to a Moroccan SaaS?
+
+### Scaleway
+
+1. Does Managed Database for PostgreSQL support **true PITR**, or only scheduled snapshots with the
+   7-day default retention? What is the maximum retention?
+2. What is the **maximum number of logical databases** per Database Instance? Any soft limits?
+3. Confirm that restoring one logical database from backup **does not interrupt** the other databases
+   on the same instance. What is the typical restore time for a ~1 GB database?
+4. Is logical-database creation and deletion fully supported via **API and Terraform**?
+5. Any constraint on running **PgBouncer in transaction mode** in front of the managed instance, or is
+   a pooler provided?
+6. Contractually, is data guaranteed to **remain in the Paris region**, including backups?
+
+### OVHcloud
+
+1. Is **PITR** available on the **Essential** plan for PostgreSQL, or Business/Enterprise only?
+2. Can a **single logical database** be restored independently? (Their docs are less explicit than
+   Scaleway's on this.)
+3. Current monthly price for the smallest **production-grade** PostgreSQL plan. (Verify by hand — the
+   pricing page could not be read automatically during this research.)
+4. Which regions, and is data residency contractually guaranteed?
+
+### Maroc Telecom / MT Cloud
+
+1. Do you offer **any managed database service**, PostgreSQL or otherwise? (Your public catalogue shows
+   none.)
+2. If not: can you provide **managed PostgreSQL under contract** — who patches, who restores, what SLA?
+3. VPS / VDS / Virtual Datacenter **published price list**, please.
+4. Where are the datacenters physically, and what is the **Tier certification**?
+5. Do you provide **backup to object storage** with off-site retention?
+6. Is there an **API** for provisioning, or is everything ticket-based? (Decisive — the architecture
+   provisions automatically.)
+
+### Inwi
+
+1. Same questions 1-6 as MT Cloud.
+2. Your **SAP "cloud souverain"** deal — does it imply a managed-database capability available to
+   smaller customers?
+3. Does the ISO 27001 / PCI-DSS certification extend to the **cloud service**, or only to the facility?
+
+### N+ONE Datacenters
+
+1. You host the Oracle Casablanca region. Do you also sell **your own** managed PostgreSQL?
+2. What is the practical difference between buying OCI-in-Casablanca and buying N+ONE IaaS directly?
+3. Managed-hosting SLA and price for a small two-server production setup?
+4. Is there a **provisioning API**?
+
+### Omnidata and similar MSPs
+
+1. Would you operate a **PostgreSQL cluster as a managed service** for a small SaaS — backups, PITR,
+   monitoring, patching, single-database restore?
+2. **Monthly retainer**, minimum commitment, and response SLA?
+3. Do you provide an **API or automation hooks**, or is database provisioning a ticket? (A ticket-based
+   workflow is incompatible with self-serve signup — TENANT-07.)
+
+### Moroccan privacy counsel — the legal questions research cannot close
+
+1. **Confirm the article numbers.** Is the prior-authorisation regime for health data under art. 12,
+   art. 21, or art. 23 of law 09-08? Sources disagree and PROJECT.md currently cites art. 23.
+2. Do **décret n° 2-24-921** and **décret n° 2-23-1047** apply to a **private-sector SaaS** processing
+   health data, or only to public bodies and OIV? *(The recommendation depends on this.)*
+3. Does a transfer to an **adequacy-listed** country still require an **F118** authorisation, or a
+   lighter formality?
+4. Confirm the **current adequacy list** (Délibération n° 236-2015) and that France is on it today.
+5. **Controller vs processor**: are we the responsable de traitement, or the sous-traitant of each
+   optician? Who files — us, each client, or both? *(Already an open question in PROJECT.md, and it
+   changes the shape of the signup flow.)*
+6. The F112 requires a **data-coding commitment or a derogation request**. What does "coding" oblige us
+   to do architecturally for ordonnance data? *(This could reach the schema — ask before Phase 4.)*
+7. How does the **10-year fiscal retention** (art. 211 CGI) interact with CNDP erasure rights?
+   *(PITFALLS.md flags the tension; it needs an answer, not an assumption.)*
+
+---
+
+## Confidence summary
+
+| Claim | Confidence |
+|---|---|
+| No Moroccan provider advertises managed PostgreSQL | HIGH |
+| No Moroccan provider *has* managed PostgreSQL | MEDIUM (thin documentation; several are quote-only) |
+| Oracle `af-casablanca-1` is launched and real | HIGH |
+| OCI Database with PostgreSQL is available there | **UNVERIFIED — LOW either way** |
+| AWS has a Wavelength Zone, not a region, in Morocco | HIGH |
+| Azure and Google Cloud have no Morocco region | HIGH |
+| Self-operating Postgres costs ~3-5 weeks then 15-20 h/month | MEDIUM (judgement, not measurement) |
+| Scaleway can restore a single logical database | MEDIUM-HIGH (documented) |
+| Scaleway supports true PITR | **UNVERIFIED** |
+| Pricing figures | MEDIUM (list prices, some via secondary sources) |
+| OVHcloud database pricing | **UNVERIFIED — page could not be read** |
+| Casablanca to Lisbon 11 ms, measured | MEDIUM-HIGH |
+| Casablanca to Paris ~22-35 ms | MEDIUM (estimate, not a measurement) |
+| Health data requires prior authorisation, form F112 | HIGH |
+| CNDP decision time 2 months, extendable once | HIGH |
+| F112 must precede F118 | HIGH — **schedule-relevant, currently unreflected in the roadmap** |
+| Arts. 43 and 44 govern transfer abroad | HIGH |
+| Arts. 12/21 (not 23) govern sensitive-data authorisation | MEDIUM — **verify against the Bulletin Officiel** |
+| EU states are on the CNDP adequacy list | MEDIUM (secondary sources; Délibération 236-2015 not read) |
+| DGSSI cloud décrets do not reach private SaaS | MEDIUM — **the one legal item that could invalidate the recommendation** |
+| DGI e-invoicing does not constrain hosting location | MEDIUM-HIGH (implementing décret still unpublished) |
+| DGI implementing décret still unpublished as of ~April 2026 | MEDIUM |
+
+**The full text of law 09-08 could not be retrieved.** Every host attempted (droit-afrique.com,
+media.casablanca-bourse.com, WIPO Lex) returned 403, 404 or refused the connection. All article-level
+claims here rest on the CNDP's own pages and on legal commentary, not on the primary text. **Do not put
+an article number into a CNDP filing on the strength of this document alone.**
+
+---
+
+## Sources
+
+**CNDP and law 09-08**
+
+- CNDP, Formalités — https://www.cndp.ma/formalites/
+- CNDP, Notifier une demande d'autorisation préalable (F112/F113, health-data documents, 2-month delay) — https://www.cndp.ma/notifier-une-demande-dautorisation-prealable/
+- CNDP, Transfert de données à l'étranger (Délibération 236-2015, F118, transfer-after-processing rule) — https://www.cndp.ma/transfert-de-donnees-a-letranger/
+- CNDP, Notifier une demande de transfert à l'étranger — https://www.cndp.ma/notifier-une-demande-de-transfert-a-letranger/
+- CNDP, Loi 09-08 — https://www.cndp.ma/loi-09-08/
+- CMS Law, Flash info Maroc, état des lieux loi n° 09-08 (art. 4 déclaration, art. 12 autorisation) — https://cms.law/fr/mar/legal-updates/flash-info-maroc-etat-des-lieux-de-la-protection-des-donnees-a-caractere-personnel-au-maroc-loi-n-09-08
+- Upsilon Consulting, International Personal Data Transfer in Morocco (arts. 43/44, sanctions) — https://www.upsilon-consulting.com/en/international-personal-data-transfer-morocco/
+- Avocat Jawhari, Transfert des données du Maroc à l'étranger — https://avocat-jawhari.com/2023/01/30/transfert-des-donnees-a-caractere-personnel-du-maroc-a-letranger/
+- FutureRoc, Data compliance in Morocco — law 09-08, CNDP and DGSSI — https://www.futureroc.com/blog-morocco-data-compliance-guide
+- TabibDoc Pro, Loi 09-08 et données médicales — https://tabibdoc.ma/blog/reglementation-donnees-medicales-maroc-loi-09-08
+
+**Sovereign-cloud décrets**
+
+- Village-Justice, Lecture du décret n° 2.24.921 sur les prestataires de services cloud au Maroc — https://www.village-justice.com/articles/hebergement-local-cloud-international-lecture-decret-921-sur-les-prestataires,53000.html
+- Telquel, Cloud souverain, un nouveau territoire de la confiance numérique — https://telquel.ma/2025/12/26/cloud-souverain-un-nouveau-territoire-de-la-confiance-numerique_1967850
+- Le360, Souveraineté numérique, le Maroc interdit l'hébergement des données sensibles à l'étranger — https://fr.le360.ma/politique/souverainete-numerique-le-maroc-interdit-lhebergement-des-donnees-sensibles-a-letranger-262738/
+
+**Oracle Casablanca**
+
+- Oracle, New Region in Casablanca, Morocco, release notes (af-casablanca-1, LEJ, 1 AD, 20 Feb 2026) — https://docs.oracle.com/en-us/iaas/releasenotes/oci/new-region-casablanca-1.htm
+- Oracle, Overview of OCI Database with PostgreSQL (backups, 35-day retention, HA, 10-backup limit) — https://docs.oracle.com/en-us/iaas/Content/postgresql/overview.htm
+- Oracle, Database with PostgreSQL pricing — https://www.oracle.com/cloud/postgresql/pricing/
+- DataCenterDynamics, Oracle launches cloud region in Casablanca — https://www.datacenterdynamics.com/en/news/oracle-launches-cloud-region-in-casablanca-morocco/
+- TechAfrica News, Oracle launches new cloud region in Casablanca — https://techafricanews.com/2026/04/13/oracle-launches-new-cloud-region-in-casablanca-to-accelerate-ai-and-digital-innovation-in-morocco/
+
+**Other hyperscalers**
+
+- AWS, New Wavelength Zones in Morocco and Senegal — https://aws.amazon.com/blogs/industries/aws-announces-new-wavelength-zones-in-morocco-and-senegal/
+- Telecompaper, AWS and Orange Morocco launch Wavelength Zone in Casablanca — https://www.telecompaper.com/news/aws-and-orange-morocco-partner-to-launch-aws-wavelength-zone-in-casablanca--1526335
+- Claro Digital, AWS vs Azure vs Google Cloud in Morocco 2026 — https://clarodigi.com/blog/aws-vs-azure-vs-google-cloud-morocco/
+- Microsoft, Saudi Arabia East datacenter region available November 2026 — https://news.microsoft.com/source/emea/2026/08/microsoft-announces-saudi-arabia-east-datacenter-region-will-be-available-in-november-2026/
+
+**Moroccan providers**
+
+- MT Cloud (Maroc Telecom) catalogue — https://www.mtcloud.ma/
+- Maroc Telecom, MT Cloud IaaS (VPS/VDS/VDC since 2016) — https://www.iam.ma/entreprises/mt-cloud
+- Inwi Cloud — https://inwi.ma/en/entreprise/inwi-cloud
+- Inwi VDC — https://inwi.ma/en/entreprise/vdc
+- Médias24, Inwi lance le plus grand datacenter du Maroc — https://medias24.com/2019/01/15/inwi-lance-le-plus-grand-datacenter-du-maroc/
+- N+ONE Datacenters, Hybrid Cloud — https://www.nplusone.ma/hybrid-cloud-3/
+- Omnidata, Managed Services — https://omnidata.com/managed-services/
+- Dataprotect, MSSP — https://www.dataprotect.ma/francais/managedSec.html
+- Hostino, VPS Maroc — https://www.hostino.ma/vps-maroc/
+- Nindohost, Cloud Maroc — https://nindohost.ma/serveurs/cloud-maroc/
+- CloudVPS.ma — https://www.cloudvps.ma/
+
+**European providers**
+
+- Scaleway, How to manage backups (per-logical-database backup and restore, daily autobackup, 7-day retention) — https://www.scaleway.com/en/docs/managed-databases-for-postgresql-and-mysql/how-to/manage-backups/
+- Scaleway, How to create a database — https://www.scaleway.com/en/docs/managed-databases-for-postgresql-and-mysql/how-to/add-a-database/
+- Scaleway, Managed Database API — https://www.scaleway.com/en/developers/api/managed-databases-for-postgresql-and-mysql/
+- HostStack, Scaleway Managed PostgreSQL pricing 2026 — https://hoststack.dev/blog/scaleway-postgresql-pricing-2026
+- OVHcloud, Public Cloud pricing — https://www.ovhcloud.com/en/public-cloud/prices/
+- OVHcloud blog, Major improvements for Public Cloud Databases (PITR for MySQL, PostgreSQL, MongoDB) — https://blog.ovhcloud.com/major-improvements-for-public-cloud-databases/
+- OVHcloud docs, Capabilities and limitations of Public Cloud Databases — https://help.ovhcloud.com/csm/en-public-cloud-databases-capabilities
+- Northflank, Hetzner cloud server price increases 2026 — https://northflank.com/blog/hetzner-cloud-server-price-increases
+- Ubicloud, Managed PostgreSQL on Hetzner (confirms Hetzner has no native managed Postgres) — https://www.ubicloud.com/blog/open-and-portable-managed-postgresql-avail-hetzner
+- Vantage, db.t4g.small RDS pricing — https://instances.vantage.sh/aws/rds/db.t4g.small
+
+**Latency**
+
+- Africloud, African Latency Report (Casablanca/Rabat to Lisbon 11 ms, April 2026) — https://africloud.com/news/africa-latency-measured
+- SpeedGEO, Internet speed in Casablanca — https://www.speedgeo.net/statistics/morocco/casablanca
+- SpeedGEO, Morocco internet guide — https://www.speedgeo.net/reports/morocco-internet-guide
+- Lightwave, Atlas Offshore network lands in Marseille — https://www.lightwaveonline.com/network-design/article/16672989/atlas-offshore-network-lands-in-marseille
+
+**DGI e-invoicing**
+
+- Sage Maroc, Facturation électronique Maroc 2026 — https://www.sage.com/fr-ma/blog/facturation-electronique-maroc-2026/
+- Upsilon Consulting, Facturation électronique au Maroc 2026 — https://www.upsilon-consulting.com/facturation-electronique-maroc-2026/
+- Hisab, Facturation électronique Maroc 2026, guide DGI — https://hisab.ma/fr/docs/mandate-2026
+- Efficience, Facturation électronique 2026 au Maroc — https://efficienceexpertise.com/facturation-electronique-maroc-2026/

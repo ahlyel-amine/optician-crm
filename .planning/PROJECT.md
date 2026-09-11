@@ -25,7 +25,7 @@ The counter can complete a sale end to end — find or create the client, attach
 - [ ] Establish who files: statute reads the optician as responsable du traitement and us as sous-traitant, but a Moroccan software vendor holds a health-scoped authorisation in its own name (DabaDoc, A-436/2021). If each optician must file their own, self-serve signup is not legally coherent for the ordonnance module.
 - [ ] Decide whether to store a client's CIN at all — art. 12-1-e makes CIN storage trigger authorisation independently of health data
 - [ ] Check the rappels/relance module against art. 12-1-b and art. 54 (secondary use), since it is the likeliest part of the product to create an unexpected filing obligation
-- [ ] Hosting jurisdiction chosen early, since the CNDP filing depends on it and it is expensive to reverse
+- [ ] Hosting jurisdiction chosen early, since the CNDP filing depends on it and it is expensive to reverse. Hosting abroad means **two sequential filings — F112 (processing) must be approved before F118 (transfer) can succeed** — so EU hosting roughly doubles the regulatory critical path versus hosting in Morocco.
 - [ ] Payment merchant contract through a Moroccan acquiring bank — needs a registered company, weeks to months of lead time
 - [ ] Client data retained 10 years (art. 211 CGI): churn means archive-then-decommission, never dropping a client's database
 
@@ -147,6 +147,7 @@ The counter can complete a sale end to end — find or create the client, attach
 - **Legal — invoicing**: Moroccan TVA and a gapless, chronological, duplicate-free facture series (art. 145 CGI). Gaps are treatable as fraud, and this is the client's tax exposure caused by our software.
 - **Legal — health data**: ordonnances are sensitive data under law 09-08. The default route is prior authorization (art. 12-1-a + art. 21) on a reported 2–4 month calendar; the art. 22 derogation to a simple déclaration may or may not be open to opticians. Unresolved — see `.planning/research/CNDP.md`.
 - **Legal — retention**: 10 years (art. 211 CGI), which constrains offboarding and the cost model
+- **Hosting — restore granularity**: many client databases share one database instance, because one managed instance per client costs more than a small client's entire annual subscription. The provider must therefore support restoring **a single logical database**, not just a whole server. This is a provider-selection criterion, not an implementation detail.
 - **Locale**: MAD and French UI — drives formatting and vocabulary
 - **Connectivity**: the application requires a connection. Sale submission must still be idempotent, since a retried request on a flaky link must never mint a second facture number.
 - **Platforms**: web and mobile at full parity — one shared codebase and API rather than two products
@@ -234,6 +235,7 @@ the `default` connection.
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
+| Hosting jurisdiction — leaning EU, not yet committed | No Moroccan provider advertises managed PostgreSQL, and self-operating it costs ~3–5 weeks plus 15–20 h/month forever. Two cheap checks could reverse it: managed Postgres in Oracle's new Casablanca region, or a décret that mandates local hosting. Latency is not a factor (Casablanca→Paris ~22–35 ms against a ~40 ms last-mile floor). | — Pending |
 | Devis, facture and avoir built as one document model | The research rates devis P1 precisely because the three share a model — cheap together in Phase 6, expensive bolted on later | — Pending |
 | Chèque carries a date d'échéance and is not cash until encaissé | Post-dated chèques are heavily used by Moroccan SMEs. Counting one as cash the day it is taken makes the caisse balance lie, which breaks the one thing the caisse is for. | — Pending |
 | Non-blocking comptage de caisse | Reverses the earlier exclusion. A pure ledger only records what the gérant chose to record, and gérants now operate the caisse — this is the owner's check, about a day's work, without becoming a formal clôture Z. | — Pending |
@@ -277,6 +279,8 @@ the `default` connection.
 - The CNDP controller/processor split between us and the optician — whether each optician must hold their own authorisation, which would break self-serve signup for the ordonnance module
 - Whether the art. 22 derogation (déclaration rather than authorisation) is open to an optician, which turns months into days
 - Whether CNDP model authorisation D-941-2025 for "traitements de suivi des patients" covers this shape of product
+- Whether décrets 2-24-921 / 2-23-1047 force Moroccan-territory hosting for private SaaS holding health data, or are scoped to public bodies and OIV — this one can invalidate the hosting decision outright
+- Whether Oracle's live `af-casablanca-1` region offers managed PostgreSQL, which would likely settle hosting in Morocco's favour
 - Whether Moroccan rails genuinely support recurring card-on-file — a vendor claim, needs sandbox proof
 - Payment-mode to caisse mapping, worth an hour with two or three real opticians
 

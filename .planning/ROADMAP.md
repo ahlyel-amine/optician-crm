@@ -28,7 +28,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 ## Phase Details
 
 ### Phase 1: Legal & Compliance Track
-**Goal**: The filings whose lead time is measured in months are in flight from day one, and the hosting decision that gates storing any client data is made and documented
+**Goal**: The filings whose lead time is measured in months are in flight from day one, and the hosting decision that gates storing any client data is made and documented. Note that hosting abroad turns one filing into two sequential ones.
 **Depends on**: Nothing (first phase, runs in parallel with Phases 2-12)
 **Requirements**: LEGAL-01, LEGAL-02, LEGAL-03, LEGAL-06, LEGAL-07
 **Success Criteria** (what must be TRUE):
@@ -37,6 +37,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. The hosting jurisdiction is chosen and its reasoning documented, and infrastructure lives in that jurisdiction before any real client data is stored
   4. A merchant contract application is open with a Moroccan acquiring bank, and its expected lead time is recorded as a tracked project dependency with a date
   5. A data processing agreement meeting art. 23 exists for opticians to sign, covering security, confidentiality and the sous-traitant relationship
+  6. If hosting abroad, the F112 and F118 filings are tracked as **two sequential clocks** — F118 cannot succeed until F112 is approved — rather than as one parallel administrative task
 **Plans**: TBD
 **Research needed**: done for desk research — see `.planning/research/CNDP.md` (15 priority-ordered lawyer questions). What remains needs a Moroccan data-protection lawyer, not more searching. This phase is also the vehicle for putting the four blocking facturation questions to a comptable ahead of Phase 6.
 
