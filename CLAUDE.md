@@ -53,6 +53,26 @@ inside a phase plan — raise it instead.
    single lump line under-reimburses the customer.
 10. **Devis, facture and avoir are one document model**, built together in Phase 6.
 
+## Testing
+
+**This project is test-first.** Full strategy: `.planning/TESTING.md`. The short version:
+
+- Write the test before the implementation, aimed at **invariants, not coverage**. Every
+  non-negotiable above has a named test; reversing a decision must turn the suite red.
+- **Name tests after their requirement** — `test_fact03_numbers_have_no_gaps_under_concurrency` —
+  so requirement-to-test traceability is free.
+- **Do not test Django.** Test our rules, not the framework's.
+- Three traps that make tests pass against broken code: Django's `TestCase` wraps each test in a
+  transaction so `select_for_update()` never contends (numbering tests need
+  `transaction=True` and real threads); a fresh thread per test hides context leaks (the leak test
+  must reuse one thread across two requests); and asserting on floats passes while the money is wrong.
+- The tenancy fixtures provide **two** tenants, never one — isolation cannot be tested against a
+  single client.
+- No coverage percentage target.
+
+Phase 1 has no tests by design — its evidence is documentary (filing references, the hosting
+decision). Test code starts in Phase 2.
+
 ## Open Questions Blocking Phase 6
 
 Need a Moroccan comptable, not more research. Start them during Phase 1.
