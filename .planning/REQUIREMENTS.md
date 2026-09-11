@@ -29,6 +29,7 @@ Calendar-driven work. Starts day one and runs in parallel with build — no amou
 - [ ] **TENANT-06**: An operator can onboard an optician manually, using the same provisioning path the self-serve flow will call
 - [ ] **TENANT-07**: A client business can have several magasins, and stock and caisse are scoped to a magasin within that client's database
 - [ ] **TENANT-08**: Database connections are pooled so that adding clients does not exhaust the database server's connection limit
+- [ ] **TENANT-09**: Every client database is backed up on a schedule, and restoring a single client has been performed and verified — not assumed
 
 ### Accounts & Permissions (PERM)
 
@@ -50,6 +51,8 @@ Calendar-driven work. Starts day one and runs in parallel with build — no amou
 - [ ] **CLIENT-06**: A new ordonnance for a client is stored as a new version; earlier ordonnances remain readable and are never overwritten
 - [ ] **CLIENT-07**: Ordonnance values are validated on entry (axe within 0–180, cylinder sign convention consistent, monocular and binocular EP distinguished)
 - [ ] **CLIENT-08**: A commande spéciale carries its ordonnance values through to the fournisseur order
+- [ ] **CLIENT-09**: A user can attach a photo of the paper ordonnance to the structured record, as evidence for an AMO claim
+- [ ] **CLIENT-10**: Client and article search is accent-insensitive and tolerant of Arabic transliteration variants, so "Mohamed", "Mohammed" and "Mhamed" find the same person
 
 ### Stock (STOCK)
 
@@ -60,6 +63,8 @@ Calendar-driven work. Starts day one and runs in parallel with build — no amou
 - [ ] **STOCK-05**: A user can search stock by exact reference, and the search submits on Enter so a keyboard-wedge scanner works without a UI change
 - [ ] **STOCK-06**: A user can see the status of a client's special order as commandé → prêt → client prévenu → livré, and change it
 - [ ] **STOCK-07**: A user can set a réappro threshold per article
+- [ ] **STOCK-08**: A user can run a physical inventaire — enter counted quantities per article and post the difference as a stock ajustement
+- [ ] **STOCK-09**: A user can print price and reference labels for articles
 
 ### Fournisseurs & Achats (ACHAT)
 
@@ -85,6 +90,8 @@ Calendar-driven work. Starts day one and runs in parallel with build — no amou
 - [ ] **FACT-10**: Payments are recorded as an append-only ledger of lines, each line carrying its payer and payment mode
 - [ ] **FACT-11**: The facture is stored as structured data (not as a rendered PDF record), so it stays convertible to UBL for the DGI mandate
 - [ ] **FACT-12**: Submitting the same sale twice — a retried request on a flaky link — never produces two factures; sale creation is idempotent
+- [ ] **FACT-13**: A user can create a devis that carries no legal number, print it, and convert it into a facture without re-entering the lines
+- [ ] **FACT-14**: A user can apply a remise to a sale line or to the whole sale, and TVA and totals recalculate correctly
 
 ### Caisse (CAISSE)
 
@@ -93,6 +100,9 @@ Calendar-driven work. Starts day one and runs in parallel with build — no amou
 - [ ] **CAISSE-03**: A user can read daily and monthly totals off the caisse ledger, broken down by payment mode
 - [ ] **CAISSE-04**: An owner can see the caisse of every magasin in their business
 - [ ] **CAISSE-05**: Caisse entries are append-only; a mistake is corrected by a compensating entry, never by editing history
+- [ ] **CAISSE-06**: A payment by chèque records its date d'échéance and does not count toward the caisse cash balance until it is marked encaissé
+- [ ] **CAISSE-07**: A user can see every chèque not yet encaissé with its due date
+- [ ] **CAISSE-08**: A user can record a physical cash count; the system shows attendu versus compté and stores the écart as a note, without blocking anything
 
 ### Reminders (RAPPEL)
 
@@ -102,12 +112,21 @@ Calendar-driven work. Starts day one and runs in parallel with build — no amou
 - [ ] **RAPPEL-04**: A user sees a relance AMO 23 months after a client's purchase (11 months for children aged 12 or under), noting the client is reimbursable again
 - [ ] **RAPPEL-05**: A user can contact a client about a reminder via a pre-filled WhatsApp link
 
+### Tableau de Bord (DASH)
+
+Owner-facing reporting. Deliberately not a BI tool.
+
+- [ ] **DASH-01**: An owner sees CA du jour and CA du mois, per magasin and consolidated
+- [ ] **DASH-02**: An owner sees marge brute and panier moyen over a chosen period
+- [ ] **DASH-03**: An owner sees encours client (restes à payer) and encours fournisseur
+
 ### Branding & Documents (BRAND)
 
 - [ ] **BRAND-01**: An owner can upload a logo and set colors and shop name for their business
 - [ ] **BRAND-02**: The branding appears in the application UI for that client
 - [ ] **BRAND-03**: The branding appears on printed factures and bons de commande
 - [ ] **BRAND-04**: Printed documents render Arabic characters correctly in client names and addresses
+- [ ] **BRAND-05**: A user can print an A5 reçu d'acompte carrying the client's branding, so a client leaving a deposit gets printed proof
 
 ### Applications (APP)
 
@@ -129,12 +148,12 @@ Calendar-driven work. Starts day one and runs in parallel with build — no amou
 
 Real requirements, deliberately not in v1.
 
-- Non-blocking comptage de caisse — the vendeur or gérant enters counted cash, the system shows attendu vs compté and stores the difference as a note. The strongest v2 candidate; roughly a day's work.
-- Devis / proforma, used for insurer prise en charge pre-approval
-- Owner statistics dashboard
-- Physical inventaire screen with a single focused input
-- Accounting export (CSV)
-- Label printing for articles
+- Accounting export (CSV) of ventes, achats and TVA collectée/déductible — cheap insurance against "add full accounting" pressure
+- Split "part organisme / reste à charge" — trigger: the third prospect mentions bons de prise en charge
+- SAV / retouche / garantie — trigger: shops asking how to track a frame sent back to the supplier
+- Lentilles renewal tracking — a 1–3 month cadence, a richer relance loop than glasses
+- Transfert de stock entre magasins — trigger: the first genuine multi-shop customer
+- Advanced statistics (taux de transformation, top verriers, rotation du stock) beyond the DASH basics
 - WhatsApp Business API for automated relances (v1 uses a pre-filled wa.me link)
 - Gérant role presets, if chains ask for them
 - DGI e-invoicing transmission, when the mandate and its décret are published
@@ -152,9 +171,9 @@ With reasoning, to prevent re-adding.
 - **A database per magasin** — magasins live inside their client's database, so owner-wide views stay ordinary queries.
 - **Full white-label** (custom domains, deep theming) — branding only in v1.
 - **An app for the shop's own customers** — a 24-month purchase cycle gives no retention loop.
-- **Formal clôture Z with écarts de caisse** — the caisse stays a pure ledger of the actual cash, as specified.
-- **Ticket de caisse on thermal printers** — the client needs an itemized A4 original for AMO, and thermal paper fades against a 60-day filing deadline.
-- **Barcode scanning as a feature** — no hardware assumed; STOCK-05 keeps it free to add.
+- **Formal clôture Z / certified register (NF525-style)** — NF525 is French and Morocco has no equivalent, so building it is pure cost. The caisse stays a ledger, with a *non-blocking* comptage (CAISSE-08) as the owner's check on a gérant — that is as far as it goes.
+- **Ticket de caisse on thermal printers** — the client needs an itemized A4 original for AMO, and thermal paper fades against a 60-day filing deadline. A printed acompte receipt is covered by BRAND-05 on A5 instead.
+- **Barcode scanning at the counter** — no scanner hardware assumed. STOCK-05 keeps it free to add later, and STOCK-09 covers printing the labels themselves.
 - **Offline operation** — the application requires a connection. Taken deliberately: it removes the single riskiest phase (a purpose-built sync layer budgeted at 4–8 weeks) and every sync-conflict failure mode with it. Accepted costs: the counter stops during an outage, and a competitor advertising local-first sync at 800 DH/year wins that comparison. Reversing it later means retrofitting local storage plus a sync layer, not flipping a flag.
 
 ---
@@ -181,7 +200,7 @@ These block schema decisions and need a Moroccan comptable, the DGI, or optician
 
 Every v1 requirement maps to exactly one phase. Source of truth for phase structure: `.planning/ROADMAP.md`.
 
-**Coverage: 76/76 requirements mapped — no orphans, no duplicates.**
+**Coverage: 90/90 requirements mapped — no orphans, no duplicates.**
 
 | Requirement | Phase |
 |-------------|-------|
@@ -198,6 +217,7 @@ Every v1 requirement maps to exactly one phase. Source of truth for phase struct
 | TENANT-06 | Phase 2 — Tenancy Foundation & Control Plane |
 | TENANT-07 | Phase 2 — Tenancy Foundation & Control Plane |
 | TENANT-08 | Phase 2 — Tenancy Foundation & Control Plane |
+| TENANT-09 | Phase 2 — Tenancy Foundation & Control Plane |
 | PERM-01 | Phase 3 — Comptes, Permissions & App Shell |
 | PERM-02 | Phase 3 — Comptes, Permissions & App Shell |
 | PERM-03 | Phase 3 — Comptes, Permissions & App Shell |
@@ -213,6 +233,8 @@ Every v1 requirement maps to exactly one phase. Source of truth for phase struct
 | CLIENT-06 | Phase 4 — Clients & Ordonnances |
 | CLIENT-07 | Phase 4 — Clients & Ordonnances |
 | CLIENT-08 | Phase 4 — Clients & Ordonnances |
+| CLIENT-09 | Phase 4 — Clients & Ordonnances |
+| CLIENT-10 | Phase 4 — Clients & Ordonnances |
 | STOCK-01 | Phase 5 — Stock & Catalogue |
 | STOCK-02 | Phase 5 — Stock & Catalogue |
 | STOCK-03 | Phase 6 — Vente & Facturation |
@@ -220,6 +242,8 @@ Every v1 requirement maps to exactly one phase. Source of truth for phase struct
 | STOCK-05 | Phase 5 — Stock & Catalogue |
 | STOCK-06 | Phase 5 — Stock & Catalogue |
 | STOCK-07 | Phase 5 — Stock & Catalogue |
+| STOCK-08 | Phase 5 — Stock & Catalogue |
+| STOCK-09 | Phase 9 — Branding & Documents Imprimés |
 | ACHAT-01 | Phase 8 — Fournisseurs & Achats |
 | ACHAT-02 | Phase 8 — Fournisseurs & Achats |
 | ACHAT-03 | Phase 8 — Fournisseurs & Achats |
@@ -239,20 +263,29 @@ Every v1 requirement maps to exactly one phase. Source of truth for phase struct
 | FACT-10 | Phase 7 — Paiements & Caisse |
 | FACT-11 | Phase 6 — Vente & Facturation |
 | FACT-12 | Phase 6 — Vente & Facturation |
+| FACT-13 | Phase 6 — Vente & Facturation |
+| FACT-14 | Phase 6 — Vente & Facturation |
 | CAISSE-01 | Phase 7 — Paiements & Caisse |
 | CAISSE-02 | Phase 7 — Paiements & Caisse |
 | CAISSE-03 | Phase 7 — Paiements & Caisse |
 | CAISSE-04 | Phase 7 — Paiements & Caisse |
 | CAISSE-05 | Phase 7 — Paiements & Caisse |
-| RAPPEL-01 | Phase 10 — Rappels & Relances |
-| RAPPEL-02 | Phase 10 — Rappels & Relances |
-| RAPPEL-03 | Phase 10 — Rappels & Relances |
-| RAPPEL-04 | Phase 10 — Rappels & Relances |
-| RAPPEL-05 | Phase 10 — Rappels & Relances |
+| CAISSE-06 | Phase 7 — Paiements & Caisse |
+| CAISSE-07 | Phase 7 — Paiements & Caisse |
+| CAISSE-08 | Phase 7 — Paiements & Caisse |
+| RAPPEL-01 | Phase 10 — Rappels, Relances & Tableau de Bord |
+| RAPPEL-02 | Phase 10 — Rappels, Relances & Tableau de Bord |
+| RAPPEL-03 | Phase 10 — Rappels, Relances & Tableau de Bord |
+| RAPPEL-04 | Phase 10 — Rappels, Relances & Tableau de Bord |
+| RAPPEL-05 | Phase 10 — Rappels, Relances & Tableau de Bord |
+| DASH-01 | Phase 10 — Rappels, Relances & Tableau de Bord |
+| DASH-02 | Phase 10 — Rappels, Relances & Tableau de Bord |
+| DASH-03 | Phase 10 — Rappels, Relances & Tableau de Bord |
 | BRAND-01 | Phase 9 — Branding & Documents Imprimés |
 | BRAND-02 | Phase 9 — Branding & Documents Imprimés |
 | BRAND-03 | Phase 9 — Branding & Documents Imprimés |
 | BRAND-04 | Phase 9 — Branding & Documents Imprimés |
+| BRAND-05 | Phase 9 — Branding & Documents Imprimés |
 | APP-01 | Phase 3 — Comptes, Permissions & App Shell |
 | APP-02 | Phase 11 — Mobile Parity |
 | APP-03 | Phase 3 — Comptes, Permissions & App Shell |

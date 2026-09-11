@@ -31,6 +31,7 @@ The counter can complete a sale end to end — find or create the client, attach
 - [ ] A client can have several magasins; inside that client's database, stock and caisse are scoped per magasin
 - [ ] A control plane that tracks every client database and its schema version, so migrations fan out with a record of who is behind
 - [ ] Tenant resolution fails closed — code with no bound client must refuse to run, never fall back to a shared connection
+- [ ] Every client database is backed up on a schedule, and restoring one client has been tested rather than assumed
 - [ ] The first opticians are onboarded manually, by running the same provisioning the platform uses. Self-serve must not gate the first paying customer.
 - [ ] Self-serve signup: an optician creates an account, trials and subscribes with no manual setup from us
 - [ ] Subscription billing through Moroccan payment methods (Chari Pay primary, CMI fallback) behind a payment-gateway interface
@@ -50,6 +51,8 @@ The counter can complete a sale end to end — find or create the client, attach
 - [ ] Ordonnance source recorded — ordonnance médicale or réfraction opticien — because Moroccan law does not always require a doctor
 - [ ] Ordonnances are versioned append-only, never edited in place
 - [ ] The ordonnance feeds lens orders — a commande spéciale carries the prescription to the fournisseur
+- [ ] A photo of the paper ordonnance can be attached alongside the structured fields, as evidence for an AMO claim
+- [ ] Client and article search is accent-insensitive and tolerant of Arabic transliteration variants — Mohamed, Mohammed and Mhamed find the same person. With no barcode scanning, search *is* the counter UI.
 
 **Stock**
 - [ ] Stock per magasin for frames, accessories and stocked lenses
@@ -59,6 +62,8 @@ The counter can complete a sale end to end — find or create the client, attach
 - [ ] A sale warns before it would take stock negative rather than silently overselling; a shortfall the user accepts anyway is recorded as an anomaly for the owner to reconcile
 - [ ] Suivi de commande client: statut commandé → prêt → client prévenu → livré
 - [ ] Search accepts an exact reference and submits on Enter, so a keyboard-wedge barcode scanner works later without a UI rewrite
+- [ ] A physical inventaire can be run: enter counted quantities and post the difference as a stock ajustement
+- [ ] Price and reference labels can be printed for articles
 
 **Fournisseurs & achats**
 - [ ] Fournisseur directory: contacts, catalogue, negotiated prices, delivery lead times
@@ -74,20 +79,31 @@ The counter can complete a sale end to end — find or create the client, attach
 - [ ] Buyer ICE recorded as a first-class field
 - [ ] TVA modeled per article and broken out per rate on the facture — never a hardcoded global rate
 - [ ] Facture lifecycle status (brouillon → émise → transmise → validée) rather than treating "printed" as final
+- [ ] Devis carrying no legal number, printable, and convertible into a facture without re-entering the lines
 - [ ] Avoir / retour as the only legal correction path — a facture is never deleted
-- [ ] Print Facture A4 and Bon de commande
+- [ ] Remise applicable to a line or to the whole sale, with TVA and totals recalculating correctly
+- [ ] Print Facture A4, Bon de commande, and an A5 reçu d'acompte so a client leaving a deposit gets printed proof
 - [ ] Acompte / paiement partiel: deposit at order, balance on pickup, remainder tracked until settled
 - [ ] Payments are an append-only ledger of lines, each carrying its payer, so a future insurer split is a field rather than a migration
 
 **Caisse**
 - [ ] One caisse per magasin — a running cash ledger of entries in and out with a current balance
 - [ ] Daily and monthly totals read off that ledger
+- [ ] A chèque records its date d'échéance and does not count as cash until marked encaissé — a post-dated chèque is not money in the drawer
+- [ ] Chèques not yet encaissés are visible with their due dates
+- [ ] A non-blocking comptage: enter the cash counted, see attendu versus compté, and store the écart as a note
 
 **Reminders**
 - [ ] Stock réappro — item below its threshold, time to reorder
 - [ ] Supplier payment due — échéances on achats
 - [ ] Client follow-up — renewal nudge for a new ordonnance, new lenses, or a contact lens re-order
 - [ ] Relance AMO — a client is reimbursable again 24 months after their last purchase (12 months for children ≤12); remind at month 23
+
+**Tableau de bord**
+- [ ] CA du jour and du mois, per magasin and consolidated
+- [ ] Marge brute and panier moyen over a chosen period
+- [ ] Encours client (restes à payer) and encours fournisseur
+- [ ] Owner-facing and permission-filtered — deliberately not a BI tool
 
 **Apps**
 - [ ] Web app, French UI
@@ -105,10 +121,10 @@ The counter can complete a sale end to end — find or create the client, attach
 - A database per magasin — magasins live inside their client's database so the owner sees across all stores without cross-database queries, and a client record is shared between stores
 - Full white-label (custom domains, deep theming) — branding only in v1
 - An app for the shop's own customers — a 24-month purchase cycle gives no retention loop; a wa.me link covers contact
-- Formal clôture Z with écarts de caisse — the caisse stays a pure ledger of the actual cash, as specified. A non-blocking attendu-vs-compté check is the strongest v2 candidate.
+- Formal clôture Z / certified register (NF525-style) — NF525 is French and Morocco has no equivalent, so building it is pure cost. The caisse stays a ledger, with a non-blocking comptage as the owner's check on a gérant; that is as far as it goes.
 - Ticket de caisse on thermal printers — the client needs an itemized A4 original for AMO, and thermal paper fades against a 60-day filing deadline
-- Barcode scanning as a feature — no hardware assumed, but search is built scanner-ready at no cost
-- Devis / proforma, owner statistics dashboard, physical inventaire screen, accounting CSV export — all real, all v2
+- Barcode scanning at the counter — no scanner hardware assumed. Search is built scanner-ready at no cost, and printing the labels themselves is in scope.
+- Accounting CSV export, part organisme / reste à charge, SAV and retouche tracking, lentilles renewal tracking, inter-magasin stock transfers, advanced statistics — all real, all v2
 - DGI e-invoicing integration — not built in v1, but the facture is structured-data-first with a clearance lifecycle and full art. 145 fields, so it stays convertible when the mandate lands
 
 ## Context
@@ -215,6 +231,11 @@ the `default` connection.
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
+| Devis, facture and avoir built as one document model | The research rates devis P1 precisely because the three share a model — cheap together in Phase 6, expensive bolted on later | — Pending |
+| Chèque carries a date d'échéance and is not cash until encaissé | Post-dated chèques are heavily used by Moroccan SMEs. Counting one as cash the day it is taken makes the caisse balance lie, which breaks the one thing the caisse is for. | — Pending |
+| Non-blocking comptage de caisse | Reverses the earlier exclusion. A pure ledger only records what the gérant chose to record, and gérants now operate the caisse — this is the owner's check, about a day's work, without becoming a formal clôture Z. | — Pending |
+| Owner dashboard in v1, not v2 | All eight Moroccan competitors advertise statistics; it is also the screen that shows the owner why they keep paying | — Pending |
+| Search tolerant of accents and transliteration variants | With barcode scanning excluded, search is the counter UI. Moroccan names transliterate several ways and an exact-match box would be unusable. | — Pending |
 | Django + DRF, not Laravel | Laravel's `stancl/tenancy` would save ~3 weeks of tenancy work, but the developer is fluent in Django and new to Laravel. Django also brings the admin (much of the operator tooling), WeasyPrint, and native `Decimal` for fiscal correctness. | — Pending |
 | Tenancy layer hand-built on Django's router | No Django equivalent to `stancl/tenancy` exists, and `django-tenants` is schema-per-client, which contradicts the database-per-client decision. Costed at 2-3 weeks with tests. | — Pending |
 | WeasyPrint for A4, not a Chromium sidecar | Pure Python, built for CSS paged media, good accent and Arabic font handling — and it removes a container from the deployment | — Pending |

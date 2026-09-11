@@ -16,12 +16,12 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 2: Tenancy Foundation & Control Plane** - Database-per-client provisioning, fail-closed resolution, migration fan-out, manual onboarding
 - [ ] **Phase 3: Comptes, Permissions & App Shell** - Owner/gérant logins, per-gérant permissions, and the single projection layer, inside a French web shell
 - [ ] **Phase 4: Clients & Ordonnances** - Client records and structured, versioned, validated ordonnances
-- [ ] **Phase 5: Stock & Catalogue** - Per-magasin articles with an append-only movement ledger, scanner-ready search, suivi de commande
-- [ ] **Phase 6: Vente & Facturation** - The fiscal core: itemised sale, gapless server-issued legal number, idempotent submission, avoir
-- [ ] **Phase 7: Paiements & Caisse** - Acompte and payment ledger feeding a per-magasin running cash ledger
+- [ ] **Phase 5: Stock & Catalogue** - Per-magasin articles with an append-only movement ledger, scanner-ready search, suivi de commande, inventaire physique
+- [ ] **Phase 6: Vente & Facturation** - The fiscal core: devis → facture → avoir as one document model, gapless server-issued legal number, remise, idempotent submission
+- [ ] **Phase 7: Paiements & Caisse** - Acompte and payment ledger feeding a per-magasin cash ledger, with chèque échéances and a non-blocking comptage
 - [ ] **Phase 8: Fournisseurs & Achats** - Fournisseur directory, bon de commande, réception, compte fournisseur, prix d'achat and margin
-- [ ] **Phase 9: Branding & Documents Imprimés** - Per-client branding in the UI and on printed A4 factures and bons de commande
-- [ ] **Phase 10: Rappels & Relances** - Réappro, échéances fournisseur, client follow-up and relance AMO, with a WhatsApp link
+- [ ] **Phase 9: Branding & Documents Imprimés** - Per-client branding in the UI and on every printed document: facture A4, bon de commande, reçu d'acompte A5, étiquettes
+- [ ] **Phase 10: Rappels, Relances & Tableau de Bord** - Réappro, échéances, relance AMO with a WhatsApp link, plus the owner's dashboard
 - [ ] **Phase 11: Mobile Parity** - The same app on phone and tablet, full feature parity, one codebase and API
 - [ ] **Phase 12: Self-Serve Subscription & Opérations Client** - Signup, Moroccan payment rails, lapse handling, operator view, 10-year archival offboarding
 
@@ -44,7 +44,7 @@ Plans:
 ### Phase 2: Tenancy Foundation & Control Plane
 **Goal**: A new client business is a provisioning operation, not a deployment, and no code can ever touch data without knowing which client it belongs to
 **Depends on**: Phase 1 (LEGAL-02 only — hosting jurisdiction must be settled before real client data is stored)
-**Requirements**: TENANT-01, TENANT-02, TENANT-03, TENANT-04, TENANT-05, TENANT-06, TENANT-07, TENANT-08
+**Requirements**: TENANT-01, TENANT-02, TENANT-03, TENANT-04, TENANT-05, TENANT-06, TENANT-07, TENANT-08, TENANT-09
 **Success Criteria** (what must be TRUE):
   1. An operator provisions a new client business with a single repeatable operation and it comes up with its own database at the current schema version; the operator uses that same path to onboard a real optician manually
   2. A provisioning attempt killed halfway leaves no half-created client — rerunning it converges to either a complete client or none
@@ -75,7 +75,7 @@ Plans:
 ### Phase 4: Clients & Ordonnances
 **Goal**: A client's record and their prescription history are captured in structured form, versioned and never overwritten, ready to drive lens orders and reminders
 **Depends on**: Phase 3
-**Requirements**: CLIENT-01, CLIENT-02, CLIENT-03, CLIENT-04, CLIENT-05, CLIENT-06, CLIENT-07, CLIENT-08
+**Requirements**: CLIENT-01, CLIENT-02, CLIENT-03, CLIENT-04, CLIENT-05, CLIENT-06, CLIENT-07, CLIENT-08, CLIENT-09, CLIENT-10
 **Success Criteria** (what must be TRUE):
   1. A user creates a client with contact details and finds them again by name or by phone, and the client's page shows their purchase history
   2. A user records an ordonnance with OD and OG values for sphère, cylindre, axe, addition and écart pupillaire, along with the prescripteur, the date de prescription, and whether the source is an ordonnance médicale or a réfraction opticien
@@ -91,12 +91,12 @@ Plans:
 ### Phase 5: Stock & Catalogue
 **Goal**: Each magasin's stock is a derived balance over an append-only ledger, searchable the way a counter actually searches, with a client's special order tracked to pickup
 **Depends on**: Phase 3
-**Requirements**: STOCK-01, STOCK-02, STOCK-05, STOCK-06, STOCK-07
+**Requirements**: STOCK-01, STOCK-02, STOCK-05, STOCK-06, STOCK-07, STOCK-08
 **Success Criteria** (what must be TRUE):
   1. A user adds montures, accessoires and verres stockés to a magasin's stock with a reference and a price, and sees the current quantity on hand
   2. Every stock change is a ledger movement and the quantity is derived from those movements — there is no mutable quantity column to correct
   3. A user types an exact reference into search and presses Enter to land on the article, so a keyboard-wedge scanner will work later with no UI change
-  4. A user sets a réappro threshold on an article
+  4. A user sets a réappro threshold on an article, and can run a physical inventaire that posts counted-versus-recorded differences as stock ajustements
   5. A user moves a client's special order through commandé → prêt → client prévenu → livré and sees its current statut
 **Plans**: TBD
 **UI hint**: yes
@@ -107,7 +107,7 @@ Plans:
 ### Phase 6: Vente & Facturation
 **Goal**: The counter completes an itemised sale that produces a facture legally valid in Morocco every time — gapless, server-numbered, and never duplicated by a retry
 **Depends on**: Phase 4, Phase 5
-**Requirements**: FACT-01, FACT-02, FACT-03, FACT-04, FACT-05, FACT-06, FACT-08, FACT-11, FACT-12, LEGAL-05, STOCK-03, STOCK-04, PERM-07
+**Requirements**: FACT-01, FACT-02, FACT-03, FACT-04, FACT-05, FACT-06, FACT-08, FACT-11, FACT-12, FACT-13, FACT-14, LEGAL-05, STOCK-03, STOCK-04, PERM-07
 **Success Criteria** (what must be TRUE):
   1. A user completes a sale with monture and verres on separate priced lines, records the buyer's ICE and the vendeur who made it, and the facture is issued with a sequential number allocated server-side from a counter per client, série and exercice, carrying every mention obligatoire of art. 145 CGI
   2. Submitting the same sale twice produces one facture and one number; sales created concurrently produce a série with no gap and no duplicate
@@ -124,7 +124,7 @@ Plans:
 ### Phase 7: Paiements & Caisse
 **Goal**: Money taken at the counter — including a deposit now and the balance at pickup — lands as ledger lines in the right magasin's caisse, with a balance that is always derived
 **Depends on**: Phase 6
-**Requirements**: FACT-09, FACT-10, CAISSE-01, CAISSE-02, CAISSE-03, CAISSE-04, CAISSE-05
+**Requirements**: FACT-09, FACT-10, CAISSE-01, CAISSE-02, CAISSE-03, CAISSE-04, CAISSE-05, CAISSE-06, CAISSE-07, CAISSE-08
 **Success Criteria** (what must be TRUE):
   1. A user takes an acompte when the order is placed and records the balance at retrait, and the outstanding remainder stays visible on the sale until it is settled
   2. Every payment is an append-only ledger line carrying its payer and its payment mode — there is no scalar paid or acompte column anywhere
@@ -157,7 +157,7 @@ Plans:
 ### Phase 9: Branding & Documents Imprimés
 **Goal**: Each client's business appears under its own identity, on screen and on the paper it hands to customers and insurers
 **Depends on**: Phase 6, Phase 8
-**Requirements**: BRAND-01, BRAND-02, BRAND-03, BRAND-04, FACT-07
+**Requirements**: BRAND-01, BRAND-02, BRAND-03, BRAND-04, BRAND-05, FACT-07, STOCK-09
 **Success Criteria** (what must be TRUE):
   1. An owner uploads a logo and sets colors and the shop name, and the application UI for that client shows them
   2. A user prints a Facture A4 and a bon de commande, and both carry that client's branding
@@ -168,16 +168,17 @@ Plans:
 Plans:
 - [ ] 09-01: TBD
 
-### Phase 10: Rappels & Relances
-**Goal**: The system tells the shop what to do next — reorder this, pay that, call this client back — instead of waiting to be asked
+### Phase 10: Rappels, Relances & Tableau de Bord
+**Goal**: The system tells the shop what to do next — reorder this, pay that, call this client back — and shows the owner how the business is actually doing
 **Depends on**: Phase 7, Phase 8
-**Requirements**: RAPPEL-01, RAPPEL-02, RAPPEL-03, RAPPEL-04, RAPPEL-05
+**Requirements**: RAPPEL-01, RAPPEL-02, RAPPEL-03, RAPPEL-04, RAPPEL-05, DASH-01, DASH-02, DASH-03
 **Success Criteria** (what must be TRUE):
   1. An article that drops below its réappro threshold appears in a réappro reminder the user sees without searching for it
   2. The owner sees a reminder when a fournisseur payment échéance falls due
   3. A client due for a new ordonnance, new lenses or a contact lens re-order appears in a follow-up list
   4. A client appears in a relance AMO 23 months after their purchase — 11 months for a child aged 12 or under — noting they are reimbursable again
   5. From any reminder, one action opens a pre-filled WhatsApp message addressed to that client
+  6. The owner sees CA du jour and du mois per magasin and consolidated, marge brute, panier moyen, and the encours owed by clients and owed to fournisseurs
 **Plans**: TBD
 **UI hint**: yes
 
@@ -233,26 +234,26 @@ Phase 1 is a parallel calendar track: it starts first and stays open across late
 | 7. Paiements & Caisse | 0/TBD | Not started | - |
 | 8. Fournisseurs & Achats | 0/TBD | Not started | - |
 | 9. Branding & Documents Imprimés | 0/TBD | Not started | - |
-| 10. Rappels & Relances | 0/TBD | Not started | - |
+| 10. Rappels, Relances & Tableau de Bord | 0/TBD | Not started | - |
 | 11. Mobile Parity | 0/TBD | Not started | - |
 | 12. Self-Serve Subscription & Opérations Client | 0/TBD | Not started | - |
 
 ## Coverage
 
-All 76 v1 requirements map to exactly one phase. See the Traceability table in `.planning/REQUIREMENTS.md`.
+All 90 v1 requirements map to exactly one phase. See the Traceability table in `.planning/REQUIREMENTS.md`.
 
 | Phase | Requirements | Count |
 |-------|--------------|-------|
 | 1 | LEGAL-01, LEGAL-02, LEGAL-03 | 3 |
-| 2 | TENANT-01 … TENANT-08 | 8 |
+| 2 | TENANT-01 … TENANT-09 | 9 |
 | 3 | PERM-01 … PERM-06, APP-01, APP-03 | 8 |
-| 4 | CLIENT-01 … CLIENT-08 | 8 |
-| 5 | STOCK-01, STOCK-02, STOCK-05, STOCK-06, STOCK-07 | 5 |
-| 6 | FACT-01 … FACT-06, FACT-08, FACT-11, FACT-12, LEGAL-05, STOCK-03, STOCK-04, PERM-07 | 13 |
-| 7 | FACT-09, FACT-10, CAISSE-01 … CAISSE-05 | 7 |
+| 4 | CLIENT-01 … CLIENT-10 | 10 |
+| 5 | STOCK-01, STOCK-02, STOCK-05 … STOCK-08 | 6 |
+| 6 | FACT-01 … FACT-06, FACT-08, FACT-11 … FACT-14, LEGAL-05, STOCK-03, STOCK-04, PERM-07 | 15 |
+| 7 | FACT-09, FACT-10, CAISSE-01 … CAISSE-08 | 10 |
 | 8 | ACHAT-01 … ACHAT-07 | 7 |
-| 9 | BRAND-01 … BRAND-04, FACT-07 | 5 |
-| 10 | RAPPEL-01 … RAPPEL-05 | 5 |
+| 9 | BRAND-01 … BRAND-05, FACT-07, STOCK-09 | 7 |
+| 10 | RAPPEL-01 … RAPPEL-05, DASH-01 … DASH-03 | 8 |
 | 11 | APP-02 | 1 |
 | 12 | BILL-01 … BILL-05, LEGAL-04 | 6 |
-| **Total** | | **76** |
+| **Total** | | **90** |

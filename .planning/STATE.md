@@ -12,7 +12,7 @@ See: .planning/PROJECT.md (updated 2026-09-09)
 Phase: 1 of 12 (Legal & Compliance Track)
 Plan: 0 of TBD in current phase
 Status: Ready to plan
-Last activity: 2026-09-09 — Roadmap created, 76 v1 requirements mapped across 12 phases
+Last activity: 2026-09-11 — Stack decided (Django + DRF); scope widened after a competitor gap review: 90 v1 requirements mapped across 12 phases
 
 Progress: [░░░░░░░░░░] 0%
 
