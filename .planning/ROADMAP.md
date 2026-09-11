@@ -30,13 +30,15 @@ Decimal phases appear between their surrounding integers in numeric order.
 ### Phase 1: Legal & Compliance Track
 **Goal**: The filings whose lead time is measured in months are in flight from day one, and the hosting decision that gates storing any client data is made and documented
 **Depends on**: Nothing (first phase, runs in parallel with Phases 2-12)
-**Requirements**: LEGAL-01, LEGAL-02, LEGAL-03
+**Requirements**: LEGAL-01, LEGAL-02, LEGAL-03, LEGAL-06, LEGAL-07
 **Success Criteria** (what must be TRUE):
-  1. The CNDP prior-authorization dossier for processing ordonnances as health data is filed, and its reference and decision status are tracked in a record the operator can check
-  2. The hosting jurisdiction is chosen and its reasoning documented, and infrastructure lives in that jurisdiction before any real client data is stored
-  3. A merchant contract application is open with a Moroccan acquiring bank, and its expected lead time is recorded as a tracked project dependency with a date
+  1. The correct CNDP route is established — art. 12-1-a + art. 21 authorisation, or the art. 22 déclaration derogation — and the dossier is filed, with its reference and decision status tracked in a record the operator can check
+  2. It is established in writing whether the optician or the platform is responsable du traitement, because if each optician must file their own authorisation then self-serve signup cannot provision the ordonnance module
+  3. The hosting jurisdiction is chosen and its reasoning documented, and infrastructure lives in that jurisdiction before any real client data is stored
+  4. A merchant contract application is open with a Moroccan acquiring bank, and its expected lead time is recorded as a tracked project dependency with a date
+  5. A data processing agreement meeting art. 23 exists for opticians to sign, covering security, confidentiality and the sous-traitant relationship
 **Plans**: TBD
-**Research needed**: yes — the CNDP controller/processor split between the platform and the optician; also the vehicle for putting the four blocking facturation questions to a Moroccan comptable ahead of Phase 6
+**Research needed**: done for desk research — see `.planning/research/CNDP.md` (15 priority-ordered lawyer questions). What remains needs a Moroccan data-protection lawyer, not more searching. This phase is also the vehicle for putting the four blocking facturation questions to a comptable ahead of Phase 6.
 
 Plans:
 - [ ] 01-01: TBD
@@ -240,11 +242,11 @@ Phase 1 is a parallel calendar track: it starts first and stays open across late
 
 ## Coverage
 
-All 90 v1 requirements map to exactly one phase. See the Traceability table in `.planning/REQUIREMENTS.md`.
+All 92 v1 requirements map to exactly one phase. See the Traceability table in `.planning/REQUIREMENTS.md`.
 
 | Phase | Requirements | Count |
 |-------|--------------|-------|
-| 1 | LEGAL-01, LEGAL-02, LEGAL-03 | 3 |
+| 1 | LEGAL-01, LEGAL-02, LEGAL-03, LEGAL-06, LEGAL-07 | 5 |
 | 2 | TENANT-01 … TENANT-09 | 9 |
 | 3 | PERM-01 … PERM-06, APP-01, APP-03 | 8 |
 | 4 | CLIENT-01 … CLIENT-10 | 10 |
@@ -256,4 +258,4 @@ All 90 v1 requirements map to exactly one phase. See the Traceability table in `
 | 10 | RAPPEL-01 … RAPPEL-05, DASH-01 … DASH-03 | 8 |
 | 11 | APP-02 | 1 |
 | 12 | BILL-01 … BILL-05, LEGAL-04 | 6 |
-| **Total** | | **90** |
+| **Total** | | **92** |

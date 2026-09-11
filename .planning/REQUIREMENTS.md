@@ -13,7 +13,9 @@ Legend: every requirement is a hypothesis until shipped and validated.
 
 Calendar-driven work. Starts day one and runs in parallel with build — no amount of coding speed compresses it.
 
-- [ ] **LEGAL-01**: CNDP prior authorization for processing ordonnances as health data is filed, with the dossier tracked to a decision
+- [ ] **LEGAL-01**: The correct CNDP route for processing ordonnances as health data is established (art. 12-1-a + art. 21 authorisation, or the art. 22 déclaration derogation) and the filing is made, with the dossier tracked to a decision
+- [ ] **LEGAL-06**: It is established whether the optician or the platform is responsable du traitement, because if each optician must file their own authorisation then self-serve signup cannot provision the ordonnance module (blocks BILL-01)
+- [ ] **LEGAL-07**: A data processing agreement with each optician satisfying art. 23 (security and sous-traitant obligations) is in place before any client data is stored
 - [ ] **LEGAL-02**: Hosting jurisdiction is chosen and documented, with the reasoning recorded, before any client data is stored
 - [ ] **LEGAL-03**: A payment merchant contract is opened with a Moroccan acquiring bank, and its lead time is tracked as a project dependency
 - [ ] **LEGAL-04**: Client offboarding archives the client's data for the 10-year retention period instead of dropping their database
@@ -190,7 +192,7 @@ These block schema decisions and need a Moroccan comptable, the DGI, or optician
 
 **Needed before their phase, not blocking now:**
 5. DGI e-invoicing wave-3 date and threshold — reported January 2027, but the implementing décret was reportedly unpublished as of March 2026
-6. The CNDP controller/processor split between the platform and the optician
+6. The CNDP controller/processor split between the platform and the optician — see `.planning/research/CNDP.md` for 15 priority-ordered questions to put to a lawyer
 7. Whether Moroccan rails genuinely support recurring card-on-file — a vendor claim needing sandbox proof (blocks BILL-02)
 8. Payment-mode to caisse mapping, worth an hour with two or three real opticians (informs CAISSE-03)
 
@@ -200,13 +202,15 @@ These block schema decisions and need a Moroccan comptable, the DGI, or optician
 
 Every v1 requirement maps to exactly one phase. Source of truth for phase structure: `.planning/ROADMAP.md`.
 
-**Coverage: 90/90 requirements mapped — no orphans, no duplicates.**
+**Coverage: 92/92 requirements mapped — no orphans, no duplicates.**
 
 | Requirement | Phase |
 |-------------|-------|
 | LEGAL-01 | Phase 1 — Legal & Compliance Track |
 | LEGAL-02 | Phase 1 — Legal & Compliance Track |
 | LEGAL-03 | Phase 1 — Legal & Compliance Track |
+| LEGAL-06 | Phase 1 — Legal & Compliance Track |
+| LEGAL-07 | Phase 1 — Legal & Compliance Track |
 | LEGAL-04 | Phase 12 — Self-Serve Subscription & Opérations Client |
 | LEGAL-05 | Phase 6 — Vente & Facturation |
 | TENANT-01 | Phase 2 — Tenancy Foundation & Control Plane |

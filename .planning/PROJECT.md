@@ -21,7 +21,10 @@ The counter can complete a sale end to end — find or create the client, attach
 <!-- Current scope. Building toward these. -->
 
 **Legal & compliance — calendar time, starts day one**
-- [ ] CNDP prior authorization to process ordonnances as health data (law 09-08 art. 23), which is an authorization and not a declaration
+- [ ] CNDP filing to process ordonnances as health data — **art. 12-1-a + art. 21** (prior authorization). Not art. 23, which is the security and sous-traitant obligation. Whether **art. 22** applies instead — it puts health data under mere *déclaration* when the *sole* purpose is care, by a practitioner bound by professional secrecy — is unresolved and would change the timeline entirely.
+- [ ] Establish who files: statute reads the optician as responsable du traitement and us as sous-traitant, but a Moroccan software vendor holds a health-scoped authorisation in its own name (DabaDoc, A-436/2021). If each optician must file their own, self-serve signup is not legally coherent for the ordonnance module.
+- [ ] Decide whether to store a client's CIN at all — art. 12-1-e makes CIN storage trigger authorisation independently of health data
+- [ ] Check the rappels/relance module against art. 12-1-b and art. 54 (secondary use), since it is the likeliest part of the product to create an unexpected filing obligation
 - [ ] Hosting jurisdiction chosen early, since the CNDP filing depends on it and it is expensive to reverse
 - [ ] Payment merchant contract through a Moroccan acquiring bank — needs a registered company, weeks to months of lead time
 - [ ] Client data retained 10 years (art. 211 CGI): churn means archive-then-decommission, never dropping a client's database
@@ -142,7 +145,7 @@ The counter can complete a sale end to end — find or create the client, attach
 ## Constraints
 
 - **Legal — invoicing**: Moroccan TVA and a gapless, chronological, duplicate-free facture series (art. 145 CGI). Gaps are treatable as fraud, and this is the client's tax exposure caused by our software.
-- **Legal — health data**: ordonnances require CNDP prior authorization before processing, on a 2–4 month calendar
+- **Legal — health data**: ordonnances are sensitive data under law 09-08. The default route is prior authorization (art. 12-1-a + art. 21) on a reported 2–4 month calendar; the art. 22 derogation to a simple déclaration may or may not be open to opticians. Unresolved — see `.planning/research/CNDP.md`.
 - **Legal — retention**: 10 years (art. 211 CGI), which constrains offboarding and the cost model
 - **Locale**: MAD and French UI — drives formatting and vocabulary
 - **Connectivity**: the application requires a connection. Sale submission must still be idempotent, since a retried request on a flaky link must never mint a second facture number.
@@ -271,7 +274,9 @@ the `default` connection.
 
 **Resolve before the relevant phase, not blocking now:**
 - The DGI e-invoicing wave-3 date and threshold — reported January 2027 for businesses of this size, but the implementing décret was reportedly still unpublished as of March 2026
-- The CNDP controller/processor split between us and the optician
+- The CNDP controller/processor split between us and the optician — whether each optician must hold their own authorisation, which would break self-serve signup for the ordonnance module
+- Whether the art. 22 derogation (déclaration rather than authorisation) is open to an optician, which turns months into days
+- Whether CNDP model authorisation D-941-2025 for "traitements de suivi des patients" covers this shape of product
 - Whether Moroccan rails genuinely support recurring card-on-file — a vendor claim, needs sandbox proof
 - Payment-mode to caisse mapping, worth an hour with two or three real opticians
 

@@ -10,7 +10,7 @@ A multi-tenant SaaS for Moroccan opticians. One platform where an optician busin
 ### Constraints
 
 - **Legal — invoicing**: Moroccan TVA and a gapless, chronological, duplicate-free facture series (art. 145 CGI). Gaps are treatable as fraud, and this is the client's tax exposure caused by our software.
-- **Legal — health data**: ordonnances require CNDP prior authorization before processing, on a 2–4 month calendar
+- **Legal — health data**: ordonnances are sensitive data under law 09-08 — prior authorization is **art. 12-1-a + art. 21** (NOT art. 23, which is security/sous-traitant). Whether the art. 22 derogation to a simple déclaration applies, and whether the optician or the platform must file, are both unresolved: `.planning/research/CNDP.md`.
 - **Legal — retention**: 10 years (art. 211 CGI), which constrains offboarding and the cost model
 - **Locale**: MAD and French UI — drives formatting and vocabulary
 - **Connectivity**: the application requires a connection. Sale submission must still be idempotent, since a retried request on a flaky link must never mint a second facture number.
@@ -22,7 +22,7 @@ A multi-tenant SaaS for Moroccan opticians. One platform where an optician busin
 
 ## Scope & Status
 
-**90 v1 requirements across 12 phases.** Nothing is built yet — Phase 1 (legal filings, calendar-driven)
+**92 v1 requirements across 12 phases.** Nothing is built yet — Phase 1 (legal filings, calendar-driven)
 and Phase 2 (tenancy foundation) are next.
 
 - Requirements and full traceability: `.planning/REQUIREMENTS.md`
