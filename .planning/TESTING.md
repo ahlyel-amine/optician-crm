@@ -44,31 +44,37 @@ most valuable in the repository.
 
 ---
 
-## 3. The multi-tenant fixture — the part that needs designing
-
-Standard Django testing assumes every database alias is in `DATABASES` at startup. Ours are
-registered **at runtime**, so `pytest-django`'s normal setup knows nothing about them. This has to be
-solved deliberately, once, in `conftest.py`.
+## 3. The multi-tenant fixture
 
 **Provide two tenants, not one.** A single test tenant cannot prove isolation — with one tenant, a
 router bug that always returns the same alias passes every test. Every isolation test needs a second
 client whose data must *not* appear.
 
+**Declare both aliases statically in `config/settings/test.py`.** Production registers tenant
+connections at runtime, but tests do not have to imitate that. Two ordinary entries in `DATABASES`
+give you creation, migration, teardown, per-test transaction rollback and pytest-xdist worker
+suffixing for free.
+
+```python
+# config/settings/test.py
+DATABASES["tenant_a"] = {**DATABASES["default"], "NAME": "test_tenant_a"}
+DATABASES["tenant_b"] = {**DATABASES["default"], "NAME": "test_tenant_b"}
 ```
-@pytest.fixture(scope="session")
-def tenant_a(django_db_setup, django_db_blocker): ...   # provisioned, migrated, seeded
-@pytest.fixture(scope="session")
-def tenant_b(django_db_setup, django_db_blocker): ...   # the control
-```
 
-Session-scoped because provisioning a database per test is unaffordably slow; wrap per-test writes in
-transactions and roll back. Where a test genuinely needs a fresh database (provisioning failure paths,
-migration fan-out), let it pay the cost explicitly and mark it `slow`.
+Then ask for them per test with `@pytest.mark.django_db(databases=["default", "tenant_a", "tenant_b"])`.
 
-**Teardown must actually drop the test databases.** A crashed run that leaves `test_client_*`
-databases behind will make the next run's provisioning test fail for the wrong reason.
+**Do not override `django_db_setup`.** It looks like the obvious hook and it actively breaks
+pytest-xdist, because `django_db_modify_db_settings_xdist_suffix` runs *before* it — parallel workers
+then collide on the same database names. An earlier draft of this document recommended exactly that;
+it was wrong.
 
----
+**Runtime registration is tested separately, not used as the fixture.** Provisioning, alias
+registration and migration fan-out (TENANT-01, TENANT-03, TENANT-05) each need a real database created
+and dropped inside the test. Let those few tests pay that cost explicitly and mark them `slow`; do not
+make the whole suite pay it.
+
+**Teardown must actually drop what those tests create.** A crashed run leaving `test_client_*`
+databases behind makes the next run's provisioning test fail for the wrong reason.
 
 ## 4. Traps specific to this project
 

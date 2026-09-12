@@ -47,11 +47,16 @@ inside a phase plan — raise it instead.
 6. **Only the optician (owner) and gérants log in.** Floor vendeurs never sign in — a vendeur is a field
    on a sale. Permissions are granted per gérant individually, as data, not as role tiers.
 7. **Money is `Decimal`**, never float. TVA is per article, never a hardcoded global rate.
-8. **Tenant context fails closed** and is reset in a `finally`. A router returning `None` falls through
-   to `default`, which is a cross-client leak; worker threads are reused, so a missed reset leaks too.
+8. **Tenant context fails closed, and is cleared — not `reset()` — in a `finally`.**
+   `ContextVar.reset(token)` restores the *previous* value, so on a reused worker thread it
+   re-installs an earlier request's client. Verified. Use `set(_UNSET)` plus an assert-unset-on-entry
+   guard. A router returning `None` falls through to `default`, which is a cross-client leak.
 9. **The facture is itemised** — monture and verres on separate lines. AMO reimburses per line, so a
    single lump line under-reimburses the customer.
 10. **Devis, facture and avoir are one document model**, built together in Phase 6.
+11. **Never set `ATOMIC_REQUESTS = True`.** `BaseHandler.make_view_atomic()` iterates *every* alias in
+    `connections.settings` and wraps the view in `transaction.atomic(using=alias)` for each — with 300
+    clients registered that is 300 transactions per request. Use explicit `atomic()` blocks instead.
 
 ## Testing
 
@@ -116,12 +121,18 @@ There is no Django equivalent of `stancl/tenancy`. What you build:
 
 1. **Control plane** in the default database: `Client` with `db_name`, `db_host`, `db_port`, `db_user`,
    encrypted `db_password`, `status`, `schema_version`. `db_host` from day one.
-2. **Connection registry** — register a client's connection into `connections.databases` at runtime,
-   then `connections.ensure_defaults(alias)`. `CONN_MAX_AGE = 0` so PgBouncer owns pooling.
+2. **Connection registry** — build the alias config from
+   `copy.deepcopy(settings.DATABASES["default"])`, which has already been through
+   `configure_settings()` and carries every key `DatabaseWrapper` needs, then override NAME/HOST/etc.
+   **`connections.ensure_defaults()` and `prepare_test_settings()` were removed in Django 4.1** — do
+   not call them. `CONN_MAX_AGE = 0` so PgBouncer owns pooling. To evict an alias use
+   `connections[alias].close()` then `del connections[alias]`; **never** `del
+   connections.settings[alias]`, which orphans an open socket because `close_old_connections`
+   iterates `settings`.
 3. **Router** — `db_for_read`/`db_for_write` read the alias from a `contextvar` and **raise** when none
    is bound. Returning `None` falls through to `default`, which is a silent cross-client leak.
    `allow_migrate` keeps control-plane apps on `default` and business apps off it.
-4. **Middleware** — resolve client, set the contextvar, and **reset it in a `finally`**. Worker threads
+4. **Middleware** — resolve client, set the contextvar, and **clear it in a `finally`**. Worker threads
    are reused, so a missed reset means the next request reads the previous client's database. This is
    the single highest-risk line in the layer.
 5. **Provisioning** — `CREATE DATABASE` cannot run inside a transaction block, so this is a status
