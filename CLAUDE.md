@@ -54,7 +54,12 @@ inside a phase plan — raise it instead.
 9. **The facture is itemised** — monture and verres on separate lines. AMO reimburses per line, so a
    single lump line under-reimburses the customer.
 10. **Devis, facture and avoir are one document model**, built together in Phase 6.
-11. **Never set `ATOMIC_REQUESTS = True`.** `BaseHandler.make_view_atomic()` iterates *every* alias in
+11. **User accounts live in the control-plane database, with one shared login address.** Django needs
+    `auth`/`contenttypes`/`admin` in a single database, and self-serve signup creates an account before
+    the client database exists. The dividing line: the **control plane holds identity, business
+    membership and permission grants**; the **client database holds all business data**, ordonnances
+    included. Isolation is about the health and commercial data, not the login row.
+12. **Never set `ATOMIC_REQUESTS = True`.** `BaseHandler.make_view_atomic()` iterates *every* alias in
     `connections.settings` and wraps the view in `transaction.atomic(using=alias)` for each — with 300
     clients registered that is 300 transactions per request. Use explicit `atomic()` blocks instead.
 
