@@ -244,6 +244,8 @@ Three tiers, four billing periods. The monthly rate is the anchor; longer commit
 
 Discount ladder: monthly 0%, 3 months −4%, 6 months −10%, 12 months −20% (two months free).
 
+**All prices are HT (hors taxe).** TVA at 20% is added on top and the optician reclaims it, so it costs them nothing; quoting TTC instead would cost us a sixth of revenue. Display both — "250 HT / 300 TTC" — rather than letting a competitor's TTC sticker look cheaper by omission. Confirm the 20% rate on a SaaS subscription with the comptable.
+
 **Essentiel** carries everything operational — clients, ordonnances structurées, stock, ventes,
 facture A4 conforme art. 145, devis, avoir, acompte, caisse, fournisseurs et achats, **prix d'achat et
 marge**, and all rappels including the relance AMO. One owner, one gérant.
@@ -272,6 +274,7 @@ more than it needs early revenue.
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
+| Prices quoted HT, not TTC | Opticians are businesses and reclaim TVA, so HT costs them nothing while TTC pricing would cost us ~17% of revenue | — Pending |
 | Three tiers by magasin count, four billing periods | Magasin count is the axis on which the product's value actually scales, and it upgrades naturally as a shop grows rather than feeling extracted | — Pending |
 | Annual billing discounted 20% against monthly | Every Moroccan competitor prices yearly, annual means cash up front for a solo developer, and it minimises payment events while recurring card-on-file is still unproven on Moroccan rails | — Pending |
 | Monthly billing ships only once recurring card-on-file is proven in sandbox | Without reliable recurring payment, monthly billing means chasing dozens of shops every month — an operational load one person cannot carry | — Pending |
