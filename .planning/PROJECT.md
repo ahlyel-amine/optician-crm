@@ -229,12 +229,52 @@ the `default` connection.
 - Sale creation must be idempotent so a retried request cannot mint a second facture number.
 - Verify PgBouncer transaction pooling against the driver's prepared statements early, in Compose.
 
+## Pricing
+
+Provisional — set from competitor pricing in `.planning/research/FEATURES.md`, **not yet validated with
+a real optician**. Validate with two or three shops before Phase 12 builds against it.
+
+Three tiers, four billing periods. The monthly rate is the anchor; longer commitments discount off it.
+
+| Tier | Magasins | Monthly | 3 months | 6 months | 12 months |
+|------|----------|---------|----------|----------|-----------|
+| **Essentiel** | 1 | 250 MAD/mo | 720 MAD (240/mo) | 1 350 MAD (225/mo) | **2 400 MAD (200/mo)** |
+| **Pro** | up to 3 | 500 MAD/mo | 1 440 MAD (480/mo) | 2 700 MAD (450/mo) | **4 800 MAD (400/mo)** |
+| **Chaîne** | unlimited | 1 250 MAD/mo | 3 600 MAD (1 200/mo) | 6 750 MAD (1 125/mo) | **12 000 MAD (1 000/mo)** |
+
+Discount ladder: monthly 0%, 3 months −4%, 6 months −10%, 12 months −20% (two months free).
+
+**Essentiel** carries everything operational — clients, ordonnances structurées, stock, ventes,
+facture A4 conforme art. 145, devis, avoir, acompte, caisse, fournisseurs et achats, **prix d'achat et
+marge**, and all rappels including the relance AMO. One owner, one gérant.
+
+**Pro** adds the tableau de bord, consolidated multi-magasin views, per-gérant custom permissions,
+unlimited gérants, inventaire and étiquettes.
+
+**Chaîne** adds unlimited magasins, priority support and migration assistance.
+
+One month free trial on every tier.
+
+**Two rules that are not negotiable per tier:**
+- **Legal compliance is never gated.** The art. 145-conforme facture and gapless numbering are in every
+  tier. Selling a cheaper version that exposes a client to the DGI is both wrong and a support burden.
+- **Prix d'achat and marge stay in the entry tier.** Margin visibility is why an owner buys optician
+  software at all; gating it would hollow out Essentiel. Tiers separate on magasin count and staff
+  management — things that only start to matter as a shop grows.
+
+**Launch offer:** the first ten shops pay half price for year one, locked for life, in exchange for
+feedback and a citable reference. An unproven product against a twenty-year incumbent needs references
+more than it needs early revenue.
+
 ## Key Decisions
 
 <!-- Decisions that constrain future work. Add throughout project lifecycle. -->
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
+| Three tiers by magasin count, four billing periods | Magasin count is the axis on which the product's value actually scales, and it upgrades naturally as a shop grows rather than feeling extracted | — Pending |
+| Annual billing discounted 20% against monthly | Every Moroccan competitor prices yearly, annual means cash up front for a solo developer, and it minimises payment events while recurring card-on-file is still unproven on Moroccan rails | — Pending |
+| Monthly billing ships only once recurring card-on-file is proven in sandbox | Without reliable recurring payment, monthly billing means chasing dozens of shops every month — an operational load one person cannot carry | — Pending |
 | Hosting jurisdiction — leaning EU, not yet committed | No Moroccan provider advertises managed PostgreSQL, and self-operating it costs ~3–5 weeks plus 15–20 h/month forever. Two cheap checks could reverse it: managed Postgres in Oracle's new Casablanca region, or a décret that mandates local hosting. Latency is not a factor (Casablanca→Paris ~22–35 ms against a ~40 ms last-mile floor). | — Pending |
 | Devis, facture and avoir built as one document model | The research rates devis P1 precisely because the three share a model — cheap together in Phase 6, expensive bolted on later | — Pending |
 | Chèque carries a date d'échéance and is not cash until encaissé | Post-dated chèques are heavily used by Moroccan SMEs. Counting one as cash the day it is taken makes the caisse balance lie, which breaks the one thing the caisse is for. | — Pending |

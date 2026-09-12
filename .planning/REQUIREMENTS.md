@@ -139,7 +139,7 @@ Owner-facing reporting. Deliberately not a BI tool.
 ### Subscription & Self-Serve (BILL)
 
 - [ ] **BILL-01**: An optician can sign up, and a trial of their business is provisioned automatically
-- [ ] **BILL-02**: An optician can subscribe and pay through a Moroccan payment method
+- [ ] **BILL-02**: An optician can subscribe to a tier and a billing period (monthly, 3, 6 or 12 months) and pay through a Moroccan payment method. Monthly is offered only where recurring card-on-file is proven to work; otherwise the shorter periods are one-off payments with a renewal prompt.
 - [ ] **BILL-03**: Payment gateway integration sits behind an interface, so a second gateway can be added without touching billing logic
 - [ ] **BILL-04**: A subscription that lapses restricts access without destroying the client's data
 - [ ] **BILL-05**: An operator can see the status of every client business and its subscription
