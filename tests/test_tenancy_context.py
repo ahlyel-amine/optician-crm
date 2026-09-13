@@ -14,7 +14,95 @@ All imports of `plateforme.tenancy.*` are function-local so that a missing modul
 per-test failure rather than a collection error.
 """
 
+import contextvars
+
 import pytest
+
+
+def test_tenant04_clear_does_not_restore_an_earlier_value():
+    """`clear()` unbinds. It does not restore whatever was bound before — that is the bug.
+
+    `bind("tenant_a")`, then `bind("tenant_b")`, then `clear()`: the context must end
+    **unbound**, not back on `tenant_a`.
+
+    The second half of this test is the contrast, asserted explicitly so that nobody
+    "simplifies" `clear()` back into `reset(token)`: on a raw `ContextVar`,
+    `cv.set("LEAKED"); tok = cv.set("current"); cv.reset(tok)` leaves `"LEAKED"` bound.
+    On a reused worker thread already carrying a leak from an earlier request, a
+    `finally: reset(token)` therefore re-installs that leak, faithfully and silently.
+
+    `CLAUDE.md` non-negotiable #8, as corrected: `set(_UNSET)` plus an
+    assert-unset-on-entry guard, never `reset(token)`.
+    """
+    from plateforme.tenancy.context import (
+        NoTenantBound,
+        bind,
+        clear,
+        current_alias,
+        is_bound,
+    )
+
+    bind("tenant_a")
+    bind("tenant_b")
+    clear()
+
+    assert is_bound() is False, (
+        "clear() left the context bound. Almost certainly it was implemented as "
+        "reset(token), which restores the previous value instead of unbinding."
+    )
+    with pytest.raises(NoTenantBound):
+        current_alias()
+
+    # The contrast. This is what `clear()` must NOT do.
+    raw = contextvars.ContextVar("leak_demo")
+    raw.set("LEAKED")
+    token = raw.set("current")
+    raw.reset(token)
+    assert raw.get() == "LEAKED", (
+        "ContextVar.reset(token) is expected to restore the *previous* value. If this "
+        "assertion ever fails, CPython changed and the reasoning in context.py should "
+        "be re-derived from scratch rather than adjusted."
+    )
+
+
+def test_tenant04_current_alias_raises_when_unbound():
+    """`current_alias()` raises on a fresh context. Not None, not "default".
+
+    Returning `None` would make `db_for_read` return `None`, and Django's
+    `ConnectionRouter._router_func` falls through to `DEFAULT_DB_ALIAS` when every router
+    declines — a silent read of the control-plane database with another client's query
+    (threat T-02-14). Returning `"default"` would be the same leak, written down.
+    """
+    from plateforme.tenancy.context import NoTenantBound, clear, current_alias, is_bound
+
+    clear()
+    assert is_bound() is False
+    with pytest.raises(NoTenantBound):
+        current_alias()
+
+
+def test_tenant04_tenant_context_scope_restores_the_outer_scope():
+    """Nested `tenant_context` scopes restore the outer alias; the outermost exits unbound.
+
+    This is the one place where restoring the previous value is *correct*, and the
+    distinction from request teardown is worth stating: a nested scope is a lexical
+    construct whose caller genuinely had a valid alias bound, whereas a request's
+    `finally` runs on a thread that is about to be handed to a stranger.
+    """
+    from plateforme.tenancy.context import clear, current_alias, is_bound, tenant_context
+
+    clear()
+    with tenant_context("tenant_a"):
+        assert current_alias() == "tenant_a"
+        with tenant_context("tenant_b"):
+            assert current_alias() == "tenant_b"
+        assert current_alias() == "tenant_a", (
+            "Exiting a nested scope did not restore the outer alias."
+        )
+    assert is_bound() is False, (
+        "Exiting the outermost scope left the context bound. The scope entered from "
+        "unbound, so it must exit to unbound."
+    )
 
 
 @pytest.mark.pending
