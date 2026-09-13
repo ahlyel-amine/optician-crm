@@ -240,3 +240,189 @@ def test_tenant04_new_business_apps_are_classified():
         router_module.BUSINESS_APPS = original
 
     call_command("check")
+
+
+# --------------------------------------------------------------------------------------
+# TENANT-07, provisioning half
+# --------------------------------------------------------------------------------------
+def _destroy(code: str) -> None:
+    """Drop what a test provisioned, by exact name. See tests/test_provisioning.py."""
+    from django.conf import settings
+    from django.db import connections
+    from psycopg import sql
+
+    from plateforme.control_plane.models import Client
+    from plateforme.tenancy.maintenance import drop_database_force, maintenance_connection
+    from plateforme.tenancy.registry import alias_for
+
+    client = Client.objects.using("default").filter(code=code).first()
+    if client is None:
+        return
+    alias = alias_for(client.pk)
+    if alias in connections.settings:
+        try:
+            connections[alias].close()
+            del connections[alias]
+        except (AttributeError, KeyError):
+            pass
+    with maintenance_connection() as cur:
+        if client.db_name:
+            assert client.db_name.startswith(settings.TENANT_DB_NAME_PREFIX)
+            drop_database_force(cur, client.db_name)
+        if client.db_user:
+            assert client.db_user.startswith(settings.TENANT_DB_USER_PREFIX)
+            cur.execute(
+                sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(client.db_user))
+            )
+    Client.objects.using("default").filter(pk=client.pk).delete()
+
+
+@pytest.mark.slow
+@pytest.mark.django_db(transaction=True)
+def test_tenant07_provisioning_seeds_requested_magasins(allow_runtime_tenant_aliases):
+    """Three `--magasin` arguments produce exactly three magasins in that client's database.
+
+    **And none of them in a second client's**, which is why there are two clients here.
+    `.planning/TESTING.md` §3: a single tenant cannot prove isolation — with one client, a
+    seeding bug that wrote to whatever connection happened to be bound would pass.
+    """
+    from plateforme.control_plane.provisioning import provision_client
+    from plateforme.tenancy.context import tenant_context
+    from plateforme.tenancy.registry import alias_for
+
+    from domaine.magasins.models import Magasin
+
+    code_a, code_b = "test-mag-a", "test-mag-b"
+    try:
+        a = provision_client(
+            code=code_a,
+            raison_sociale="Optique Multi SARL",
+            magasins=["Centre", "Maarif", "Gueliz"],
+        )
+        b = provision_client(
+            code=code_b, raison_sociale="Optique Solo SARL", magasins=["Agdal"]
+        )
+
+        with tenant_context(alias_for(a.pk)):
+            rows = list(Magasin.objects.order_by("nom"))
+            assert [m.nom for m in rows] == ["Centre", "Gueliz", "Maarif"]
+            codes = [m.code for m in rows]
+            assert len(set(codes)) == 3, f"magasin codes are not distinct: {codes}"
+
+        with tenant_context(alias_for(b.pk)):
+            noms = set(Magasin.objects.values_list("nom", flat=True))
+            assert noms == {"Agdal"}, (
+                f"client B's database contains {sorted(noms)}. Client A's magasins leaked "
+                "across the isolation boundary."
+            )
+    finally:
+        _destroy(code_a)
+        _destroy(code_b)
+
+
+@pytest.mark.slow
+@pytest.mark.django_db(transaction=True)
+def test_tenant07_provisioning_with_no_magasin_is_refused(allow_runtime_tenant_aliases):
+    """A client with zero magasins cannot sell anything, so it never reaches ACTIVE.
+
+    Letting one exist produces a broken account that *looks* provisioned — the worst
+    shape, because nothing alerts anyone until the counter tries to take a sale.
+
+    The rule lives in `seed_new_client`, not in the management command, so the Phase 12
+    self-serve signup inherits it. Asserted here against the function, which is what
+    self-serve calls.
+    """
+    from plateforme.control_plane.models import Client
+    from plateforme.control_plane.provisioning import provision_client
+    from plateforme.control_plane.seeding import SeedError
+
+    code = "test-nomag"
+    try:
+        with pytest.raises(SeedError, match="at least one magasin"):
+            provision_client(code=code, raison_sociale="Optique Nomag", magasins=[])
+
+        client = Client.objects.using("default").get(code=code)
+        assert client.status == Client.FAILED
+        assert not Client.objects.using("default").filter(
+            code=code, status__in=Client.ROUTABLE_STATUSES
+        ).exists()
+    finally:
+        _destroy(code)
+
+
+@pytest.mark.tenancy
+def test_tenant07_seeding_is_idempotent(tenant_a):
+    """Seeding twice creates no duplicates. Provisioning must be safe to rerun after a kill.
+
+    The seed step is the one that would otherwise duplicate: `migrate` is idempotent
+    through `django_migrations`, `CREATE DATABASE` is guarded, activation is one UPDATE.
+    Idempotency here rests on the magasin code being **deterministically derived** from
+    the name, so the second run's `get_or_create` matches rather than inserting
+    (threat T-02-42).
+    """
+    from plateforme.control_plane.seeding import seed_new_client
+
+    from domaine.magasins.models import Magasin
+    from tests.factories import ClientFactory
+
+    client = ClientFactory(code="seedtwice")
+    names = ["Centre", "Maarif"]
+
+    seed_new_client(client, names)
+    first = sorted(Magasin.objects.values_list("code", flat=True))
+    assert len(first) == 2
+
+    seed_new_client(client, names)
+    second = sorted(Magasin.objects.values_list("code", flat=True))
+
+    assert second == first, (
+        f"rerunning the seed changed the magasins from {first} to {second}. Either a "
+        "blind create() crept in, or the code derivation is not deterministic."
+    )
+
+
+@pytest.mark.tenancy
+def test_tenant07_magasin_codes_are_unique_within_the_client(tenant_a):
+    """`code` is unique inside the database, which is inside the client.
+
+    The isolation boundary makes a globally unique code unnecessary *and wrong*: two
+    different opticians may each have a magasin called `CENTRE`, and a global constraint
+    would make the second one unprovisionable.
+    """
+    from django.db import IntegrityError, transaction
+
+    from domaine.magasins.models import Magasin
+
+    Magasin.objects.create(code="DUP01", nom="Premier")
+
+    with pytest.raises(IntegrityError):
+        # Inside its own atomic block so the outer test transaction survives the error.
+        with transaction.atomic(using="tenant_a"):
+            Magasin.objects.create(code="DUP01", nom="Second")
+
+    assert Magasin.objects.filter(code="DUP01").count() == 1
+
+
+@pytest.mark.tenancy
+def test_tenant07_magasin_codes_are_derived_deterministically(tenant_a):
+    """The same names always produce the same codes, and collisions are resolved stably.
+
+    This is the mechanism idempotency rests on, so it gets its own test rather than being
+    inferred from the idempotency one. Accents and spaces are normalised; two names that
+    slugify identically are de-duplicated with a numeric suffix rather than colliding.
+    """
+    from plateforme.control_plane.seeding import _magasin_specs
+
+    once = _magasin_specs(["Centre Ville", "Gueliz", "Centre-Ville"])
+    twice = _magasin_specs(["Centre Ville", "Gueliz", "Centre-Ville"])
+    assert once == twice, "code derivation is not deterministic"
+
+    codes = [s["code"] for s in once]
+    assert len(set(codes)) == 3, f"collision was not resolved: {codes}"
+    assert codes[0] == "CENTREVILLE"
+    assert codes[2] != codes[0]
+    assert all(len(c) <= 20 for c in codes), codes
+
+    # An explicit code is honoured rather than derived.
+    explicit = _magasin_specs([{"code": "mag-1", "nom": "Centre"}])
+    assert explicit == [{"code": "MAG-1", "nom": "Centre"}]
