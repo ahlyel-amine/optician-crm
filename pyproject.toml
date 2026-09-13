@@ -49,8 +49,10 @@ override-dependencies = ["django>=6.1,<6.2"]
 DJANGO_SETTINGS_MODULE = "config.settings.test"
 python_files = ["test_*.py"]
 testpaths = ["tests"]
-# --strict-markers: a typo in a marker name must fail collection. Without it,
-# `-m "not slwo"` silently selects nothing and the suite is green by accident.
+# --strict-markers: applying an undeclared marker (@pytest.mark.slwo) fails collection
+# instead of silently registering a marker nobody ever selects on. Note this guards
+# markers applied to tests, not `-m` expressions: `-m "not slwo"` still matches
+# everything, so marker names in the documented run commands must be typed carefully.
 addopts = "-ra --strict-markers"
 markers = [
     "slow: real DDL, pg_dump or pg_restore; runs against Compose, not in the quick loop",

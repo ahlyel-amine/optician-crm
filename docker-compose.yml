@@ -1,0 +1,105 @@
+# Local topology, deliberately identical in shape to production:
+# PostgreSQL 18 + PgBouncer 1.25 in transaction mode + Redis 8.
+#
+# The pooling layer is not optional scenery. Transaction pooling is what makes
+# database-per-client affordable, and it breaks things (server-side cursors, connect-time
+# session SQL) that a direct connection would hide. Testing against a direct connection
+# would mean testing a configuration we will never ship.
+#
+# Host ports avoid 8000 (occupied by an unrelated container), 5432-5434 and 6379, all of
+# which are in use on the development machine. Every published port binds to 127.0.0.1
+# only, so the superuser-capable PostgreSQL port is not offered to the local network.
+
+name: optique
+
+services:
+  db:
+    image: postgres:18
+    # -c timezone=UTC is load-bearing, not cosmetic. Django's _configure_timezone issues
+    # SET TIMEZONE only when the server's reported TimeZone differs from TIME_ZONE. Under
+    # transaction pooling that SET would land on a server connection which then returns to
+    # the pool still carrying it (threat T-02-02). Matching the two means zero session SQL
+    # at connect; log_statement=all is how we prove it.
+    #
+    # No LC_COLLATE / locale plumbing here: the stock image generates only en_US.utf8, so
+    # client databases are created with the ICU provider instead, which carries its own
+    # locale data. See TENANT_DB_* in config/settings/base.py.
+    command: >-
+      postgres
+      -c timezone=UTC
+      -c log_statement=all
+      -c max_connections=200
+    environment:
+      POSTGRES_PASSWORD: ${PG_ADMIN_PASSWORD:-postgres_dev_only}
+      POSTGRES_DB: postgres
+    ports:
+      - "127.0.0.1:5435:5432"
+    volumes:
+      # PostgreSQL 18+ images store data in a major-version-specific subdirectory so that
+      # `pg_upgrade --link` does not straddle a mount boundary. The mount therefore goes
+      # at /var/lib/postgresql, NOT the /var/lib/postgresql/data of earlier images —
+      # mounting the old path makes postgres:18 refuse to start.
+      # See https://github.com/docker-library/postgres/pull/1259
+      - pgdata:/var/lib/postgresql
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.25.2-p0
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./docker/pgbouncer:/etc/pgbouncer:ro
+    ports:
+      - "127.0.0.1:6433:6432"
+    healthcheck:
+      test: ["CMD-SHELL", "pgbouncer --version > /dev/null && nc -z 127.0.0.1 6432"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 3s
+
+  redis:
+    image: redis:8
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "127.0.0.1:6380:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # Not started by `docker compose up -d` — there is no application to serve yet. It is
+  # declared now so the image builds in CI and the host port is reserved:
+  #   docker compose --profile app up -d --build
+  app:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.local
+      PGBOUNCER_HOST: pgbouncer
+      PGBOUNCER_PORT: "6432"
+      PG_ADMIN_HOST: db
+      PG_ADMIN_PORT: "5432"
+    ports:
+      - "127.0.0.1:8010:8000"
+
+volumes:
+  pgdata:
+  redisdata:

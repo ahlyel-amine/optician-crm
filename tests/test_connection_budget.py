@@ -52,6 +52,54 @@ def test_tenant08_server_side_cursors_are_disabled():
         )
 
 
+def test_tenant08_pgbouncer_holds_no_idle_connections_per_idle_client():
+    """The PgBouncer half of TENANT-08. Parses the ini; needs no running container."""
+    config = configparser.ConfigParser()
+    read = config.read(PGBOUNCER_INI)
+    assert read, f"{PGBOUNCER_INI} not found — the pooling topology is not configured."
+
+    pgb = config["pgbouncer"]
+
+    assert pgb.get("pool_mode") == "transaction", (
+        f"pool_mode is {pgb.get('pool_mode')!r}, must be 'transaction'. Session pooling "
+        "holds one server connection per client connection for the whole session, which "
+        "is the connection budget we are specifically trying not to have."
+    )
+
+    assert int(pgb.get("min_pool_size")) == 0, (
+        f"min_pool_size is {pgb.get('min_pool_size')!r}, must be 0. Pools are keyed by "
+        "(user, database), so N client databases means N pools. Any value above zero "
+        "makes every *idle* client hold that many server connections, turning the budget "
+        "from O(concurrency) into O(client_count): 300 clients x 5 = 1500 server "
+        "connections against a max_connections of 200 (TENANT-08, threat T-02-01)."
+    )
+
+    assert int(pgb.get("max_client_conn")) >= 1000, (
+        f"max_client_conn is {pgb.get('max_client_conn')!r}, must be >= 1000. It has to "
+        "exceed peak app concurrency (gunicorn workers x threads, plus Celery "
+        "concurrency) with generous margin, or requests queue at the pooler."
+    )
+
+    databases = config["databases"]
+
+    assert "*" in databases, (
+        "The [databases] section has no bare '*' fallback entry. Without it every newly "
+        "provisioned client database needs a PgBouncer config change and a reload before "
+        "it can be reached."
+    )
+
+    # The official documentation defines only the bare `*` fallback. Prefix wildcards
+    # such as `tenant_* = ...` appear in blog posts only; one that silently fails to match
+    # would fall through to a different entry and route a tenant to the wrong database
+    # (threat T-02-06).
+    starred = [key for key in databases if "*" in key and key != "*"]
+    assert not starred, (
+        f"[databases] contains undocumented wildcard key(s): {starred}. PgBouncer "
+        "documents only the bare '*' fallback. A prefix wildcard is not guaranteed to "
+        "match and would route a client database to the wrong entry (threat T-02-06)."
+    )
+
+
 @pytest.mark.slow
 @pytest.mark.pending
 def test_tenant08_connection_count_does_not_scale_with_alias_count():

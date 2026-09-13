@@ -43,8 +43,9 @@ Markers:
 | `tenancy` | Needs both the `tenant_a` and `tenant_b` aliases. |
 | `pending` | The named test exists but its implementation has not landed. The plan that implements it removes the marker. |
 
-`--strict-markers` is on, so a typo in a marker name fails collection rather than silently
-selecting nothing.
+`--strict-markers` is on, so applying an undeclared marker to a test fails collection. It does
+**not** validate `-m` expressions — `-m "not slwo"` silently matches everything — so copy the
+run commands above rather than retyping them.
 
 ## Compose host ports
 
