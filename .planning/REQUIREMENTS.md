@@ -24,9 +24,9 @@ Calendar-driven work. Starts day one and runs in parallel with build — no amou
 ### Tenancy & Control Plane (TENANT)
 
 - [ ] **TENANT-01**: A new client business is provisioned with its own database by a single repeatable operation
-- [ ] **TENANT-02**: A control plane records every client database, its host, and its current schema version
+- [x] **TENANT-02**: A control plane records every client database, its host, and its current schema version
 - [ ] **TENANT-03**: A schema migration is applied across every client database, and the operator can see which clients succeeded, failed, or are behind
-- [ ] **TENANT-04**: Any code executing without a resolved client context fails immediately rather than falling back to a shared connection
+- [x] **TENANT-04**: Any code executing without a resolved client context fails immediately rather than falling back to a shared connection
 - [ ] **TENANT-05**: A failed provisioning attempt leaves no half-created client — the operation either completes or rolls back cleanly
 - [ ] **TENANT-06**: An operator can onboard an optician manually, using the same provisioning path the self-serve flow will call
 - [ ] **TENANT-07**: A client business can have several magasins, and stock and caisse are scoped to a magasin within that client's database

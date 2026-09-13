@@ -58,8 +58,8 @@ Plans:
 
 Plans:
 - [x] 02-01-PLAN.md — Repository scaffold, pinned stack, settings, Compose + PgBouncer topology (TENANT-08)
-- [ ] 02-02-PLAN.md — Control-plane Client model, Magasin base, conftest/factories and the Wave 0 named tests (TENANT-02)
-- [ ] 02-03-PLAN.md — Fail-closed tenancy layer: contextvar, registry, router, system check, middleware, Celery task base (TENANT-04)
+- [x] 02-02-PLAN.md — Control-plane Client model, Magasin base, conftest/factories and the Wave 0 named tests (TENANT-02)
+- [x] 02-03-PLAN.md — Fail-closed tenancy layer: contextvar, registry, router, system check, middleware, Celery task base (TENANT-04)
 - [ ] 02-04-PLAN.md — Provisioning state machine, DatabaseProvisioner interface, operator commands (TENANT-01, TENANT-05, TENANT-06)
 - [ ] 02-05-PLAN.md — Migration fan-out `migrate_all` and the migration-authoring conventions (TENANT-03)
 - [ ] 02-06-PLAN.md — Multi-magasin provisioning and magasin-scoped stock/caisse ledgers (TENANT-07)
@@ -235,7 +235,7 @@ Phase 1 is a parallel calendar track: it starts first and stays open across late
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Legal & Compliance Track | 0/TBD | Not started | - |
-| 2. Tenancy Foundation & Control Plane | 1/7 | In Progress|  |
+| 2. Tenancy Foundation & Control Plane | 3/7 | In Progress|  |
 | 3. Comptes, Permissions & App Shell | 0/TBD | Not started | - |
 | 4. Clients & Ordonnances | 0/TBD | Not started | - |
 | 5. Stock & Catalogue | 0/TBD | Not started | - |

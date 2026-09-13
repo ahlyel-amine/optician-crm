@@ -1,3 +1,19 @@
+---
+gsd_state_version: 1.0
+milestone: v1.0
+milestone_name: milestone
+status: executing
+stopped_at: Completed 02-02 and 02-03. Tenancy core is green. Paused before 02-04 (provisioning) for user review, as instructed.
+last_updated: "2026-09-13T17:27:03.586Z"
+last_activity: 2026-09-13
+progress:
+  total_phases: 12
+  completed_phases: 0
+  total_plans: 7
+  completed_plans: 3
+  percent: 43
+---
+
 # Project State
 
 ## Project Reference
@@ -10,15 +26,16 @@ See: .planning/PROJECT.md (updated 2026-09-09)
 ## Current Position
 
 Phase: 2 of 12 (Tenancy Foundation & Control Plane)
-Plan: 1 of 7 complete in current phase
-Status: Wave 1 complete — paused for user review before Wave 2 (02-02)
-Last activity: 2026-09-13 — 02-01 executed: repository bootstrapped on Python 3.13.7 / Django 6.1.1 with an exactly-pinned stack, Compose topology up (PostgreSQL 18 + PgBouncer 1.25.2 transaction mode + Redis 8), TENANT-08 connection-budget invariants asserted and green
+Plan: 3 of 7 complete in current phase (02-01, 02-02, 02-03; next is 02-04)
+Status: Paused for review before provisioning creates real client databases
+Last activity: 2026-09-13
 
-Progress: [█░░░░░░░░░] 1%
+Progress: [████░░░░░░] 43%
 
 ## Performance Metrics
 
 **Velocity:**
+
 - Total plans completed: 1
 - Average duration: ~1 session
 - Total execution time: ~1 session
@@ -30,10 +47,13 @@ Progress: [█░░░░░░░░░] 1%
 | 2 | 1 of 7 | 1 session | 1 session |
 
 **Recent Trend:**
+
 - Last 5 plans: —
 - Trend: —
 
 *Updated after each plan completion*
+| Phase 2 P02 | 1 session | 3 tasks | 17 files |
+| Phase 2 P03 | 1 session | 3 tasks | 18 files |
 
 ## Accumulated Context
 
@@ -52,6 +72,14 @@ Recent decisions affecting current work:
 - [02-01]: Client databases use the PostgreSQL 18 ICU locale provider (`LOCALE_PROVIDER icu ICU_LOCALE 'fr-FR'` with `TEMPLATE template0`), not an OS locale — the stock postgres image generates only `en_US.utf8`
 - [02-01]: Compose host ports 5435 / 6433 / 6380 / 8010, all bound to 127.0.0.1 (8000, 5432-5434 and 6379 are occupied on the dev machine)
 - [Roadmap]: Phase 1 is a parallel calendar track — only LEGAL-02 (hosting jurisdiction) gates build work
+- [Phase 02-02]: CheckConstraint takes condition= on Django 6.1.1; check= is removed, not merely deprecated (research assumption A6 resolved)
+- [Phase 02-02]: Client.connection_params(direct=False) uses the row's db_host/db_port (PgBouncer); direct=True swaps in PG_ADMIN_* for DDL, migrations and pg_dump
+- [Phase 02-02]: The session-start stale-database reaper is skipped inside pytest-xdist workers, so one worker cannot drop another's test databases
+- [Phase 02-03]: clear() is set(_UNSET); the token-based ContextVar undo appears nowhere under plateforme/tenancy. tenant_context restores on exit, request/task teardown clears — never unified
+- [Phase 02-03]: CONTROL_PLANE_APPS must include rest_framework and tenancy — the tenancy.E001 check exempts only django.* names. A later phase adds its app label to BUSINESS_APPS in the same commit as INSTALLED_APPS
+- [Phase 02-03]: resolve_client reads the authenticated principal only, never a header or subdomain; Phase 3 swaps the lookup for a signed JWT client_id claim without changing the contract
+- [Phase 02-03]: TENANT-08 measured, not assumed: 300 registered aliases at concurrency 4 gave a peak of 4 server connections and settled to 0; CONN_MAX_AGE=600 exhausts PostgreSQL's connection slots
+- [Phase 02-03]: The tenancy django_db marker is applied in pytest_collection_modifyitems, not from a fixture body — pytest-django decides which test databases to create before any fixture runs
 
 ### Pending Todos
 
@@ -65,6 +93,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-09
-Stopped at: ROADMAP.md and STATE.md created; REQUIREMENTS.md traceability filled in
+Last session: 2026-09-13T17:27:03.584Z
+Stopped at: Completed 02-02 and 02-03. Tenancy core is green. Paused before 02-04 (provisioning) for user review, as instructed.
 Resume file: None
