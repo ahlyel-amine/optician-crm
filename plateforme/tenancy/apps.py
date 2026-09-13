@@ -15,7 +15,7 @@ class TenancyConfig(AppConfig):
     verbose_name = "Tenancy"
 
     def ready(self):
-        """Register the system check. **Nothing else.**
+        """Register the system check and the Celery leak guard. **Nothing else.**
 
         `ready()` must not register a tenant alias and must not touch the database
         (Pitfall 4, threat T-02-22). `makemigrations` iterates every alias present in
@@ -25,3 +25,4 @@ class TenancyConfig(AppConfig):
         `manage.py makemigrations` connect to every production database.
         """
         from plateforme.tenancy import checks  # noqa: F401 — import registers the check
+        from plateforme.tenancy import tasks  # noqa: F401 — import connects task_prerun

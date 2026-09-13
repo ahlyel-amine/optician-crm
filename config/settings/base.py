@@ -133,8 +133,11 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
-    # TODO(02-03): "plateforme.tenancy.middleware.TenantMiddleware" goes HERE — strictly
-    # after AuthenticationMiddleware, because resolving the client depends on request.user.
+    # Strictly AFTER AuthenticationMiddleware: the client is resolved from the
+    # authenticated principal, never from anything the caller can set (threat T-02-13).
+    # And before any view, so that a business query outside this middleware's scope
+    # raises NoTenantBound rather than reading the control-plane database.
+    "plateforme.tenancy.middleware.TenantMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -187,12 +190,17 @@ SENTRY_DSN = env("SENTRY_DSN", default="")
 if SENTRY_DSN:
     import sentry_sdk
 
+    from plateforme.tenancy.telemetry import before_send
+
     sentry_sdk.init(
         dsn=SENTRY_DSN,
         # Set now, not later. Ordonnances are health data under law 09-08 and are in
         # scope for every request; retrofitting a scrubber after a leak is not a fix.
         send_default_pii=False,
         traces_sample_rate=0.0,
-        # TODO(02-03): before_send scrubber + per-event client/magasin tags, set from the
-        # tenancy context in the middleware.
+        # The fine control, on top of send_default_pii: redacts clinical and personal
+        # values from request bodies, breadcrumbs and captured stack-frame locals.
+        # TenantMiddleware adds the `client` tag — keep the tag, scrub the body
+        # (threat T-02-17).
+        before_send=before_send,
     )
