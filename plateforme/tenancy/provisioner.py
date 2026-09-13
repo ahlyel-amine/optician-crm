@@ -144,6 +144,10 @@ class SqlProvisioner(DatabaseProvisioner):
         """
         with _cursor(cur) as c:
             if database_exists(c, name):
+                # Still (re-)apply the CONNECT restriction below: it is idempotent, and a
+                # database created by an earlier build that lacked it must be fixed on
+                # the next provisioning run rather than staying open forever.
+                self._restrict_connect(c, name=name, owner=owner)
                 return
             statement = sql.SQL(
                 "CREATE DATABASE {name} OWNER {owner} TEMPLATE template0 "
@@ -162,7 +166,36 @@ class SqlProvisioner(DatabaseProvisioner):
                 # Same check-then-act race as the role above (threat T-02-28). Two
                 # concurrent provisions of one client converge here because `db_name` is
                 # derived from the primary key, so both racers wanted the same name.
-                return
+                pass
+            self._restrict_connect(c, name=name, owner=owner)
+
+    def _restrict_connect(self, cur, *, name: str, owner: str) -> None:
+        """`REVOKE CONNECT ... FROM PUBLIC`, then `GRANT CONNECT` to the owning role only.
+
+        **PostgreSQL grants `CONNECT` on a new database to `PUBLIC` by default.** Without
+        this, every client's login role can open every *other* client's database — one
+        `psql` away from reading another optician's ordonnances. The application would
+        never do it, because the router binds one alias; but "the application would never"
+        is not an isolation boundary, and the whole point of database-per-client is that
+        the boundary is enforced below the application.
+
+        Found while running this plan's own smoke drill: `deprovision_client` left
+        `optique_u000001` behind, and that role could still connect to anything. The
+        leftover role is now harmless, which is why deprovisioning deliberately keeps it —
+        a restore from backup needs the credential the control-plane row still holds.
+
+        Idempotent, so it is re-applied on every provisioning run including reruns.
+        """
+        cur.execute(
+            sql.SQL("REVOKE CONNECT ON DATABASE {} FROM PUBLIC").format(
+                sql.Identifier(name)
+            )
+        )
+        cur.execute(
+            sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(
+                sql.Identifier(name), sql.Identifier(owner)
+            )
+        )
 
     def drop_database(self, cur=None, *, name: str) -> None:
         """`DROP DATABASE IF EXISTS <name> WITH (FORCE)`, via `maintenance.drop_database_force`."""

@@ -23,8 +23,9 @@ import secrets
 
 from django.conf import settings
 from django.core.management import call_command
-from django.db import transaction
+from django.db import connections, transaction
 from django.utils import timezone
+from django.utils.connection import ConnectionDoesNotExist
 
 from plateforme.control_plane.models import Client
 from plateforme.control_plane.schema_version import (
@@ -57,6 +58,25 @@ def derive_db_name(pk: int) -> str:
 def derive_db_user(pk: int) -> str:
     """`optique_u000047` — the owning role, derived from the primary key. See above."""
     return f"{settings.TENANT_DB_USER_PREFIX}{pk:06d}"
+
+
+def is_client_database_name(name: str) -> bool:
+    """True only for a name `derive_db_name` could have produced: prefix + six digits.
+
+    **Not `startswith(prefix)`, and not a SQL `LIKE 'optique_c%'`.** Both are wrong, and
+    the second is dangerous: in SQL `LIKE`, `_` is a single-character wildcard, so
+    `optique_c%` matches **`optique_control`** — the control-plane database itself. That
+    was not hypothetical; `reap_orphan_databases` listed the development control plane as
+    an orphan the first time it was run. A plain `startswith` has the same blind spot,
+    because `"optique_control".startswith("optique_c")` is also true.
+
+    A restore target (`<db_name>_restore_<ts>`, plan 02-07) deliberately does **not**
+    match. The reaper must never drop a restore that is in flight or awaiting acceptance;
+    the runbook tells the operator to drop those by name once the restore is accepted.
+    """
+    prefix = settings.TENANT_DB_NAME_PREFIX
+    suffix = name[len(prefix) :]
+    return name.startswith(prefix) and len(suffix) == 6 and suffix.isdigit()
 
 
 def provision_client(*, code, raison_sociale, magasins, db_host=None) -> Client:
@@ -194,11 +214,15 @@ def deprovision_client(client: Client) -> Client:
         if client.db_name:
             get_provisioner().drop_database(name=client.db_name)
         alias = alias_for(client.pk)
-        try:
-            evict_alias(alias)
-        except (AttributeError, KeyError):
-            # This thread never opened the alias. Nothing to close.
-            pass
+        if alias in connections.settings:
+            try:
+                evict_alias(alias)
+            except ConnectionDoesNotExist:
+                # Registered in `connections.settings` but never opened on this thread,
+                # so there is no wrapper to close. Found by the SMOKE01 drill: the
+                # command dropped the database and then crashed here, leaving the row in
+                # DROPPING — a database gone with a row that says it is still going.
+                pass
         client.advance(Client.DELETED)
         return client
     except Exception as exc:

@@ -85,13 +85,19 @@ def _destroy(code: str) -> None:
 
 
 def _count_client_databases() -> int:
-    """How many databases carry the configured client prefix."""
+    """How many databases carry a name `derive_db_name` could have produced.
+
+    `starts_with`, never `LIKE '<prefix>%'` — `_` is a single-character wildcard in SQL
+    LIKE, so `optique_c%` also matches `optique_control`.
+    """
+    from plateforme.control_plane.provisioning import is_client_database_name
+
     with maintenance_connection() as cur:
         cur.execute(
-            "SELECT count(*) FROM pg_database WHERE datname LIKE %s",
-            (f"{settings.TENANT_DB_NAME_PREFIX}%",),
+            "SELECT datname FROM pg_database WHERE starts_with(datname, %s)",
+            (settings.TENANT_DB_NAME_PREFIX,),
         )
-        return cur.fetchone()[0]
+        return sum(1 for (name,) in cur.fetchall() if is_client_database_name(name))
 
 
 # --------------------------------------------------------------------------------------
@@ -359,4 +365,210 @@ def test_tenant05_deprovision_drops_the_database_but_keeps_the_row(
             "the Client row was deleted; deprovisioning must leave a tombstone."
         )
     finally:
+        _destroy(code)
+
+
+@pytest.mark.slow
+@pytest.mark.tenancy
+@pytest.mark.django_db(transaction=True)
+def test_tenant04_a_client_role_cannot_connect_to_another_clients_database(
+    allow_runtime_tenant_aliases,
+):
+    """Isolation below the application: client A's role is refused by client B's database.
+
+    PostgreSQL grants `CONNECT` on a new database to `PUBLIC`, so without an explicit
+    revoke every client's login role can open every other client's database. The router
+    would never do it — but "the application would never" is not an isolation boundary,
+    and database-per-client exists precisely so the boundary sits below the application.
+
+    Two clients, because one cannot prove isolation (`.planning/TESTING.md` §3). The
+    positive half matters as much as the negative one: A must still be able to open its
+    *own* database, or the revoke has simply broken everything.
+    """
+    import psycopg
+
+    from plateforme.control_plane.provisioning import provision_client
+
+    code_a, code_b = "test-iso-a", "test-iso-b"
+    try:
+        a = provision_client(
+            code=code_a, raison_sociale="Optique Iso A", magasins=["Centre"]
+        )
+        b = provision_client(
+            code=code_b, raison_sociale="Optique Iso B", magasins=["Centre"]
+        )
+
+        def _connect(as_client, to_db):
+            return psycopg.connect(
+                host=settings.PG_ADMIN_HOST,
+                port=settings.PG_ADMIN_PORT,
+                user=as_client.db_user,
+                password=as_client.db_password,
+                dbname=to_db,
+                connect_timeout=5,
+            )
+
+        with _connect(a, a.db_name) as own:
+            with own.cursor() as c:
+                c.execute("SELECT current_database()")
+                assert c.fetchone()[0] == a.db_name
+
+        with pytest.raises(psycopg.OperationalError) as excinfo:
+            _connect(a, b.db_name).close()
+        assert "permission denied" in str(excinfo.value).lower(), (
+            f"client A reached client B's database. PostgreSQL said: {excinfo.value}"
+        )
+    finally:
+        _destroy(code_a)
+        _destroy(code_b)
+
+
+# --------------------------------------------------------------------------------------
+# TENANT-06 — the operator entry point
+# --------------------------------------------------------------------------------------
+def test_tenant06_management_command_delegates_to_provision_client():
+    """The command parses arguments and calls `provision_client`. Nothing more.
+
+    Repeated `--magasin` arrives as a list, which is the whole of TENANT-07's provisioning
+    half reaching the state machine unmodified.
+
+    No database, no DDL — the point of the test is the delegation, and patching the
+    function is what makes it fast enough to live in the quick loop.
+    """
+    from django.core.management import call_command
+
+    target = (
+        "plateforme.control_plane.management.commands.provision_client.provision_client"
+    )
+    with patch(target) as provision:
+        provision.return_value = MagicMock(
+            code="OPT001", db_name="optique_c000001", db_host="h", schema_digest="d"
+        )
+        call_command(
+            "provision_client",
+            "--code",
+            "OPT001",
+            "--raison-sociale",
+            "Optique Centre SARL",
+            "--magasin",
+            "Centre",
+            "--magasin",
+            "Maarif",
+        )
+
+    provision.assert_called_once_with(
+        code="OPT001",
+        raison_sociale="Optique Centre SARL",
+        magasins=["Centre", "Maarif"],
+        db_host=None,
+    )
+
+
+def test_tenant06_command_module_contains_no_provisioning_logic():
+    """A source-level assertion, because the failure mode is drift rather than a wrong answer.
+
+    Phase 12's self-serve signup calls `provision_client` from a Celery task, not this
+    command. Any logic that migrates here is logic self-serve will not have, and that
+    divergence would be discovered by a customer rather than by a test. Reading the source
+    is the only thing that catches a line added later.
+    """
+    import inspect
+
+    from plateforme.control_plane.management.commands import provision_client as module
+
+    source = inspect.getsource(module)
+    forbidden = (
+        "CREATE DATABASE",
+        'call_command("migrate"',
+        "sql.Identifier",
+        "maintenance_connection",
+        "Client.objects",
+    )
+    for needle in forbidden:
+        assert needle not in source, (
+            f"{needle!r} appears in the provision_client command. Provisioning logic "
+            "belongs in plateforme/control_plane/provisioning.py, which is what the "
+            "Phase 12 self-serve flow will call."
+        )
+
+
+@pytest.mark.slow
+@pytest.mark.django_db(transaction=True)
+def test_tenant06_reap_orphan_databases_never_drops_a_known_client_database():
+    """Threat T-02-25: a database belonging to a FAILED client is not an orphan.
+
+    A database created before a kill has a `Client` row in CREATING_DB or FAILED, and a
+    rerun adopts it. Only a `pg_database` entry with no matching `Client.db_name` in
+    **any** status is an orphan, and that only arises from manual meddling.
+
+    Also asserts the command is dry-run by default: a command that drops databases based
+    on a diff is one bad predicate away from destroying a live client.
+    """
+    import io
+
+    from django.core.management import call_command
+
+    from plateforme.control_plane.provisioning import derive_db_name, derive_db_user
+
+    code = "test-reap"
+    client = Client.objects.using("default").create(
+        code=code,
+        raison_sociale="Optique Reap SARL",
+        status=Client.FAILED,
+        db_host=settings.PG_ADMIN_HOST,
+        db_port=settings.PG_ADMIN_PORT,
+    )
+    client.db_name = derive_db_name(client.pk)
+    client.db_user = derive_db_user(client.pk)
+    client.save(using="default")
+
+    orphan_name = f"{settings.TENANT_DB_NAME_PREFIX}999999"
+    # The bait that caught the real bug. With the prefix `optique_c`, the obvious
+    # predicate `datname LIKE 'optique_c%'` matches `optique_control`, because `_` is a
+    # single-character wildcard in SQL LIKE — and so does `str.startswith`. The first run
+    # of this command against the development stack reported the control-plane database
+    # itself as an orphan. Under the test prefix the same shape is `test_client_control`.
+    lookalike = f"{settings.TENANT_DB_NAME_PREFIX}ontrol"
+    try:
+        with maintenance_connection() as cur:
+            cur.execute(
+                sql.SQL("CREATE DATABASE {}").format(sql.Identifier(client.db_name))
+            )
+            cur.execute(
+                sql.SQL("CREATE DATABASE {}").format(sql.Identifier(orphan_name))
+            )
+            cur.execute(
+                sql.SQL("CREATE DATABASE {}").format(sql.Identifier(lookalike))
+            )
+
+        out = io.StringIO()
+        call_command("reap_orphan_databases", stdout=out)
+        report = out.getvalue()
+
+        assert lookalike not in report, (
+            f"{lookalike} was reported as an orphan. It is not a name derive_db_name "
+            "could produce — the predicate is matching on a prefix rather than on the "
+            f"full shape, which is how `optique_control` becomes a reap target.\n{report}"
+        )
+        assert client.db_name not in report, (
+            f"{client.db_name} was reported as an orphan, but its Client row exists in "
+            f"{client.status}. A rerun adopts that database; dropping it would destroy "
+            "a half-provisioned client's work (threat T-02-25)."
+        )
+        assert orphan_name in report, (
+            "the reaper reported no orphan at all, so the assertion above proves "
+            f"nothing. Expected {orphan_name} in:\n{report}"
+        )
+
+        # Dry-run is the default: both databases must still exist afterwards.
+        with maintenance_connection() as cur:
+            assert database_exists(cur, client.db_name)
+            assert database_exists(cur, orphan_name), (
+                "the reaper dropped a database without --yes-i-am-sure."
+            )
+    finally:
+        with maintenance_connection() as cur:
+            for name in (orphan_name, lookalike):
+                assert name.startswith(settings.TENANT_DB_NAME_PREFIX)
+                drop_database_force(cur, name)
         _destroy(code)
