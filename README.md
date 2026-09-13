@@ -77,3 +77,28 @@ tests/
 The infrastructure package is `plateforme/`, **not** `platform/`: `platform` is a Python
 standard-library module (`platform.python_version()`), imported by psycopg, gunicorn and
 Sentry. A top-level `platform/` package would sit on `sys.path[0]` and shadow it.
+
+## Operating the fleet
+
+```bash
+# Onboard a client business. One command; the Phase 12 self-serve signup calls the
+# same function.
+manage.py provision_client --code OPT001 --raison-sociale "Optique Centre SARL" \
+                           --magasin Centre --magasin Maarif
+
+# The deploy gate. Exits 1 if any ACTIVE client is behind the code's migration head.
+manage.py migrate_all --check
+
+# Apply across the fleet. One client failing does not stop the others.
+manage.py migrate_all --parallel 4
+
+# Report databases no Client row claims. Dry-run by default.
+manage.py reap_orphan_databases
+```
+
+**Before writing any migration, read
+[`docs/migration-conventions.md`](docs/migration-conventions.md).** Two rules, both
+expensive to retrofit once a client is live: every `RunPython` guards on the router (an
+unguarded one also executes against the control-plane database), and schema changes are
+expand/contract because a fan-out across the fleet leaves it partially migrated for
+minutes.
