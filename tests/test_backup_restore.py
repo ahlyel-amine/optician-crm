@@ -378,3 +378,224 @@ def test_tenant09_backup_never_leaves_the_dump_on_local_disk(
         ), "a failed dump left no BackupRun row, so the failure is invisible"
     finally:
         _destroy(code)
+
+
+# --------------------------------------------------------------------------------------
+# TENANT-09 — tenant_checksum, the part the requirement actually turns on
+# --------------------------------------------------------------------------------------
+@pytest.mark.tenancy
+def test_tenant09_checksum_is_independent_of_physical_row_order(tenant_a):
+    """The identical rows, laid out in a different physical order, hash the same.
+
+    The **row hashes** are ordered, not the rows. `pg_restore` does not preserve physical
+    row order, so a digest that depended on it would report every single restore as a
+    failure — and the natural reaction to a verification step that always fails is to stop
+    running it.
+
+    The rows are deleted and re-inserted **with their original primary keys and
+    timestamps**, in reverse order, so the *only* thing that changes is the heap layout.
+    The test proves the layout really did change before asserting the digest did not; a
+    version that skipped that would pass against a digest that is order-dependent, on a
+    table small enough that the order happened not to move.
+
+    Deliberately within **one** database. The plan suggests building the same rows in two
+    databases, which cannot work and should not: two independently migrated tenants differ
+    in `django_migrations.applied` and in every `created_at`, so their digests are
+    correctly unequal. That is not the property under test — a restore compares one
+    database against its own earlier state.
+    """
+    from django.db import connections
+
+    from plateforme.control_plane.checksum import tenant_checksum
+
+    from domaine.magasins.models import Magasin
+    from domaine.stock.models import MouvementStock
+
+    magasin = Magasin.objects.create(code="ORD", nom="Ordre")
+    for ref, qty in [("A-001", 10), ("B-002", 20), ("C-003", 30)]:
+        MouvementStock.objects.create(
+            magasin=magasin, reference_article=ref, type_mouvement="entree",
+            quantite_delta=qty,
+        )
+
+    columns = (
+        "id, magasin_id, reference_article, type_mouvement, quantite_delta, motif, "
+        "created_at"
+    )
+    with connections["tenant_a"].cursor() as cur:
+        cur.execute(f"SELECT {columns} FROM stock_mouvementstock ORDER BY id")
+        rows = cur.fetchall()
+        cur.execute("SELECT id FROM stock_mouvementstock")
+        layout_before = [r[0] for r in cur.fetchall()]
+
+    before = tenant_checksum("tenant_a")
+
+    with connections["tenant_a"].cursor() as cur:
+        cur.execute("DELETE FROM stock_mouvementstock")
+        placeholders = ", ".join(["%s"] * len(rows[0]))
+        for row in reversed(rows):
+            cur.execute(
+                f"INSERT INTO stock_mouvementstock ({columns}) VALUES ({placeholders})",
+                row,
+            )
+        cur.execute("SELECT id FROM stock_mouvementstock")
+        layout_after = [r[0] for r in cur.fetchall()]
+
+    assert layout_before != layout_after, (
+        f"the physical layout did not change ({layout_before} -> {layout_after}), so this "
+        "test would pass against an order-dependent digest. It proves nothing as written."
+    )
+    assert sorted(layout_before) == sorted(layout_after), "the rows themselves changed"
+
+    assert tenant_checksum("tenant_a") == before, (
+        f"the same rows in a different physical order ({layout_before} -> "
+        f"{layout_after}) produced a different digest. The digest must order the row "
+        "hashes, not rely on the rows arriving in order."
+    )
+
+
+@pytest.mark.tenancy
+def test_tenant09_checksum_detects_a_single_changed_column_value(tenant_a):
+    """One column changed in one row changes the digest. A checksum that cannot fail is none.
+
+    And the control in the other direction: changing nothing must not change it, or the
+    digest is simply unstable and every restore would "fail".
+    """
+    from plateforme.control_plane.checksum import tenant_checksum
+
+    from domaine.magasins.models import Magasin
+    from domaine.stock.models import MouvementStock
+
+    magasin = Magasin.objects.create(code="CHG", nom="Change")
+    mouvement = MouvementStock.objects.create(
+        magasin=magasin, reference_article="REF-1", type_mouvement="entree",
+        quantite_delta=5, motif="original",
+    )
+
+    before = tenant_checksum("tenant_a")
+    assert tenant_checksum("tenant_a") == before, "the digest is not stable at rest"
+
+    MouvementStock.objects.filter(pk=mouvement.pk).update(motif="altered")
+    after = tenant_checksum("tenant_a")
+
+    assert after != before, (
+        "one column value changed and the digest did not. Row counts have this property "
+        "too, which is exactly why they are not verification."
+    )
+
+    MouvementStock.objects.filter(pk=mouvement.pk).update(motif="original")
+    assert tenant_checksum("tenant_a") == before, "the digest is not reversible"
+
+
+@pytest.mark.tenancy
+def test_tenant09_checksum_includes_sequence_positions(tenant_a):
+    """A restored database with reset sequences is **not** identical, even if every row matches.
+
+    Not academic here: Phase 6's facture numbering comes from a counter row, and a
+    restored database whose sequences were reset would re-issue primary keys that already
+    exist in the retained audit trail.
+
+    The sequence is advanced without inserting a row, so only the sequence position
+    differs — the tables are byte-identical.
+    """
+    from django.db import connections
+
+    from plateforme.control_plane.checksum import tenant_checksum
+
+    from domaine.magasins.models import Magasin
+
+    Magasin.objects.create(code="SEQ", nom="Sequence")
+    before = tenant_checksum("tenant_a")
+
+    with connections["tenant_a"].cursor() as cur:
+        cur.execute("SELECT pg_get_serial_sequence('magasins_magasin', 'id')")
+        sequence = cur.fetchone()[0]
+        assert sequence, "no sequence found — the test cannot prove anything"
+        cur.execute("SELECT nextval(%s)", (sequence,))
+
+    after = tenant_checksum("tenant_a")
+    assert after != before, (
+        "advancing a sequence did not change the digest. A restore that reset the "
+        "sequences would be reported as identical, and the next insert would collide."
+    )
+
+
+@pytest.mark.tenancy
+def test_tenant09_checksum_is_reproducible_across_session_timezones(tenant_a):
+    """The digest does not depend on the session `TimeZone`, because the command pins it.
+
+    `timestamptz` renders per session timezone, and every ledger row carries a
+    `created_at`. Without `SET TIME ZONE 'UTC'` the digest computed by an operator in
+    Casablanca would differ from the one computed by a worker in UTC, and the restore
+    would be reported as a mismatch.
+
+    The `Africa/Casablanca` half is load-bearing: with a UTC-only test the pin could be
+    removed and nothing would notice.
+    """
+    from django.db import connections
+
+    from plateforme.control_plane.checksum import tenant_checksum
+
+    from domaine.caisse.models import EcritureCaisse
+    from domaine.magasins.models import Magasin
+
+    magasin = Magasin.objects.create(code="TZ", nom="Timezone")
+    EcritureCaisse.objects.create(
+        magasin=magasin, sens="entree", montant=Decimal("42.42"), libelle="tz"
+    )
+
+    with connections["tenant_a"].cursor() as cur:
+        cur.execute("SET TIME ZONE 'UTC'")
+    in_utc = tenant_checksum("tenant_a")
+
+    with connections["tenant_a"].cursor() as cur:
+        cur.execute("SET TIME ZONE 'Africa/Casablanca'")
+    in_casablanca = tenant_checksum("tenant_a")
+
+    with connections["tenant_a"].cursor() as cur:
+        cur.execute("SHOW TimeZone")
+        assert cur.fetchone()[0] == "Africa/Casablanca", (
+            "tenant_checksum changed the session TimeZone and did not put it back. It "
+            "pins UTC for its own reproducibility, and leaving that behind on a "
+            "connection that returns to a pool is exactly the session-state problem "
+            "transaction pooling has (threat T-02-02)."
+        )
+
+    assert in_utc == in_casablanca, (
+        "the digest depends on the session timezone, so `SET TIME ZONE 'UTC'` is not "
+        "taking effect. timestamptz renders per session TZ and every ledger row has a "
+        "created_at."
+    )
+
+
+@pytest.mark.tenancy
+def test_tenant09_checksum_detail_localises_a_mismatch_to_one_table(tenant_a):
+    """`tenant_checksum_detail` says *which* table differs, not merely that something does.
+
+    Reporting "different" at 3am against a restore of a client's ten years of records is
+    not an answer anybody can act on.
+    """
+    from plateforme.control_plane.checksum import tenant_checksum_detail
+
+    from domaine.magasins.models import Magasin
+    from domaine.stock.models import MouvementStock
+
+    magasin = Magasin.objects.create(code="DET", nom="Detail")
+    mouvement = MouvementStock.objects.create(
+        magasin=magasin, reference_article="D-1", type_mouvement="entree",
+        quantite_delta=1,
+    )
+
+    before = tenant_checksum_detail("tenant_a")
+    assert "stock_mouvementstock" in before
+    assert "magasins_magasin" in before
+    assert "__sequences__" in before
+
+    MouvementStock.objects.filter(pk=mouvement.pk).update(quantite_delta=2)
+    after = tenant_checksum_detail("tenant_a")
+
+    changed = {t for t in before if before[t] != after.get(t)}
+    assert changed == {"stock_mouvementstock"}, (
+        f"a change in one table moved the digest of {sorted(changed)}. The per-table "
+        "breakdown must localise a mismatch, or it adds nothing over the single digest."
+    )
