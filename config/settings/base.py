@@ -90,6 +90,16 @@ DATABASE_PROVISIONER = env(
     "DATABASE_PROVISIONER", default="plateforme.tenancy.provisioner.SqlProvisioner"
 )
 
+# A client's database and role names are `<prefix><pk:06d>` — derived from the primary
+# key, never from operator input (threat T-02-23). The prefixes are settings for exactly
+# one reason, and it is a safety reason rather than a flexibility one: the test suite runs
+# against the same PostgreSQL instance as development, and a test control plane starts its
+# primary keys at 1 too. Sharing `optique_c` would make a test run adopt — and then drop —
+# a developer's real `optique_c000001`. `config/settings/test.py` overrides both to
+# `test_client_*`, which is also the prefix conftest.py's session-start reaper collects.
+TENANT_DB_NAME_PREFIX = env("TENANT_DB_NAME_PREFIX", default="optique_c")
+TENANT_DB_USER_PREFIX = env("TENANT_DB_USER_PREFIX", default="optique_u")
+
 # Fernet key encrypting each Client row's database password. Consumed by plan 02-02.
 TENANCY_FERNET_KEY = env("TENANCY_FERNET_KEY", default="")
 

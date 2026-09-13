@@ -146,6 +146,90 @@ def tenant_a(db_all):
         yield "tenant_a"
 
 
+class _RuntimeTenantAliasesAllowed(frozenset):
+    """A `databases` set that also answers "yes" for any runtime `tenant_<pk>` alias.
+
+    Iteration is unchanged — it still yields only the statically declared aliases, so
+    fixture setup, flushing and teardown behave exactly as before. Only ``in`` is widened.
+    """
+
+    def __contains__(self, item) -> bool:
+        return super().__contains__(item) or str(item).startswith("tenant_")
+
+
+def _active_test_case_class():
+    """The `PytestDjangoTestCase` guarding the current test, or None.
+
+    `SimpleTestCase._add_databases_failures` installs
+    `ensure_connection_patch_method()` — a closure over the test case class — onto
+    `BaseDatabaseWrapper.ensure_connection`. The class is defined inside a pytest-django
+    fixture and is not otherwise reachable, so it is read back out of that closure.
+    """
+    from django.db.backends.base.base import BaseDatabaseWrapper
+    from django.test import SimpleTestCase
+
+    guard = BaseDatabaseWrapper.ensure_connection
+    for cell in getattr(guard, "__closure__", None) or ():
+        try:
+            value = cell.cell_contents
+        except ValueError:  # pragma: no cover — an empty cell
+            continue
+        if isinstance(value, type) and issubclass(value, SimpleTestCase):
+            return value
+    return None
+
+
+@pytest.fixture
+def allow_runtime_tenant_aliases(request):
+    """Let *this* test open connections to `tenant_<pk>` aliases it creates at runtime.
+
+    Why it is needed. Django's `SimpleTestCase.ensure_connection_patch_method` refuses any
+    alias that is present in `connections` but absent from the test case's `databases`::
+
+        if (self.connection is None and self.alias not in cls.databases
+                and self.alias != NO_DB_ALIAS
+                and self.alias in connections):        # <- the escape hatch
+            ... DatabaseOperationForbidden
+
+    The escape hatch — *"dynamically created connections are always allowed"* — tests
+    `alias in connections`, which is `alias in connections.settings`. A runtime alias
+    registered by `register_client_database` **is** in `connections.settings`, so it does
+    not qualify, and `cls.databases` was frozen at class setup, before the client this
+    test provisions existed. Observed, not theorised: without this fixture the
+    provisioning tests fail with *"Database threaded connections to 'tenant_7' are not
+    allowed in this test"*.
+
+    Why it is opt-in rather than global. The guard is load-bearing for every other test:
+    plan 02-03's `bound_to_test_aliases` fixture exists precisely because a test that
+    quietly connects to an alias nobody tears down is a leak. Only the handful of tests
+    that do real `CREATE DATABASE` — the ones `.planning/TESTING.md` §3 says should "pay
+    that cost explicitly" — ask for this, and each of them drops what it created in a
+    `finally`.
+
+    What it does **not** do: it does not touch `default`, `tenant_a` or `tenant_b`, it
+    does not override pytest-django's database-setup fixture, and it restores the original
+    `databases` value on teardown.
+    """
+    request.getfixturevalue("_django_db_helper")
+
+    cls = _active_test_case_class()
+    if cls is None:  # pragma: no cover — pytest-django changed shape
+        raise RuntimeError(
+            "Could not find the active PytestDjangoTestCase behind "
+            "BaseDatabaseWrapper.ensure_connection. pytest-django's internals have "
+            "changed; allow_runtime_tenant_aliases in conftest.py needs updating. "
+            "Failing loudly rather than silently leaving the guard in place, because a "
+            "silent failure here looks like a provisioning bug."
+        )
+
+    original = cls.databases
+    cls.databases = _RuntimeTenantAliasesAllowed(original)
+    try:
+        yield
+    finally:
+        cls.databases = original
+
+
 @pytest.fixture
 def tenant_b(db_all):
     """Client B — **the control**, and the reason there are two tenant fixtures.

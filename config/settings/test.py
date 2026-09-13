@@ -50,3 +50,16 @@ for _alias in ("default", "tenant_a", "tenant_b"):
 
 # The context guard raises instead of merely logging. A leak must fail the test, loudly.
 TENANCY_STRICT = True
+
+# Databases the provisioning tests create are named `test_client_c000001`, not
+# `optique_c000001`. Two reasons, both safety:
+#
+# 1. A test control plane starts its primary keys at 1, exactly as a development one does.
+#    With a shared prefix, `provision_client` in a test would derive `optique_c000001`,
+#    *adopt* the developer's real first client database (the existence guard makes that
+#    silent), and then drop it in teardown. Data loss with no error.
+# 2. `test_client_%` is already one of conftest.py's STALE_TEST_DB_PATTERNS, so a run
+#    killed with SIGKILL is cleaned up by the next session rather than leaving behind
+#    something that looks like a production client database.
+TENANT_DB_NAME_PREFIX = "test_client_c"
+TENANT_DB_USER_PREFIX = "test_client_u"

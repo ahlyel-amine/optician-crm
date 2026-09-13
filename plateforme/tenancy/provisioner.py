@@ -91,9 +91,22 @@ class SqlProvisioner(DatabaseProvisioner):
     def create_role_if_absent(self, cur=None, *, user: str, password: str) -> None:
         """`CREATE ROLE <user> LOGIN PASSWORD <password>`, guarded on `pg_roles`.
 
-        The name is an identifier and is composed with `sql.Identifier`. The password is a
-        **value** and is bound as a parameter — it is never an identifier, and it must
-        never be formatted into the statement text.
+        The name is an identifier (`sql.Identifier`); the password is a **value** and is
+        quoted as a string literal (`sql.Literal`). It is deliberately *not* an
+        identifier — quoting a password as an identifier would both change it and leave
+        it unescaped for single quotes.
+
+        Why `sql.Literal` rather than a bound `%s` parameter, which would be the normal
+        answer: `CREATE ROLE` is a utility statement and PostgreSQL does not accept
+        parameters in one. Verified against the live 18.6 stack — binding the password
+        gives `SyntaxError: syntax error at or near "$1"`. `sql.Literal` does the quoting
+        client-side and is equally injection-safe.
+
+        One consequence to be honest about: the password therefore appears in the
+        statement text, so a server with `log_statement = all` logs it. Compose sets that
+        for development. It is not a new exposure — PostgreSQL logs bind parameters too,
+        and a password reaching the server at all means the server's log is already as
+        privileged as the credential. Production must not run `log_statement = all`.
 
         Also called by the restore path: `pg_dump` dumps a single database and roles are
         cluster-wide, so a restore onto a fresh instance produces a database nobody can
@@ -105,10 +118,9 @@ class SqlProvisioner(DatabaseProvisioner):
                 return
             try:
                 c.execute(
-                    sql.SQL("CREATE ROLE {} LOGIN PASSWORD %s").format(
-                        sql.Identifier(user)
-                    ),
-                    (password,),
+                    sql.SQL("CREATE ROLE {} LOGIN PASSWORD {}").format(
+                        sql.Identifier(user), sql.Literal(password)
+                    )
                 )
             except psycopg.errors.DuplicateObject:
                 # The guard above is a check-then-act and two concurrent provisions of
