@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+
+# Environment — SECURITY CONTROL, not housekeeping.
+# .env carries the Fernet key that decrypts every client's database password and the
+# PostgreSQL superuser password. Committing it is a full compromise of every client
+# database (threat T-02-03). Never remove this line.
+.env
+.env.*
+!.env.example
+
+# Tests
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Backups and database dumps — contain client health data (ordonnances).
+/backups/
+*.dump
+*.sql.gz
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/

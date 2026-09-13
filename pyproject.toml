@@ -1,0 +1,59 @@
+[project]
+name = "optique"
+version = "0.1.0"
+description = "Multi-tenant SaaS for Moroccan opticians — one database per client business."
+requires-python = ">=3.13,<3.14"
+
+# Every dependency is pinned exactly. Upgrades are a deliberate, reviewed act:
+# the tenancy layer is built against verified Django internals (see 02-RESEARCH.md),
+# so a silent minor bump can invalidate the router and connection-registry design.
+dependencies = [
+    "django==6.1.1",
+    "djangorestframework==3.18.1",
+    "psycopg[binary]==3.3.5",
+    "celery==5.6.3",
+    "django-celery-beat==2.9.0",
+    "redis==8.1.0",
+    "gunicorn==26.2.0",
+    "cryptography==50.0.1",
+    "django-environ==0.14.0",
+    "sentry-sdk==2.69.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest==9.1.1",
+    "pytest-django==4.14.0",
+    "pytest-xdist==3.8.0",
+    "factory-boy==3.3.3",
+    "freezegun==1.5.5",
+]
+
+[tool.uv]
+# django-celery-beat 2.9.0 (released 2026-02-28, before Django 6.1) declares
+# `Django<6.1,>=2.2`. That upper bound is stale metadata, not a real incompatibility:
+# upstream `main` already carries the `Framework :: Django :: 6.1` classifier and has
+# dropped the Django pin from requirements/default.txt entirely.
+#
+# Verified locally against django-celery-beat 2.9.0 + Django 6.1.1: `manage.py check`
+# reports no issues, the django_celery_beat migrations apply, PeriodicTask/CrontabSchedule
+# read and write, and DatabaseScheduler imports.
+#
+# Without this override uv backtracks to django-celery-beat 2.1.0 (2021), which drags in
+# pytz and django-timezone-field 4.2.3 and does not work on a modern Django at all.
+#
+# Remove this override once a django-celery-beat release lifts the cap.
+override-dependencies = ["django>=6.1,<6.2"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.test"
+python_files = ["test_*.py"]
+testpaths = ["tests"]
+# --strict-markers: a typo in a marker name must fail collection. Without it,
+# `-m "not slwo"` silently selects nothing and the suite is green by accident.
+addopts = "-ra --strict-markers"
+markers = [
+    "slow: real DDL, pg_dump or pg_restore; runs against Compose, not in the quick loop",
+    "tenancy: needs both the tenant_a and tenant_b aliases",
+    "pending: the named test exists but its implementation has not landed yet; the plan that implements it removes this marker. Deselected from the quick loop.",
+]
