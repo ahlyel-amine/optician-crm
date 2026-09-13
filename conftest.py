@@ -94,13 +94,44 @@ def pytest_sessionstart(session):
         )
 
 
+#: Fixtures whose users need all three aliases created, not just `default`.
+TENANCY_FIXTURES = frozenset({"db_all", "tenant_a", "tenant_b"})
+
+
+def pytest_collection_modifyitems(items):
+    """Mark every tenancy test with `django_db(databases=TENANT_DBS)` **at collection time**.
+
+    This is a timing fix, not a preference. pytest-django decides which test databases to
+    *create* in its session-scoped setup fixture, from
+    `_get_databases_for_setup(request.session.items)`, which reads each item's
+    `django_db` marker. A marker applied from inside a fixture body arrives after that
+    decision for every item except the one that happens to trigger the setup first — so a
+    run whose first database test asks only for `default` (as
+    `tests/test_tenancy_router.py` does) creates only `default`, and the tenancy tests
+    that follow connect to the *production* `optique_test_a` instead of
+    `test_optique_test_a`. Observed, not theorised.
+
+    Applying the marker during collection puts it where pytest-django looks. This is
+    still not an override of the database-setup fixture — the aliases remain static in
+    `config/settings/test.py`, so creation, migration, teardown, per-test rollback and
+    xdist `_gw0` suffixing all keep working.
+    """
+    for item in items:
+        if TENANCY_FIXTURES & set(getattr(item, "fixturenames", ())):
+            # append=False so this is the closest marker, beating a narrower
+            # `django_db()` the test may also carry.
+            item.add_marker(pytest.mark.django_db(databases=TENANT_DBS), append=False)
+
+
 @pytest.fixture
 def db_all(request):
     """Grant the test access to every alias in `TENANT_DBS`, each rolled back per test.
 
     `pytest.mark.django_db(databases=TENANT_DBS)` builds a `TestCase` subclass whose
     `databases` covers all three, so each one is wrapped in a transaction and rolled
-    back — including the two tenants.
+    back — including the two tenants. The marker is normally already present from
+    `pytest_collection_modifyitems` above; applying it here too is idempotent and keeps
+    the fixture correct when used through an unusual collection path.
     """
     request.applymarker(pytest.mark.django_db(databases=TENANT_DBS))
     return request.getfixturevalue("_django_db_helper")

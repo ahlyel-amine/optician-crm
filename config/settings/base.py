@@ -60,10 +60,11 @@ DATABASES = {
     }
 }
 
-# TODO(02-03): ["plateforme.tenancy.router.TenantRouter"]
-# Left empty on purpose until the router exists. Setting it now would make
-# makemigrations fan out across every registered alias.
-DATABASE_ROUTERS: list[str] = []
+# Fail-closed routing (TENANT-04). From here on, `makemigrations` iterates every alias
+# registered in the process and opens a connection to each — which is exactly why
+# registration is lazy and request-driven, and why nothing registers an alias in an
+# AppConfig.ready(). See plateforme/tenancy/registry.py.
+DATABASE_ROUTERS = ["plateforme.tenancy.router.TenantRouter"]
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
@@ -114,6 +115,9 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "rest_framework",
     "django_celery_beat",
+    # Tenancy infrastructure. Owns no models; its ready() registers the tenancy.E001
+    # system check and touches no database.
+    "plateforme.tenancy",
     # Control plane — lives on `default` only, and `allow_migrate` pins it there.
     "plateforme.control_plane",
     # Business apps — their tables exist only in client databases, never in `default`.
