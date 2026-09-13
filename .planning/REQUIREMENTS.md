@@ -31,6 +31,7 @@ Calendar-driven work. Starts day one and runs in parallel with build — no amou
 - [ ] **TENANT-06**: An operator can onboard an optician manually, using the same provisioning path the self-serve flow will call
 - [ ] **TENANT-07**: A client business can have several magasins, and stock and caisse are scoped to a magasin within that client's database
 - [ ] **TENANT-08**: Database connections are pooled so that adding clients does not exhaust the database server's connection limit
+  <br>*Partial (02-01):* the four configuration invariants are in place and asserted — `CONN_MAX_AGE = 0`, no `ATOMIC_REQUESTS` on any alias, `DISABLE_SERVER_SIDE_CURSORS = True`, PgBouncer `min_pool_size = 0` in transaction mode. Three named settings tests plus the ini-parsing test pass. **Not yet closed:** `test_tenant08_connection_count_does_not_scale_with_alias_count` is marked `pending` — it needs `register_client_database` from 02-03 to prove the budget empirically rather than by configuration.
 - [ ] **TENANT-09**: Every client database is backed up on a schedule, and restoring **one client's logical database alone** has been performed and verified — not assumed. Per-instance PITR that only restores a whole server does not satisfy this, because many client databases share one instance.
 
 ### Accounts & Permissions (PERM)

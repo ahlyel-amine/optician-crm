@@ -5,29 +5,29 @@
 See: .planning/PROJECT.md (updated 2026-09-09)
 
 **Core value:** The counter completes a sale end to end — client, ordonnance, payment including acompte, landing in that magasin's caisse — producing a facture legally valid in Morocco every time.
-**Current focus:** Phase 1 — Legal & Compliance Track
+**Current focus:** Phase 2 — Tenancy Foundation & Control Plane (Phase 1 continues in parallel as a calendar track)
 
 ## Current Position
 
-Phase: 1 of 12 (Legal & Compliance Track)
-Plan: 0 of TBD in current phase
-Status: Ready to plan
-Last activity: 2026-09-11 — Stack decided (Django + DRF); scope widened after a competitor gap review: 92 v1 requirements mapped across 12 phases
+Phase: 2 of 12 (Tenancy Foundation & Control Plane)
+Plan: 1 of 7 complete in current phase
+Status: Wave 1 complete — paused for user review before Wave 2 (02-02)
+Last activity: 2026-09-13 — 02-01 executed: repository bootstrapped on Python 3.13.7 / Django 6.1.1 with an exactly-pinned stack, Compose topology up (PostgreSQL 18 + PgBouncer 1.25.2 transaction mode + Redis 8), TENANT-08 connection-budget invariants asserted and green
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [█░░░░░░░░░] 1%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 0
-- Average duration: —
-- Total execution time: 0 hours
+- Total plans completed: 1
+- Average duration: ~1 session
+- Total execution time: ~1 session
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| - | - | - | - |
+| 2 | 1 of 7 | 1 session | 1 session |
 
 **Recent Trend:**
 - Last 5 plans: —
@@ -46,6 +46,11 @@ Recent decisions affecting current work:
 - [Roadmap]: One database per client business; magasins live inside it — Phase 2 is unretrofittable and comes first in build order
 - [Roadmap]: Permissions (Phase 3) precede the feature surface so the single projection layer exists before modules invent their own filtering
 - [Roadmap]: Manual onboarding (TENANT-06) lands in Phase 2, so a real optician uses the product long before self-serve billing in Phase 12
+- [02-01]: Infrastructure package is `plateforme/`, never `platform/` — a top-level `platform/` shadows the stdlib module that psycopg, gunicorn and Sentry import. Every `platform.*` dotted path in 02-RESEARCH.md becomes `plateforme.*`
+- [02-01]: Django pinned 6.1.1 (inside the mandated >=6.1,<6.2) — the tenancy design rests on Django internals source-verified against 6.1.x
+- [02-01]: `django-celery-beat` 2.9.0's stale `Django<6.1` cap lifted by a documented `[tool.uv] override-dependencies`, verified working rather than assumed; remove when a release lifts it upstream
+- [02-01]: Client databases use the PostgreSQL 18 ICU locale provider (`LOCALE_PROVIDER icu ICU_LOCALE 'fr-FR'` with `TEMPLATE template0`), not an OS locale — the stock postgres image generates only `en_US.utf8`
+- [02-01]: Compose host ports 5435 / 6433 / 6380 / 8010, all bound to 127.0.0.1 (8000, 5432-5434 and 6379 are occupied on the dev machine)
 - [Roadmap]: Phase 1 is a parallel calendar track — only LEGAL-02 (hosting jurisdiction) gates build work
 
 ### Pending Todos
