@@ -53,17 +53,21 @@ def _destroy(code: str) -> None:
         except (AttributeError, KeyError):
             pass
 
-    names = {client.db_name} if client.db_name else set()
+    from plateforme.control_plane.provisioning import derive_db_name
+
+    # The base name this client's databases derive from — **not** `client.db_name`, which
+    # after a cutover points at the restore target while the original is still there,
+    # retained on purpose. Missing it leaves a database owned by a role the next line
+    # tries to drop: `DependentObjectsStillExist: role ... cannot be dropped`.
+    base = derive_db_name(client.pk)
+    names = {base}
+    if client.db_name:
+        names.add(client.db_name)
     with maintenance_connection() as cur:
-        # Also collect any `<db_name>_restore_<ts>` databases this test left behind. The
-        # prefix check below is what keeps this from being a pattern drop.
         cur.execute(
-            "SELECT datname FROM pg_database WHERE starts_with(datname, %s)",
-            (f"{settings.TENANT_DB_NAME_PREFIX}",),
+            "SELECT datname FROM pg_database WHERE starts_with(datname, %s)", (base,)
         )
-        for (name,) in cur.fetchall():
-            if client.db_name and name.startswith(f"{client.db_name}_restore_"):
-                names.add(name)
+        names.update(name for (name,) in cur.fetchall())
         for name in names:
             assert name.startswith(settings.TENANT_DB_NAME_PREFIX), name
             drop_database_force(cur, name)
@@ -599,3 +603,429 @@ def test_tenant09_checksum_detail_localises_a_mismatch_to_one_table(tenant_a):
         f"a change in one table moved the digest of {sorted(changed)}. The per-table "
         "breakdown must localise a mismatch, or it adds nothing over the single digest."
     )
+
+
+# --------------------------------------------------------------------------------------
+# TENANT-09 — the restore drill
+# --------------------------------------------------------------------------------------
+def _mutate_after_backup(client) -> None:
+    """Change the data, so a restore that does nothing at all cannot pass.
+
+    Three kinds of change, because a restore could plausibly get one of them right by
+    accident: a row deleted, a row's column value changed, and a row inserted.
+    """
+    from plateforme.tenancy.context import tenant_context
+
+    from domaine.caisse.models import EcritureCaisse
+    from domaine.magasins.models import Magasin
+    from domaine.stock.models import MouvementStock
+
+    with tenant_context(alias_for(client.pk)):
+        MouvementStock.objects.order_by("id").first().delete()
+        EcritureCaisse.objects.order_by("id").update(libelle="CLOBBERED")
+        MouvementStock.objects.create(
+            magasin=Magasin.objects.get(code="CENTRE"),
+            reference_article="MUTANT-999",
+            type_mouvement="sortie",
+            quantite_delta=-999,
+            motif="written after the backup was taken",
+        )
+
+
+@pytest.mark.slow
+@pytest.mark.tenancy
+@pytest.mark.django_db(transaction=True)
+def test_tenant09_single_client_restore_produces_identical_data(
+    allow_runtime_tenant_aliases,
+):
+    """One client is restored to its backed-up state; its neighbour is untouched.
+
+    Every line is load-bearing:
+
+    * **`_mutate_after_backup`** is what makes this a real test rather than a tautology.
+      Without it, a `restore_client` that did nothing at all would pass.
+    * **`tenant_checksum(a) == before_a`** is verification, not a `pg_restore` exit code.
+      An exit code proves a process ran; the digest proves the data came back.
+    * **`tenant_checksum(b) == before_b`** is what proves **per-database** restore rather
+      than per-instance restore — which is exactly what TENANT-09 says PITR does not give
+      us. The neighbour shares a PostgreSQL instance with A, so a server-level restore
+      would move B's digest too.
+    """
+    from plateforme.control_plane.backup import backup_client, restore_client
+    from plateforme.control_plane.checksum import tenant_checksum
+    from plateforme.control_plane.provisioning import provision_client
+
+    code_a, code_b = "test-rest-a", "test-rest-b"
+    try:
+        a = provision_client(
+            code=code_a, raison_sociale="Optique Restore A", magasins=["Centre"]
+        )
+        b = provision_client(
+            code=code_b, raison_sociale="Optique Restore B", magasins=["Centre"]
+        )
+        _seed_distinguishable_data(a, marker="AAA")
+        _seed_distinguishable_data(b, marker="BBB")
+
+        before_a = tenant_checksum(alias_for(a.pk))
+        before_b = tenant_checksum(alias_for(b.pk))
+        assert before_a != before_b, (
+            "the two clients hash identically, so the neighbour assertion below would "
+            "pass even if A's data had been written into B."
+        )
+
+        run = backup_client(a.pk)
+        assert run.status == BackupRun.OK, run.error
+
+        _mutate_after_backup(a)
+        mutated = tenant_checksum(alias_for(a.pk))
+        assert mutated != before_a, (
+            "the mutation did not change the digest, so a no-op restore would pass this "
+            "test. It would be a tautology."
+        )
+
+        result = restore_client(a, run, cutover=True)
+
+        a.refresh_from_db(using="default")
+        assert a.db_name == result["restored_db"]
+        assert a.db_name != result["previous_db"]
+
+        register_after_cutover = a.connection_params(direct=True)
+        from plateforme.tenancy.registry import register_client_database
+
+        register_client_database(**register_after_cutover)
+
+        assert tenant_checksum(alias_for(a.pk)) == before_a, (
+            "client A's data did not come back to its backed-up state."
+        )
+        assert tenant_checksum(alias_for(b.pk)) == before_b, (
+            "client B's digest moved. The restore was not confined to one logical "
+            "database — which is precisely what TENANT-09 says per-instance PITR does "
+            "not satisfy."
+        )
+    finally:
+        _destroy(code_a)
+        _destroy(code_b)
+
+
+@pytest.mark.slow
+@pytest.mark.django_db(transaction=True)
+def test_tenant09_restore_never_writes_into_the_live_database(
+    allow_runtime_tenant_aliases,
+):
+    """The restore target is a new database name, and the live one is untouched until cutover.
+
+    Restoring in place over a live database is irreversible. Restoring beside it is not:
+    the control-plane row is the switch, so a bad restore is undone by pointing `db_name`
+    back at the database that is still sitting there (threat T-02-43).
+    """
+    from plateforme.control_plane.backup import backup_client, restore_client
+    from plateforme.control_plane.checksum import tenant_checksum
+    from plateforme.control_plane.provisioning import provision_client
+
+    code = "test-rest-safe"
+    try:
+        client = provision_client(
+            code=code, raison_sociale="Optique Safe", magasins=["Centre"]
+        )
+        _seed_distinguishable_data(client, marker="SAFE")
+        run = backup_client(client.pk)
+
+        _mutate_after_backup(client)
+        live_before = tenant_checksum(alias_for(client.pk))
+        live_name = client.db_name
+
+        result = restore_client(client, run, cutover=False)
+
+        assert result["restored_db"] != live_name
+        assert result["restored_db"].startswith(f"{live_name}_restore_")
+        assert not result["cutover"]
+
+        client.refresh_from_db(using="default")
+        assert client.db_name == live_name, (
+            "db_name moved without --cutover. The switch must be explicit."
+        )
+        assert tenant_checksum(alias_for(client.pk)) == live_before, (
+            "the live database changed during a restore that was not a cutover."
+        )
+
+        with maintenance_connection() as cur:
+            assert database_exists(cur, result["restored_db"])
+            assert database_exists(cur, live_name)
+    finally:
+        _destroy(code)
+
+
+@pytest.mark.slow
+@pytest.mark.django_db(transaction=True)
+def test_tenant09_restore_creates_the_role_when_it_is_absent(
+    allow_runtime_tenant_aliases,
+):
+    """`pg_dump` does not dump roles — they are cluster-wide. Restore must recreate them.
+
+    This is the single most commonly missed step in a logical restore (Pitfall 10, threat
+    T-02-47): the restore succeeds, and then nothing can connect to what it produced. The
+    test therefore drops the role first — simulating a restore onto a fresh instance — and
+    asserts afterwards that the restored database is **connectable as that role**, not
+    merely that it exists.
+    """
+    from psycopg import sql
+
+    import psycopg
+
+    from plateforme.control_plane.backup import backup_client, restore_client
+    from plateforme.control_plane.provisioning import provision_client
+
+    code = "test-rest-role"
+    try:
+        client = provision_client(
+            code=code, raison_sociale="Optique Role", magasins=["Centre"]
+        )
+        _seed_distinguishable_data(client, marker="ROLE")
+        run = backup_client(client.pk)
+
+        # Simulate a fresh instance: the database is dumped, the role is not.
+        alias = alias_for(client.pk)
+        if alias in connections.settings:
+            try:
+                connections[alias].close()
+                del connections[alias]
+            except (AttributeError, KeyError):
+                pass
+        with maintenance_connection() as cur:
+            drop_database_force(cur, client.db_name)
+            cur.execute(
+                sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(client.db_user))
+            )
+            cur.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (client.db_user,))
+            assert cur.fetchone() is None, "the role was not actually dropped"
+
+        result = restore_client(client, run, cutover=True)
+
+        with maintenance_connection() as cur:
+            cur.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (client.db_user,))
+            assert cur.fetchone() is not None, (
+                "the restore did not recreate the role. The database exists and nobody "
+                "can connect to it."
+            )
+
+        # Connectable as that role — the assertion that "the role exists" does not make.
+        conn = psycopg.connect(
+            host=settings.PG_ADMIN_HOST,
+            port=settings.PG_ADMIN_PORT,
+            user=client.db_user,
+            password=client.db_password,
+            dbname=result["restored_db"],
+            connect_timeout=5,
+        )
+        with conn, conn.cursor() as cur:
+            cur.execute("SELECT count(*) FROM stock_mouvementstock")
+            assert cur.fetchone()[0] == 3
+        conn.close()
+    finally:
+        _destroy(code)
+
+
+@pytest.mark.slow
+@pytest.mark.django_db(transaction=True)
+def test_tenant09_restore_refuses_a_dump_from_a_different_schema_version(
+    allow_runtime_tenant_aliases,
+):
+    """Digests are only comparable within one schema version, so a mismatch is refused.
+
+    And `--force` overrides it, because "the operator has decided this is acceptable" is a
+    real situation during a disaster and a tool that cannot be overridden gets worked
+    around instead (threat T-02-48).
+    """
+    from plateforme.control_plane.backup import (
+        RestoreRefused,
+        backup_client,
+        restore_client,
+    )
+    from plateforme.control_plane.provisioning import provision_client
+
+    code = "test-rest-schema"
+    try:
+        client = provision_client(
+            code=code, raison_sociale="Optique Schema", magasins=["Centre"]
+        )
+        run = backup_client(client.pk)
+
+        # The client has moved to a different schema version since the dump.
+        Client.objects.using("default").filter(pk=client.pk).update(
+            schema_digest="0" * 64
+        )
+        client.refresh_from_db(using="default")
+
+        with pytest.raises(RestoreRefused, match="schema"):
+            restore_client(client, run, cutover=False)
+
+        with maintenance_connection() as cur:
+            cur.execute(
+                "SELECT count(*) FROM pg_database WHERE starts_with(datname, %s)",
+                (f"{client.db_name}_restore_",),
+            )
+            assert cur.fetchone()[0] == 0, (
+                "the refusal happened after a database had already been created. The "
+                "schema check must come first."
+            )
+
+        result = restore_client(client, run, cutover=False, force=True)
+        assert result["restored_db"].startswith(f"{client.db_name}_restore_")
+    finally:
+        _destroy(code)
+
+
+@pytest.mark.slow
+@pytest.mark.django_db(transaction=True)
+def test_tenant09_restore_refuses_a_corrupted_artifact(allow_runtime_tenant_aliases):
+    """A tampered or truncated archive fails on the hash, before `pg_restore` runs.
+
+    Halfway through `pg_restore` is the wrong place to discover it: that leaves a
+    partially populated database that has to be identified and dropped by hand
+    (threat T-02-49).
+    """
+    from plateforme.control_plane.backup import (
+        RestoreRefused,
+        backup_client,
+        restore_client,
+    )
+    from plateforme.control_plane.provisioning import provision_client
+
+    code = "test-rest-sha"
+    try:
+        client = provision_client(
+            code=code, raison_sociale="Optique Sha", magasins=["Centre"]
+        )
+        run = backup_client(client.pk)
+
+        BackupRun.objects.using("default").filter(pk=run.pk).update(sha256="f" * 64)
+        run.refresh_from_db(using="default")
+
+        with pytest.raises(RestoreRefused, match="corrupted or substituted"):
+            restore_client(client, run, cutover=False)
+
+        with maintenance_connection() as cur:
+            cur.execute(
+                "SELECT count(*) FROM pg_database WHERE starts_with(datname, %s)",
+                (f"{client.db_name}_restore_",),
+            )
+            assert cur.fetchone()[0] == 0
+    finally:
+        _destroy(code)
+
+
+@pytest.mark.slow
+@pytest.mark.django_db(transaction=True)
+def test_tenant09_restore_never_restores_into_an_existing_database(
+    allow_runtime_tenant_aliases,
+):
+    """A restore creates its own database, or refuses. It never adopts a populated one.
+
+    `create_database` is guarded by an existence check, which is correct for provisioning
+    — a killed run must adopt the database it already created — and wrong here. Restoring
+    into a populated database means `pg_restore` runs into existing objects and, with
+    `--exit-on-error`, aborts partway, leaving something that looks restored.
+
+    Found during this plan's own drill, on exactly the flow the runbook prescribes:
+    restore to verify, then restore again to cut over, both landing on the same
+    timestamped name. The timestamp now carries seconds and the collision is refused.
+    """
+    from plateforme.control_plane.backup import (
+        RestoreRefused,
+        backup_client,
+        restore_client,
+        restore_target_name,
+    )
+    from plateforme.control_plane.provisioning import provision_client
+
+    code = "test-rest-twice"
+    try:
+        client = provision_client(
+            code=code, raison_sociale="Optique Twice", magasins=["Centre"]
+        )
+        run = backup_client(client.pk)
+
+        # Occupy the name the next restore would choose.
+        with patch(
+            "plateforme.control_plane.backup.restore_target_name",
+            return_value=restore_target_name(client, "FIXEDSTAMP"),
+        ):
+            first = restore_client(client, run, cutover=False)
+            assert first["restored_db"].endswith("FIXEDSTAMP")
+
+            with pytest.raises(RestoreRefused, match="already exists"):
+                restore_client(client, run, cutover=False)
+    finally:
+        _destroy(code)
+
+
+@pytest.mark.slow
+@pytest.mark.django_db(transaction=True)
+def test_tenant09_backup_keys_are_unique_even_within_one_second(
+    allow_runtime_tenant_aliases,
+):
+    """Two dumps of one client never share an object key.
+
+    An artifact silently overwritten by a later run is the worst kind of backup bug: the
+    audit row still says `ok`, and it points at somebody else's snapshot. The `BackupRun`
+    primary key is in the key, so uniqueness is by construction rather than by assuming no
+    two dumps start in the same second.
+    """
+    from plateforme.control_plane.backup import backup_client
+    from plateforme.control_plane.provisioning import provision_client
+
+    code = "test-bk-key"
+    try:
+        client = provision_client(
+            code=code, raison_sociale="Optique Key", magasins=["Centre"]
+        )
+        with patch(
+            "plateforme.control_plane.backup._timestamp", return_value="20260101T000000Z"
+        ):
+            first = backup_client(client.pk)
+            second = backup_client(client.pk)
+
+        assert first.object_key != second.object_key, (
+            f"two dumps taken in the same second share the key {first.object_key!r}; the "
+            "second silently overwrote the first, and BackupRun still says both are ok."
+        )
+        assert first.sha256 and second.sha256
+    finally:
+        _destroy(code)
+
+
+@pytest.mark.slow
+@pytest.mark.django_db(transaction=True)
+def test_tenant09_restore_refuses_a_backup_belonging_to_another_client(
+    allow_runtime_tenant_aliases,
+):
+    """Restoring client B's dump into client A's database would be a cross-client leak.
+
+    Not a warning — a refusal, before anything is created. The operator reaches for this
+    command during an incident, which is exactly when a `--code` typo happens.
+    """
+    from plateforme.control_plane.backup import (
+        RestoreRefused,
+        backup_client,
+        restore_client,
+    )
+    from plateforme.control_plane.provisioning import provision_client
+
+    code_a, code_b = "test-mix-a", "test-mix-b"
+    try:
+        a = provision_client(
+            code=code_a, raison_sociale="Optique Mix A", magasins=["Centre"]
+        )
+        b = provision_client(
+            code=code_b, raison_sociale="Optique Mix B", magasins=["Centre"]
+        )
+        run_b = backup_client(b.pk)
+
+        with pytest.raises(RestoreRefused, match="belongs to client"):
+            restore_client(a, run_b, cutover=True)
+
+        a.refresh_from_db(using="default")
+        assert a.db_name.endswith(f"{a.pk:06d}"), "client A was cut over to B's data"
+    finally:
+        _destroy(code_a)
+        _destroy(code_b)

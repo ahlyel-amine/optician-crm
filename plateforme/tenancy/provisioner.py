@@ -115,6 +115,23 @@ class SqlProvisioner(DatabaseProvisioner):
         with _cursor(cur) as c:
             c.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (user,))
             if c.fetchone():
+                # The role exists — but its password may not be the one the control plane
+                # holds, and a role whose password does not match the control-plane record
+                # is simply unusable. The control plane is the source of truth for the
+                # credential, so converge on it rather than assuming.
+                #
+                # Found the hard way: a run killed after CREATE ROLE leaves the role
+                # behind, and a later provision of the same primary key generates a fresh
+                # password, stores it, skips the CREATE, and produces a client that
+                # authenticates with nothing —
+                #     FATAL: password authentication failed for user "optique_u000013"
+                # from a step nowhere near the cause. Making this ALTER is what turns
+                # "idempotent unless the role predates the row" into idempotent.
+                c.execute(
+                    sql.SQL("ALTER ROLE {} WITH LOGIN PASSWORD {}").format(
+                        sql.Identifier(user), sql.Literal(password)
+                    )
+                )
                 return
             try:
                 c.execute(

@@ -40,6 +40,14 @@ STALE_TEST_DB_PATTERNS = [
 #: DROP is issued. The LIKE pattern and this check must both agree.
 STALE_TEST_DB_PREFIXES = ("test_optique_test_", "test_client_")
 
+#: Roles the provisioning tests create. They are **cluster-wide**, so dropping the
+#: databases does not remove them, and a role left behind by a killed run is a landmine:
+#: a later run that reaches the same primary key stores a fresh password, finds the role
+#: already present, and produces a client that cannot authenticate — failing in a step
+#: nowhere near the cause. `create_role_if_absent` now converges the password, so this is
+#: the second of two defences rather than the only one.
+STALE_TEST_ROLE_PREFIX = "test_client_u"
+
 
 def pytest_sessionstart(session):
     """Drop test databases left behind by a crashed previous run, before anything starts.
@@ -86,6 +94,25 @@ def pytest_sessionstart(session):
                 drop_database_force(cur, name)
             if stale:
                 print(f"\nreaped {len(stale)} stale test database(s): {', '.join(stale)}")
+
+            # Roles, after the databases that depend on them. `starts_with`, never a
+            # LIKE pattern: `_` is a single-character wildcard in LIKE, so
+            # `test_client_u%` would also match names this has no business touching.
+            from psycopg import sql
+
+            cur.execute(
+                "SELECT rolname FROM pg_roles WHERE starts_with(rolname, %s) ORDER BY 1",
+                (STALE_TEST_ROLE_PREFIX,),
+            )
+            roles = [row[0] for row in cur.fetchall()]
+            for role in roles:
+                if not role.startswith(STALE_TEST_ROLE_PREFIX):
+                    continue  # unreachable; refuses rather than obeys if widened
+                cur.execute(
+                    sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(role))
+                )
+            if roles:
+                print(f"reaped {len(roles)} stale test role(s): {', '.join(roles)}")
     except Exception as exc:  # noqa: BLE001 — availability must not fail the session
         warnings.warn(
             f"Stale-test-database reaper skipped: {exc!r}. This is only a problem if a "

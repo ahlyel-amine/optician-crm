@@ -23,16 +23,23 @@ Calendar-driven work. Starts day one and runs in parallel with build — no amou
 
 ### Tenancy & Control Plane (TENANT)
 
-- [ ] **TENANT-01**: A new client business is provisioned with its own database by a single repeatable operation
+- [x] **TENANT-01**: A new client business is provisioned with its own database by a single repeatable operation
+  <br>*Closed (02-04):* `manage.py provision_client`. Proven by `pending_plan(alias) == []` — at the current migration head, not merely created — rather than by the absence of an error.
 - [x] **TENANT-02**: A control plane records every client database, its host, and its current schema version
-- [ ] **TENANT-03**: A schema migration is applied across every client database, and the operator can see which clients succeeded, failed, or are behind
+- [x] **TENANT-03**: A schema migration is applied across every client database, and the operator can see which clients succeeded, failed, or are behind
+  <br>*Closed (02-05):* `manage.py migrate_all [--check]`. Both halves: applied everywhere, and a per-client table plus `MigrationRunResult` rows showing succeeded / failed / behind with durations and error text. `--check` is a deploy gate by exit code.
 - [x] **TENANT-04**: Any code executing without a resolved client context fails immediately rather than falling back to a shared connection
-- [ ] **TENANT-05**: A failed provisioning attempt leaves no half-created client — the operation either completes or rolls back cleanly
-- [ ] **TENANT-06**: An operator can onboard an optician manually, using the same provisioning path the self-serve flow will call
-- [ ] **TENANT-07**: A client business can have several magasins, and stock and caisse are scoped to a magasin within that client's database
-- [ ] **TENANT-08**: Database connections are pooled so that adding clients does not exhaust the database server's connection limit
-  <br>*Partial (02-01):* the four configuration invariants are in place and asserted — `CONN_MAX_AGE = 0`, no `ATOMIC_REQUESTS` on any alias, `DISABLE_SERVER_SIDE_CURSORS = True`, PgBouncer `min_pool_size = 0` in transaction mode. Three named settings tests plus the ini-parsing test pass. **Not yet closed:** `test_tenant08_connection_count_does_not_scale_with_alias_count` is marked `pending` — it needs `register_client_database` from 02-03 to prove the budget empirically rather than by configuration.
-- [ ] **TENANT-09**: Every client database is backed up on a schedule, and restoring **one client's logical database alone** has been performed and verified — not assumed. Per-instance PITR that only restores a whole server does not satisfy this, because many client databases share one instance.
+  <br>*Strengthened (02-04):* a fifth defence below the application — `REVOKE CONNECT ... FROM PUBLIC` at database creation, so one client's role cannot open another's database. PostgreSQL grants `CONNECT` to `PUBLIC` by default, and without this the isolation boundary existed only in application code.
+- [x] **TENANT-05**: A failed provisioning attempt leaves no half-created client — the operation either completes or rolls back cleanly
+  <br>*Closed (02-04):* not a rollback — `CREATE DATABASE` cannot run in a transaction. A status state machine with per-step idempotency: a run killed at any step leaves a FAILED row invisible to the router and to migration fan-out, and a rerun converges to exactly one client and one database (proven by counting `pg_database` before and after).
+- [x] **TENANT-06**: An operator can onboard an optician manually, using the same provisioning path the self-serve flow will call
+  <br>*Closed (02-04):* the command is 58 lines and contains no provisioning logic, asserted by a source-level test so the two entry points cannot drift.
+- [x] **TENANT-07**: A client business can have several magasins, and stock and caisse are scoped to a magasin within that client's database
+  <br>*Closed (02-06):* repeated `--magasin` seeds every requested magasin and zero magasins is refused; `MouvementStock` and `EcritureCaisse` are append-only, magasin-scoped through an explicit `for_magasin()` projection — deliberately not an implicit filter.
+- [x] **TENANT-08**: Database connections are pooled so that adding clients does not exhaust the database server's connection limit
+  <br>*Closed (02-03):* the four configuration invariants — `CONN_MAX_AGE = 0`, no `ATOMIC_REQUESTS` on any alias, `DISABLE_SERVER_SIDE_CURSORS = True`, PgBouncer `min_pool_size = 0` in transaction mode — plus the empirical load check that was `pending` in 02-01 and is now implemented and green: **300 registered aliases served at concurrency 4 held a peak of 4 server connections**, sampled from `pg_stat_activity` every 5 ms throughout, settling back to 0. Registration itself opened none. Mutation-checked: setting `CONN_MAX_AGE = 600` does not merely fail the assertion, it exhausts PostgreSQL's connection slots.
+- [x] **TENANT-09**: Every client database is backed up on a schedule, and restoring **one client's logical database alone** has been performed and verified — not assumed. Per-instance PITR that only restores a whole server does not satisfy this, because many client databases share one instance.
+  <br>*Closed (02-07):* per-client `pg_dump --format=custom`, a Beat fan-out enqueuing one `client_id` per ACTIVE client, and a `BackupRun` row per attempt. **The drill was performed**, in `test_tenant09_single_client_restore_produces_identical_data` and again by hand against Compose: two clients on one instance, client A backed up, A then *mutated*, A restored and cut over, `tenant_checksum(A)` back to its pre-mutation value **and `tenant_checksum(B)` unchanged** — which is what makes it a per-database restore rather than the per-instance PITR the requirement rejects. Verification is an ordered per-table `md5` plus `pg_sequences.last_value`, not row counts. Mutation-checked: a `pg_restore` that exits 0 without restoring fails the test.
 
 ### Accounts & Permissions (PERM)
 

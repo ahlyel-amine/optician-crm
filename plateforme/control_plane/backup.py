@@ -34,6 +34,7 @@ from django.utils.connection import ConnectionDoesNotExist
 
 from plateforme.control_plane.models import BackupRun, Client
 from plateforme.control_plane.storage import get_storage
+from plateforme.tenancy.maintenance import database_exists
 from plateforme.tenancy.provisioner import get_provisioner
 from plateforme.tenancy.registry import alias_for, evict_alias, register_client_database
 
@@ -43,16 +44,30 @@ _HASH_BLOCK = 1024 * 1024
 
 
 def _timestamp() -> str:
-    return datetime.now(UTC).strftime("%Y%m%dT%H%MZ")
+    """`YYYYMMDDTHHMMSSZ`.
+
+    Seconds, not minutes. The research writes `YYYYMMDDTHHMMZ`, and minute granularity is
+    wrong in both places it is used: two backups in one minute would overwrite each
+    other's artifact — leaving a `BackupRun` row pointing at another run's data, in the
+    table whose whole purpose is to be auditable — and two restores in one minute would
+    collide on the target database name. Both were observed, not theorised; see
+    `restore_client`.
+    """
+    return datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
 
 
-def object_key_for(client: Client, stamp: str) -> str:
-    """`client/<code>/<YYYY>/<YYYYMMDDTHHMMZ>.dump` — the research's layout.
+def object_key_for(client: Client, stamp: str, run_pk: int) -> str:
+    """`client/<code>/<YYYY>/<YYYYMMDDTHHMMSSZ>-<run_pk>.dump`.
 
     Grouped by client then year, so "every backup for this optician" and "everything older
     than N years" are both a prefix listing rather than a scan.
+
+    The `BackupRun` primary key is in the name so a key is unique by construction rather
+    than by assuming no two dumps of one client start in the same second. An artifact
+    silently overwritten by a later run is the worst kind of backup bug: the audit row
+    still says `ok`, and it points at somebody else's snapshot.
     """
-    return f"client/{client.code}/{stamp[:4]}/{stamp}.dump"
+    return f"client/{client.code}/{stamp[:4]}/{stamp}-{run_pk}.dump"
 
 
 def _sha256(path) -> str:
@@ -63,10 +78,14 @@ def _sha256(path) -> str:
     return digest.hexdigest()
 
 
-def _pg_env(client: Client) -> dict:
-    """A subprocess environment carrying the password, never a command line carrying it."""
+def _pg_env(password: str) -> dict:
+    """A subprocess environment carrying the password, never a command line carrying it.
+
+    `PGPASSWORD` rather than `--password` or a URI: the command line of a running process
+    is readable by anyone via `ps`, and it lands in shell history (threat T-02-46).
+    """
     env = dict(os.environ)
-    env["PGPASSWORD"] = settings.PG_ADMIN_PASSWORD
+    env["PGPASSWORD"] = password
     return env
 
 
@@ -82,8 +101,9 @@ def backup_client(client_id: int) -> BackupRun:
         client=client,
         status=BackupRun.RUNNING,
         schema_digest=client.schema_digest,
-        object_key=object_key_for(client, stamp),
     )
+    run.object_key = object_key_for(client, stamp, run.pk)
+    run.save(using="default", update_fields=["object_key"])
 
     handle = tempfile.NamedTemporaryFile(suffix=".dump", delete=False)
     handle.close()
@@ -106,7 +126,11 @@ def backup_client(client_id: int) -> BackupRun:
             f"--file={tmp}",
         ]
         result = subprocess.run(
-            command, env=_pg_env(client), capture_output=True, text=True, check=False
+            command,
+            env=_pg_env(settings.PG_ADMIN_PASSWORD),
+            capture_output=True,
+            text=True,
+            check=False,
         )
         if result.returncode != 0:
             raise RuntimeError(
@@ -154,7 +178,7 @@ class RestoreRefused(RuntimeError):
 
 
 def restore_target_name(client: Client, stamp: str | None = None) -> str:
-    """`<db_name>_restore_<YYYYMMDDTHHMMZ>` — **never** `db_name` itself.
+    """`<db_name>_restore_<YYYYMMDDTHHMMSSZ>` — **never** `db_name` itself.
 
     Restoring in place over a live database is irreversible; restoring beside it is not.
     The control-plane row is the switch (threat T-02-43).
@@ -239,26 +263,61 @@ def restore_client(
             if create_role is not None:
                 create_role(cur, user=client.db_user, password=client.db_password)
 
-            # 4. A NEW database, beside the live one.
+            # 4. A NEW database, beside the live one — and it must genuinely be new.
+            #
+            # `create_database` is guarded by an existence check, which is right for
+            # provisioning (a killed run must adopt the database it already created) and
+            # wrong here: adopting a populated database means `pg_restore` runs into
+            # existing objects, and with --exit-on-error it aborts partway, leaving a
+            # half-restored database behind. Observed during this plan's own drill, on
+            # exactly the flow the runbook prescribes — restore to verify, then restore
+            # again to cut over, both within the same timestamp.
             target = restore_target_name(client)
+            if database_exists(cur, target):
+                raise RestoreRefused(
+                    f"{target} already exists. A restore must create its own database; "
+                    "restoring into a populated one aborts partway and leaves something "
+                    "that looks restored. Drop it first, or wait a second and retry."
+                )
             provisioner.create_database(cur, name=target, owner=client.db_user)
         _say(f"restoring into {target}")
 
-        # 5. pg_restore.
+        # 5. pg_restore, **connected as the client's own role**.
+        #
+        # This is what `--no-owner` costs, and it is not optional. `--no-owner` strips the
+        # ALTER OWNER statements — necessary, because the dump names an owner that may not
+        # exist on the restore target — but it means every object ends up owned by
+        # whoever ran the restore. Restoring as the superuser therefore produces a
+        # database the client's own role can connect to and cannot read:
+        #     psycopg.errors.InsufficientPrivilege: permission denied for table
+        #     stock_mouvementstock
+        # Observed, not anticipated. Connecting as `client.db_user` makes it the owner of
+        # every restored object, which is also what `migrate` produces during provisioning,
+        # so a restored database is indistinguishable from a provisioned one. It is
+        # least-privilege as a side effect rather than as the reason.
+        #
+        # The role owns the target database, and since PostgreSQL 15 the `public` schema
+        # belongs to `pg_database_owner`, so it has the rights to create in it.
         command = [
             settings.PG_RESTORE_BIN,
             f"--host={settings.PG_ADMIN_HOST}",
             f"--port={settings.PG_ADMIN_PORT}",
-            f"--username={settings.PG_ADMIN_USER}",
+            f"--username={client.db_user}",
             f"--dbname={target}",
             "--no-owner",
             "--no-privileges",
+            # The default is to continue past errors and report at the end, which produces
+            # a partially restored database that looks successful (threat T-02-44).
             "--exit-on-error",
             "--jobs=4",
             str(local),
         ]
         result = subprocess.run(
-            command, env=_pg_env(client), capture_output=True, text=True, check=False
+            command,
+            env=_pg_env(client.db_password),
+            capture_output=True,
+            text=True,
+            check=False,
         )
         if result.returncode != 0:
             raise RuntimeError(
