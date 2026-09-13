@@ -81,6 +81,15 @@ PG_ADMIN_PASSWORD = env("PG_ADMIN_PASSWORD", default="")
 TENANT_DB_LOCALE_PROVIDER = env("TENANT_DB_LOCALE_PROVIDER", default="icu")
 TENANT_DB_ICU_LOCALE = env("TENANT_DB_ICU_LOCALE", default="fr-FR")
 
+# Which implementation creates and drops client databases. `02-RESEARCH.md` Open Question
+# 2 — does the managed provider's application role have CREATEDB, or must databases be
+# created through the provider's API? — is a Phase 1 procurement fact and is still open.
+# This setting is the seam: an API-based provisioner is a second class named here, not a
+# change to the provisioning state machine.
+DATABASE_PROVISIONER = env(
+    "DATABASE_PROVISIONER", default="plateforme.tenancy.provisioner.SqlProvisioner"
+)
+
 # Fernet key encrypting each Client row's database password. Consumed by plan 02-02.
 TENANCY_FERNET_KEY = env("TENANCY_FERNET_KEY", default="")
 
