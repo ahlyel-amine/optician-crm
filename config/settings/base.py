@@ -116,6 +116,8 @@ INSTALLED_APPS = [
     "django_celery_beat",
     # Control plane — lives on `default` only, and `allow_migrate` pins it there.
     "plateforme.control_plane",
+    # Business apps — their tables exist only in client databases, never in `default`.
+    "domaine.magasins",
     # Plan 02-03 adds a system check that fails startup if an installed app is
     # classified as neither control-plane nor business, because an unclassified app
     # defaults to the control-plane database — a cross-client leak.
