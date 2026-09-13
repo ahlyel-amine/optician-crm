@@ -140,7 +140,12 @@ INSTALLED_APPS = [
     # Control plane — lives on `default` only, and `allow_migrate` pins it there.
     "plateforme.control_plane",
     # Business apps — their tables exist only in client databases, never in `default`.
+    # Every one of these must also be in BUSINESS_APPS in plateforme/tenancy/router.py,
+    # in the same commit. An unclassified app makes `manage.py check` fail with
+    # tenancy.E001 rather than silently landing its tables on `default` (Pitfall 12).
     "domaine.magasins",
+    "domaine.stock",
+    "domaine.caisse",
     # Plan 02-03 adds a system check that fails startup if an installed app is
     # classified as neither control-plane nor business, because an unclassified app
     # defaults to the control-plane database — a cross-client leak.

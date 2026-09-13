@@ -60,31 +60,183 @@ def test_tenant07_magasin_scoped_model_protects_ledger_history():
     )
 
 
-@pytest.mark.pending
 @pytest.mark.tenancy
-def test_tenant07_stock_and_caisse_are_scoped_per_magasin():
+def test_tenant07_stock_and_caisse_are_scoped_per_magasin(tenant_a):
     """Two magasins in one client database; a movement in each; `for_magasin` returns one.
 
     TENANT-07's own test. It proves that magasin scoping is an explicit queryset
     projection rather than an implicit filter — the caller names the magasins it wants,
     and Phase 3's permission layer decides which magasins that caller may name.
 
-    Pending: needs the stock and caisse ledger models, which plan 02-06 seeds and
-    Phase 5/7 build.
+    **The unscoped half is as load-bearing as the scoped half.** A test that only proved
+    `for_magasin` filters would pass against an implicit default-manager filter, and an
+    implicit filter silently returns partial data to the owner's dashboard — a wrong
+    number with no error, which is worse than a crash. Cross-magasin reads are legitimate
+    and constant here, so the plain manager must keep returning everything.
     """
-    pytest.fail("pending: implemented by plan 02-06")
+    from decimal import Decimal
+
+    from domaine.caisse.models import EcritureCaisse
+    from domaine.magasins.models import Magasin
+    from domaine.stock.models import MouvementStock
+
+    centre = Magasin.objects.create(code="CENTRE", nom="Centre")
+    maarif = Magasin.objects.create(code="MAARIF", nom="Maarif")
+
+    MouvementStock.objects.create(
+        magasin=centre, reference_article="MONT-001", type_mouvement="entree",
+        quantite_delta=10,
+    )
+    MouvementStock.objects.create(
+        magasin=maarif, reference_article="MONT-002", type_mouvement="entree",
+        quantite_delta=4,
+    )
+    EcritureCaisse.objects.create(
+        magasin=centre, sens="entree", montant=Decimal("1800.00"), libelle="Vente"
+    )
+    EcritureCaisse.objects.create(
+        magasin=maarif, sens="entree", montant=Decimal("950.50"), libelle="Vente"
+    )
+
+    scoped_stock = MouvementStock.objects.for_magasin(centre)
+    assert scoped_stock.count() == 1
+    assert scoped_stock.get().reference_article == "MONT-001"
+
+    scoped_caisse = EcritureCaisse.objects.for_magasin(centre)
+    assert scoped_caisse.count() == 1
+    assert scoped_caisse.get().montant == Decimal("1800.00")
+
+    # Unscoped reads still see both magasins. This is the assertion that fails if anyone
+    # adds an implicit filter in Phase 5, 6 or 7.
+    assert MouvementStock.objects.count() == 2
+    assert EcritureCaisse.objects.count() == 2
+    assert MouvementStock.objects.for_magasins([centre, maarif]).count() == 2
 
 
-@pytest.mark.pending
-@pytest.mark.slow
-def test_tenant07_provisioning_seeds_requested_magasins():
-    """`provision_client(--magasin ...)` creates at least one magasin in the new database.
+@pytest.mark.tenancy
+def test_tenant07_a_magasin_with_ledger_history_cannot_be_deleted(tenant_a):
+    """CLAUDE.md #4: the database refuses it, not application code.
 
-    A client with zero magasins is not a valid state: every sale, every caisse entry and
-    every stock movement is scoped to one. `seed_new_client` must enforce it, and the
-    seed must be idempotent (`get_or_create` only) so a killed provisioning run that is
-    rerun does not duplicate magasins.
-
-    Pending: needs `provision_client`, which plan 02-04 builds and 02-06 extends.
+    A cascading delete of a magasin would erase the caisse and stock history that
+    references it — fiscal records art. 211 CGI requires be kept for ten years. Magasins
+    are deactivated (`actif = False`), never deleted. `ProtectedError` comes from
+    `on_delete=PROTECT` on the base class, which is why no subclass may override it.
     """
-    pytest.fail("pending: implemented by plan 02-06")
+    from django.db.models import ProtectedError
+
+    from domaine.magasins.models import Magasin
+    from domaine.stock.models import MouvementStock
+
+    magasin = Magasin.objects.create(code="DEL01", nom="À supprimer")
+    MouvementStock.objects.create(
+        magasin=magasin, reference_article="X", type_mouvement="entree", quantite_delta=1
+    )
+
+    with pytest.raises(ProtectedError):
+        magasin.delete()
+
+    assert Magasin.objects.filter(code="DEL01").exists()
+
+    # The supported alternative, so the test also documents what to do instead.
+    magasin.actif = False
+    magasin.save()
+    assert not Magasin.objects.get(code="DEL01").actif
+
+
+def test_tenant07_ledgers_have_no_mutable_balance_column():
+    """CLAUDE.md non-negotiable #4, asserted at the model level.
+
+    Stock and caisse are **append-only ledgers with derived balances**. Quantity on hand
+    is the sum of `quantite_delta`; the caisse balance is the sum of `montant`. A stored
+    running total is a second source of truth that drifts from the ledger, and the drift
+    is discovered by an optician counting the drawer.
+
+    This turns red the moment someone adds a convenience column in Phase 5 or 7, which is
+    exactly when it will be tempting.
+    """
+    from domaine.caisse.models import EcritureCaisse
+    from domaine.stock.models import MouvementStock
+
+    forbidden = {
+        "solde",
+        "solde_actuel",
+        "quantite",
+        "quantite_stock",
+        "quantite_en_stock",
+        "stock_actuel",
+        "montant_paye",
+        "montant_restant",
+        "total",
+        "balance",
+    }
+    for model in (MouvementStock, EcritureCaisse):
+        names = {f.name for f in model._meta.get_fields()}
+        clash = names & forbidden
+        assert not clash, (
+            f"{model.__name__} has {sorted(clash)}. Stock and caisse are append-only "
+            "ledgers with DERIVED balances (CLAUDE.md non-negotiable #4). A stored "
+            "running total is a second source of truth and it will drift."
+        )
+
+
+def test_tenant07_ledger_amounts_are_decimal_not_float():
+    """CLAUDE.md non-negotiable #7, asserted where it is cheapest.
+
+    Money is `Decimal` with an explicit `decimal_places`, never float. A binary float
+    cannot represent 0.10 MAD, so a caisse that totals floats disagrees with the drawer
+    by centimes that accumulate — and `assert total == 1800.0` passes while it does.
+    """
+    from django.db import models
+
+    from domaine.caisse.models import EcritureCaisse
+    from domaine.stock.models import MouvementStock
+
+    montant = EcritureCaisse._meta.get_field("montant")
+    assert isinstance(montant, models.DecimalField)
+    assert montant.decimal_places == 2, (
+        f"EcritureCaisse.montant has decimal_places={montant.decimal_places}; MAD has two."
+    )
+    assert montant.max_digits and montant.max_digits >= 10
+
+    for model in (MouvementStock, EcritureCaisse):
+        for field in model._meta.get_fields():
+            assert not isinstance(field, models.FloatField), (
+                f"{model.__name__}.{field.name} is a FloatField. Money is Decimal "
+                "(CLAUDE.md non-negotiable #7), and a float quantity is no better."
+            )
+
+
+def test_tenant04_new_business_apps_are_classified():
+    """Pitfall 12: an unclassified new app silently lands on the control-plane database.
+
+    Adding `stock` and `caisse` to `INSTALLED_APPS` without adding them to `BUSINESS_APPS`
+    would make the router's `allow_migrate` return `None` for them — no opinion — and
+    their tables would be created in `default`, alongside the control plane, for every
+    client at once. The `tenancy.E001` system check is what makes forgetting impossible
+    rather than merely unlikely; this asserts it is satisfied *and* that it would have
+    fired.
+    """
+    from django.core.management import call_command
+    from django.core.management.base import SystemCheckError
+
+    from plateforme.tenancy.router import BUSINESS_APPS
+
+    assert {"stock", "caisse"} <= BUSINESS_APPS, (
+        f"stock and caisse are not classified: {sorted(BUSINESS_APPS)}"
+    )
+
+    call_command("check")  # raises SystemCheckError on tenancy.E001
+
+    # Negative control: the check must actually fire when an app is unclassified,
+    # or "no E001" above is evidence of nothing.
+    import plateforme.tenancy.router as router_module
+
+    original = router_module.BUSINESS_APPS
+    router_module.BUSINESS_APPS = original - {"caisse"}
+    try:
+        with pytest.raises(SystemCheckError, match="tenancy.E001"):
+            call_command("check")
+    finally:
+        router_module.BUSINESS_APPS = original
+
+    call_command("check")

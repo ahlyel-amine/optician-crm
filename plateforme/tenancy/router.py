@@ -52,10 +52,11 @@ CONTROL_PLANE_APPS = frozenset(
     }
 )
 
-#: Apps whose tables live in each client's own database. Only what exists today — plan
-#: 02-06 and Phases 5 through 7 extend this, and the `tenancy.E001` system check makes
-#: forgetting impossible rather than merely unlikely.
-BUSINESS_APPS = frozenset({"magasins"})
+#: Apps whose tables live in each client's own database. Phases 5 through 8 extend this,
+#: and the `tenancy.E001` system check makes forgetting impossible rather than merely
+#: unlikely — add the label here in the **same commit** that adds the app to
+#: `INSTALLED_APPS`, or `manage.py check` fails on the next run (Pitfall 12).
+BUSINESS_APPS = frozenset({"magasins", "stock", "caisse"})
 
 TENANT_ALIAS_PREFIX = "tenant_"
 
