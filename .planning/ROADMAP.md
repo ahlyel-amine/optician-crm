@@ -54,10 +54,16 @@ Plans:
   3. The control plane lists every client database, its host and its schema version, and a migration run across all of them reports per-client succeeded, failed or behind
   4. Code executing with no resolved client context refuses to run rather than falling back to a shared connection, proven by a permanent cross-client-leak guardrail test in CI
   5. A client business with several magasins can be created with stock and caisse scoped per magasin, and provisioning a few hundred clients and touching them all keeps database connections inside budget
-**Plans**: TBD
+**Plans**: 7 plans in 6 waves
 
 Plans:
-- [ ] 02-01: TBD
+- [ ] 02-01-PLAN.md — Repository scaffold, pinned stack, settings, Compose + PgBouncer topology (TENANT-08)
+- [ ] 02-02-PLAN.md — Control-plane Client model, Magasin base, conftest/factories and the Wave 0 named tests (TENANT-02)
+- [ ] 02-03-PLAN.md — Fail-closed tenancy layer: contextvar, registry, router, system check, middleware, Celery task base (TENANT-04)
+- [ ] 02-04-PLAN.md — Provisioning state machine, DatabaseProvisioner interface, operator commands (TENANT-01, TENANT-05, TENANT-06)
+- [ ] 02-05-PLAN.md — Migration fan-out `migrate_all` and the migration-authoring conventions (TENANT-03)
+- [ ] 02-06-PLAN.md — Multi-magasin provisioning and magasin-scoped stock/caisse ledgers (TENANT-07)
+- [ ] 02-07-PLAN.md — Per-client backup, verified single-client restore, phase gate (TENANT-09)
 
 ### Phase 3: Comptes, Permissions & App Shell
 **Goal**: The optician and their gérants sign in to a French web application where every field a gérant may not see is filtered in exactly one place
