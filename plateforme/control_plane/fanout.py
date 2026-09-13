@@ -64,6 +64,8 @@ def migrate_one(job: dict) -> dict:
     Returns a plain dict of primitives only — it crosses a process boundary by pickle, so
     no model instances, no exceptions, no connections.
     """
+    import os
+
     import django
 
     # Each child has its own `connections` registry and must build it.
@@ -78,6 +80,10 @@ def migrate_one(job: dict) -> dict:
         "code": job["code"],
         "db_name": job["db_name"],
         "host": job["host"],
+        # Evidence, not telemetry. "Failure isolation is structural" is a claim about
+        # process boundaries, and a test that does not check the work actually crossed one
+        # would pass just as happily against a thread pool.
+        "pid": os.getpid(),
         "status": "failed",
         "heads_before": {},
         "heads_after": {},
