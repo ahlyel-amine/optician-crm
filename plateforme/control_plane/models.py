@@ -280,3 +280,47 @@ class MigrationRunResult(models.Model):
 
     def __str__(self) -> str:
         return f"{self.client.code}: {self.status}"
+
+
+class BackupRun(models.Model):
+    """One `pg_dump` attempt against one client database. TENANT-09's audit half.
+
+    A row exists per **attempt**, created before the dump starts, so a crash mid-dump is
+    visible as a `running` row that never finished rather than as nothing at all. A backup
+    system that silently skips a client is worse than none, because it is trusted.
+
+    `schema_digest` is the client's digest **at dump time**, and it is not decoration: a
+    `tenant_checksum` is only comparable within one schema version, because a column added
+    by a later migration changes every table's digest. Restore compares it and refuses on
+    a mismatch unless forced (threat T-02-48).
+    """
+
+    RUNNING = "running"
+    OK = "ok"
+    FAILED = "failed"
+    STATUS_CHOICES = [
+        (RUNNING, "En cours"),
+        (OK, "Terminé"),
+        (FAILED, "Échec"),
+    ]
+
+    # PROTECT: the evidence that a client was backed up must outlive any attempt to
+    # tidy up the client row. Client rows are never deleted anyway (art. 211 CGI).
+    client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name="backups")
+    started_at = models.DateTimeField(auto_now_add=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    status = models.CharField(max_length=8, choices=STATUS_CHOICES, default=RUNNING)
+    bytes = models.BigIntegerField(default=0)
+    sha256 = models.CharField(max_length=64, blank=True)
+    object_key = models.CharField(max_length=255, blank=True)
+    #: The client's schema_digest at dump time. See the class docstring.
+    schema_digest = models.CharField(max_length=64, blank=True)
+    error = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-started_at"]
+        indexes = [models.Index(fields=["client", "started_at"])]
+        verbose_name = "backup run"
+
+    def __str__(self) -> str:
+        return f"{self.client.code} {self.started_at:%Y-%m-%dT%H:%MZ} ({self.status})"

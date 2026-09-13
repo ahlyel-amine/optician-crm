@@ -100,6 +100,49 @@ DATABASE_PROVISIONER = env(
 TENANT_DB_NAME_PREFIX = env("TENANT_DB_NAME_PREFIX", default="optique_c")
 TENANT_DB_USER_PREFIX = env("TENANT_DB_USER_PREFIX", default="optique_u")
 
+
+# --------------------------------------------------------------------------------------
+# Backup and restore (TENANT-09)
+# --------------------------------------------------------------------------------------
+# The PostgreSQL client binaries. A mismatched pg_dump refuses to dump a newer server, so
+# the major version must match the server's — the app image ships postgresql-client-18 and
+# `docker compose exec` reports 18.6 on both sides. Overridable because a developer's
+# machine may keep them off PATH (Homebrew's libpq is keg-only).
+PG_DUMP_BIN = env("PG_DUMP_BIN", default="pg_dump")
+PG_RESTORE_BIN = env("PG_RESTORE_BIN", default="pg_restore")
+
+# `pg_dump --compress`. zstd:9 is the project default and is **verified supported** by the
+# Debian postgresql-client-18 build the app image ships:
+#   pg_dump --format=custom --compress=zstd:9   -> exit 0, pg_restore --list parses it
+# It is a setting because compression methods are compiled in, not universal: Homebrew's
+# keg-only libpq is built without zstd and answers
+#   "invalid compression specification: this build does not support compression with ZSTD"
+# A developer on such a host sets gzip:9. The value must be one a *restoring* build also
+# supports, so it is deployment-wide rather than per-invocation.
+BACKUP_COMPRESSION = env("BACKUP_COMPRESSION", default="zstd:9")
+
+# Where dump artifacts go. The same reasoning as DATABASE_PROVISIONER: the object-storage
+# provider is a Phase 1 procurement decision, and an interface now makes an S3-compatible
+# implementation a small change later.
+#
+# Production storage must be **EU-resident and encrypted at rest** — a dump of a client
+# database is a complete copy of that optician's ordonnances, which are health data under
+# law 09-08 (threat T-02-45). That is gated on the Phase 1 LEGAL-02 hosting-jurisdiction
+# decision, which is why the default here is deliberately a local path rather than a
+# plausible-looking bucket someone might ship.
+BACKUP_STORAGE = env(
+    "BACKUP_STORAGE", default="plateforme.control_plane.storage.LocalFilesystemStorage"
+)
+BACKUP_LOCAL_ROOT = env("BACKUP_LOCAL_ROOT", default=str(BASE_DIR / "backups"))
+
+# `02-RESEARCH.md` assumption **A5**, and it is a legal question rather than a technical
+# one: art. 211 CGI's ten years is a **records** obligation, not a backup-rotation
+# obligation. Conflating the two makes storage cost explode and over-collects personal
+# data. This is the defensible default the research proposes; the Phase 1 lawyer confirms
+# or replaces it. **Pruning is deliberately not implemented until they do** — a rotation
+# task written against a guessed policy is worse than none, because it deletes.
+BACKUP_RETENTION = {"daily": 30, "monthly": 12, "annual": 10}
+
 # Fernet key encrypting each Client row's database password. Consumed by plan 02-02.
 TENANCY_FERNET_KEY = env("TENANCY_FERNET_KEY", default="")
 

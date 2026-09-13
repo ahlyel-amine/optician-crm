@@ -14,7 +14,12 @@ operator admin is for the fleet, not for one optician's stock.
 
 from django.contrib import admin
 
-from plateforme.control_plane.models import Client, MigrationRun, MigrationRunResult
+from plateforme.control_plane.models import (
+    BackupRun,
+    Client,
+    MigrationRun,
+    MigrationRunResult,
+)
 
 
 @admin.register(Client)
@@ -123,6 +128,47 @@ class MigrationRunAdmin(admin.ModelAdmin):
 
     def has_add_permission(self, request):
         """Runs are created by `migrate_all`, never by hand — an empty one means nothing."""
+        return False
+
+
+@admin.register(BackupRun)
+class BackupRunAdmin(admin.ModelAdmin):
+    """Read-only evidence that each client really was backed up, and how large the dump was.
+
+    A backup system that silently skips a client is worse than none, because it is
+    trusted. This page is what turns "we take backups" into something an operator can
+    check (threat T-02-50). Filtering on `failed` is the one view that matters.
+    """
+
+    list_display = (
+        "client",
+        "started_at",
+        "finished_at",
+        "status",
+        "bytes",
+        "schema_digest",
+        "object_key",
+    )
+    list_filter = ("status",)
+    search_fields = ("client__code", "object_key", "sha256")
+    date_hierarchy = "started_at"
+    readonly_fields = (
+        "client",
+        "started_at",
+        "finished_at",
+        "status",
+        "bytes",
+        "sha256",
+        "object_key",
+        "schema_digest",
+        "error",
+    )
+
+    def has_add_permission(self, request):
+        """Rows are created by the dump itself; an empty one would be a false record."""
+        return False
+
+    def has_change_permission(self, request, obj=None):
         return False
 
 
