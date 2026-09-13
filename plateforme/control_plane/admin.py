@@ -14,7 +14,7 @@ operator admin is for the fleet, not for one optician's stock.
 
 from django.contrib import admin
 
-from plateforme.control_plane.models import Client
+from plateforme.control_plane.models import Client, MigrationRun, MigrationRunResult
 
 
 @admin.register(Client)
@@ -67,4 +67,84 @@ class ClientAdmin(admin.ModelAdmin):
         know a client existed. A delete button here would also leave the client's
         database behind with nothing pointing at it — a true orphan, reapable only by hand.
         """
+        return False
+
+
+class MigrationRunResultInline(admin.TabularInline):
+    """Who failed and why, on the same page as the run. One page, not a log grep."""
+
+    model = MigrationRunResult
+    extra = 0
+    can_delete = False
+    fields = ("client", "status", "heads_before", "heads_after", "duration_seconds", "error")
+    readonly_fields = fields
+    ordering = ("status", "client__code")
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(MigrationRun)
+class MigrationRunAdmin(admin.ModelAdmin):
+    """Read-only history of every fan-out, with its per-client results inline.
+
+    Note the two truths this page has to keep apart. `Client.schema_digest` is the
+    **recorded** version — what was true after the last successful `migrate`. A `check`
+    run here is the **probed** version, and it is authoritative. "Recorded: behind" and
+    "probed: behind" are different facts, and a control plane that showed only one of
+    them would be lying whenever somebody had run `migrate` by hand (threat T-02-36).
+    """
+
+    list_display = (
+        "pk",
+        "mode",
+        "status",
+        "started_at",
+        "finished_at",
+        "succeeded",
+        "failed",
+        "behind",
+        "triggered_by",
+    )
+    list_filter = ("mode", "status", "triggered_by")
+    date_hierarchy = "started_at"
+    inlines = [MigrationRunResultInline]
+    readonly_fields = (
+        "started_at",
+        "finished_at",
+        "triggered_by",
+        "target_heads",
+        "mode",
+        "status",
+        "succeeded",
+        "failed",
+        "behind",
+    )
+
+    def has_add_permission(self, request):
+        """Runs are created by `migrate_all`, never by hand — an empty one means nothing."""
+        return False
+
+
+@admin.register(MigrationRunResult)
+class MigrationRunResultAdmin(admin.ModelAdmin):
+    """Also registered standalone, so "show me every failure across every run" is one filter."""
+
+    list_display = ("run", "client", "status", "duration_seconds")
+    list_filter = ("status",)
+    search_fields = ("client__code", "error")
+    readonly_fields = (
+        "run",
+        "client",
+        "status",
+        "heads_before",
+        "heads_after",
+        "duration_seconds",
+        "error",
+    )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
         return False

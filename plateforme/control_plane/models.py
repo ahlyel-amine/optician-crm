@@ -184,3 +184,99 @@ class Client(models.Model):
             )
         self.status = new_status
         self.last_error = last_error
+
+
+class MigrationRunMode(models.TextChoices):
+    APPLY = "apply", "Application"
+    CHECK = "check", "Vérification"
+
+
+class MigrationRunStatus(models.TextChoices):
+    RUNNING = "running", "En cours"
+    OK = "ok", "Terminé"
+    FAILED = "failed", "Échec"
+
+
+class MigrationRun(models.Model):
+    """One `migrate_all` invocation across the fleet. TENANT-03's audit half.
+
+    Applying a migration everywhere is the easy half. *Knowing who succeeded, who failed
+    and who is behind* is the requirement, and knowing it after the deploy window has
+    closed means the answer has to be a row rather than a scrollback buffer.
+
+    `target_heads` records what the code's leaf nodes were at run time, so a run stays
+    interpretable after the code has moved on.
+    """
+
+    Mode = MigrationRunMode
+    Status = MigrationRunStatus
+
+    started_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    triggered_by = models.CharField(
+        max_length=64,
+        default="command",
+        help_text="command / celery / deploy — how this run was started.",
+    )
+    target_heads = models.JSONField(default=dict, blank=True)
+    mode = models.CharField(
+        max_length=8, choices=MigrationRunMode.choices, default=MigrationRunMode.APPLY
+    )
+    status = models.CharField(
+        max_length=8,
+        choices=MigrationRunStatus.choices,
+        default=MigrationRunStatus.RUNNING,
+    )
+    succeeded = models.PositiveIntegerField(default=0)
+    failed = models.PositiveIntegerField(default=0)
+    behind = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["-started_at"]
+        verbose_name = "migration run"
+
+    def __str__(self) -> str:
+        return f"{self.mode} run #{self.pk} ({self.started_at:%Y-%m-%d %H:%M})"
+
+
+class MigrationRunResult(models.Model):
+    """What happened to one client in one run. One row per client, always.
+
+    The row exists even when the client failed — especially then. "Client 47 failing must
+    not stop clients 48 through 300" is only demonstrable if there is a row for each of
+    them, which is why `test_tenant03_one_client_failing_does_not_stop_the_others`
+    asserts on the row count rather than on the log.
+    """
+
+    OK = "ok"
+    FAILED = "failed"
+    BEHIND = "behind"
+    SKIPPED = "skipped"
+    STATUS_CHOICES = [
+        (OK, "À jour"),
+        (FAILED, "Échec"),
+        (BEHIND, "En retard"),
+        (SKIPPED, "Ignoré"),
+    ]
+
+    # CASCADE: a run's results have no life of their own.
+    run = models.ForeignKey(
+        MigrationRun, on_delete=models.CASCADE, related_name="results"
+    )
+    # PROTECT: deleting a client must not silently erase the evidence that its migration
+    # failed. Client rows are never deleted anyway (art. 211 CGI), so this is belt and
+    # braces on a rule stated elsewhere.
+    client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name="+")
+    status = models.CharField(max_length=8, choices=STATUS_CHOICES)
+    heads_before = models.JSONField(default=dict, blank=True)
+    heads_after = models.JSONField(default=dict, blank=True)
+    duration_seconds = models.FloatField(default=0.0)
+    error = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["client__code"]
+        indexes = [models.Index(fields=["run", "status"])]
+        verbose_name = "migration run result"
+
+    def __str__(self) -> str:
+        return f"{self.client.code}: {self.status}"
