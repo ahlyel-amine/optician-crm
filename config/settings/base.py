@@ -114,9 +114,11 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "rest_framework",
     "django_celery_beat",
-    # Control-plane and business apps are added by later plans. Plan 02-03 adds a system
-    # check that fails startup if an installed app is classified as neither, because an
-    # unclassified app defaults to the control-plane database — a cross-client leak.
+    # Control plane — lives on `default` only, and `allow_migrate` pins it there.
+    "plateforme.control_plane",
+    # Plan 02-03 adds a system check that fails startup if an installed app is
+    # classified as neither control-plane nor business, because an unclassified app
+    # defaults to the control-plane database — a cross-client leak.
 ]
 
 MIDDLEWARE = [
