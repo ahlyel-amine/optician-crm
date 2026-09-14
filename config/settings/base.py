@@ -68,6 +68,14 @@ DATABASE_ROUTERS = ["plateforme.tenancy.router.TenantRouter"]
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+# The pooled traffic path, named symbolically so it survives the test settings pointing
+# `DATABASES` straight at PostgreSQL. `DATABASES["default"]["HOST"]` is *not* a reliable
+# way to find PgBouncer: config/settings/test.py overrides it to PG_ADMIN_HOST so that the
+# suite can run DDL. A test that wants to prove the *pooled* path works therefore has to
+# name the pooler explicitly — see tests/test_pgbouncer_auth.py.
+PGBOUNCER_HOST = env("PGBOUNCER_HOST", default="127.0.0.1")
+PGBOUNCER_PORT = env.int("PGBOUNCER_PORT", default=6432)
+
 # Direct-to-PostgreSQL path, bypassing PgBouncer: provisioning, migrate_all, pg_dump,
 # pg_restore, reap_orphan_databases. Deliberately a different port from PGBOUNCER_PORT.
 PG_ADMIN_HOST = env("PG_ADMIN_HOST", default="127.0.0.1")
