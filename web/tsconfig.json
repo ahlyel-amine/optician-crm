@@ -18,6 +18,8 @@
     "moduleDetection": "force",
     "jsx": "react-jsx",
     "useDefineForClassFields": true,
+    // Declare les modules d'actifs de Vite (import "./index.css", ?url, ?raw).
+    "types": ["vite/client"],
 
     "strict": true,
     "noUnusedLocals": true,

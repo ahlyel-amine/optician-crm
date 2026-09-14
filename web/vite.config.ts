@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url";
 
+import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
@@ -22,7 +23,7 @@ import { defineConfig } from "vite";
 // est concue hors d'existence. Ne pas remplacer ce proxy par une origine
 // distincte plus un en-tete CORS.
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
