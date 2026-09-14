@@ -274,6 +274,9 @@ more than it needs early revenue.
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
+| Session authentication, not JWT | `TenantMiddleware` reads `request.user` at middleware time; DRF authenticates inside `APIView.initial()`, after all middleware — under JWT nothing binds and every business query raises `NoTenantBound`. Verified against the installed DRF. Sessions change zero lines of the Phase 2 tenancy layer, and mobile is not blocked since `DEFAULT_AUTHENTICATION_CLASSES` is a list. | — Pending |
+| Money renders as `1 800,00 MAD` — non-breaking space, decimal comma | The three plausible conventions genuinely disagree (Django `fr` uses U+00A0, browser ICU `fr-FR` uses U+202F, ICU `fr-MA` uses a full stop). One pinned format on both sides, driven by a shared fixture, so screen and printed facture cannot drift. | — Pending |
+| Permission grants stored per (gérant, magasin, permission); UI defaults to uniform | The owner may override permissions per magasin, so the storage shape must support it from the start — retrofitting it is a data migration. The interface applies one checklist across granted magasins by default and only surfaces per-magasin override on request, so the common case stays simple. | — Pending |
 | User accounts in the control plane, one shared login | Django requires auth/contenttypes/admin in one database, and self-serve signup creates an account before the client database is provisioned. Control plane holds identity, membership and permission grants; the client database holds all business data including ordonnances. | — Pending |
 | Prices quoted HT, not TTC | Opticians are businesses and reclaim TVA, so HT costs them nothing while TTC pricing would cost us ~17% of revenue | — Pending |
 | Three tiers by magasin count, four billing periods | Magasin count is the axis on which the product's value actually scales, and it upgrades naturally as a shop grows rather than feeling extracted | — Pending |

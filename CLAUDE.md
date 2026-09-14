@@ -67,7 +67,14 @@ inside a phase plan — raise it instead.
     invisible to code review because the guarantee they broke was written in Python, one layer above.
     **When you add a database, a role or a `SECURITY DEFINER` function, write the `REVOKE` in the same
     change, and add a test that connects as the wrong principal and is refused.**
-13. **Never set `ATOMIC_REQUESTS = True`.** `BaseHandler.make_view_atomic()` iterates *every* alias in
+13. **Permission grants are stored per (gérant, magasin, permission).** The owner may override
+    permissions per magasin, so the storage shape must support that from day one — the UI defaults to
+    one uniform checklist across granted magasins and surfaces per-magasin override only on request.
+    Do not "simplify" this to one permission set per gérant; reversing it is a data migration.
+14. **Money renders as `1 800,00 MAD`** — U+00A0 non-breaking space, decimal comma. Django's `fr`,
+    browser ICU `fr-FR` and ICU `fr-MA` all disagree here, so the format is pinned explicitly on both
+    server and client from one shared fixture. Never rely on a locale default.
+15. **Never set `ATOMIC_REQUESTS = True`.** `BaseHandler.make_view_atomic()` iterates *every* alias in
     `connections.settings` and wraps the view in `transaction.atomic(using=alias)` for each — with 300
     clients registered that is 300 transactions per request. Use explicit `atomic()` blocks instead.
 
