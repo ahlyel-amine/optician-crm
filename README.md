@@ -63,6 +63,26 @@ Web and Celery traffic connects through **PgBouncer** (`6433`). Provisioning, `m
 `pg_dump` and `pg_restore` connect **directly to PostgreSQL** (`5435`) — `CREATE DATABASE`
 cannot run inside a transaction block, and transaction-mode pooling is the wrong place for DDL.
 
+### PgBouncer credentials
+
+PgBouncer resolves a client's credential with `auth_query` against PostgreSQL, so a newly
+provisioned client authenticates through the pooler with **no file edit and no reload**.
+`docker/pgbouncer/userlist.txt` is a two-line fallback for the lookup role's own password
+and the admin console — never add an `optique_u######` line to it.
+
+The lookup role and its `SECURITY DEFINER` function are created by
+`docker/postgres/init/01-pgbouncer-auth.sql`, which Docker runs **only on an empty data
+volume**. A cluster created before that file existed needs it applied once, by hand; it is
+idempotent, so running it again is harmless:
+
+```bash
+docker compose exec -T db psql -v ON_ERROR_STOP=1 -U postgres -d postgres \
+    < docker/postgres/init/01-pgbouncer-auth.sql
+```
+
+Symptom if you skip it: `FATAL: bouncer config error` on every pooled connection, and
+`tests/test_pgbouncer_auth.py` red.
+
 ## Layout
 
 ```
