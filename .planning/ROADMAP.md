@@ -80,7 +80,7 @@ Plans:
 
 Plans:
 - [x] 03-01-PLAN.md — Socle : dépendances, apps classées, `Utilisateur`, bascule `AUTH_USER_MODEL`, admin opérateur, `REVOKE CONNECT`, fixture de format (PERM-02)
-- [ ] 03-02-PLAN.md — Échafaudage de tests backend : les 36 tests nommés en `pending`, factories de comptes, deux magasins par tenant
+- [x] 03-02-PLAN.md — Échafaudage de tests backend : les 36 tests nommés en `pending`, factories de comptes, deux magasins par tenant
 - [ ] 03-03-PLAN.md — Échafaudage `web/` : Vite, TypeScript, vitest, shadcn/ui, proxy même-origine, premiers tests frontend rouges (APP-01, APP-03)
 - [ ] 03-04-PLAN.md — Catalogue des 21 permissions, prérequis, et droits stockés par (gérant, magasin, permission) (PERM-03)
 - [ ] 03-05-PLAN.md — `Acces`, `acces_pour`, `AccesMiddleware` : résolution fail-closed, sans branche propriétaire (PERM-03, PERM-04)
@@ -249,7 +249,7 @@ Phase 1 is a parallel calendar track: it starts first and stays open across late
 |-------|----------------|--------|-----------|
 | 1. Legal & Compliance Track | 0/TBD | Not started | - |
 | 2. Tenancy Foundation & Control Plane | 7/7 | Complete | 2026-09-13 |
-| 3. Comptes, Permissions & App Shell | 1/14 | In Progress|  |
+| 3. Comptes, Permissions & App Shell | 2/14 | In Progress|  |
 | 4. Clients & Ordonnances | 0/TBD | Not started | - |
 | 5. Stock & Catalogue | 0/TBD | Not started | - |
 | 6. Vente & Facturation | 0/TBD | Not started | - |

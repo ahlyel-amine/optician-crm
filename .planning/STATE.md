@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-01-PLAN.md
-last_updated: "2026-09-14T14:45:56.819Z"
+stopped_at: Completed 03-02-PLAN.md
+last_updated: "2026-09-14T16:33:40.840Z"
 last_activity: 2026-09-14
 progress:
   total_phases: 12
   completed_phases: 1
   total_plans: 21
-  completed_plans: 8
-  percent: 38
+  completed_plans: 9
+  percent: 43
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-09-09)
 ## Current Position
 
 Phase: 3 of 12 (Comptes, Permissions & App Shell)
-Plan: 1 of 14 complete in current phase; 14 plans in 11 waves are written and uncommitted, next is 03-01
+Plan: 2 of 14 complete in current phase; 14 plans in 11 waves are written and uncommitted, next is 03-01
 Status: Ready to execute
 Last activity: 2026-09-14
 
@@ -55,6 +55,7 @@ Progress: [██░░░░░░░░] 17%
 | Phase 2 P02 | 1 session | 3 tasks | 17 files |
 | Phase 2 P03 | 1 session | 3 tasks | 18 files |
 | Phase 03 P01 | ~50m | 3 tasks | 17 files |
+| Phase 03 P02 | ~35m | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -85,6 +86,9 @@ Recent decisions affecting current work:
 - [Phase 03]: AUTH_USER_MODEL swapped to comptes.Utilisateur by recreating the development control-plane database; pre-flight found 0 clients, so no data migration was needed
 - [Phase 03]: No PermissionsMixin on Utilisateur: Group is a role tier (CLAUDE.md #6), and its absence is the guarantee, asserted by a test
 - [Phase 03]: CLAUDE.md #12 fourth instance closed: REVOKE CONNECT on optique_control, applied to the local cluster by hand because Docker only runs initdb.d on an empty volume
+- [Phase 03-02]: Grant factories (AccesMagasinFactory, DroitAccordeFactory) land in 03-04 with their models: factory_boy reads Meta.model at class creation, so a factory written before its model breaks collection for the whole suite
+- [Phase 03-02]: Test fixtures now give two magasins per tenant, with the SAME codes (ANFA/MAARIF) in both tenants, so a magasin resolved by code outside the tenant connection is visible (03-RESEARCH P16)
+- [Phase 03-02]: A parametrization over a not-yet-existing registry needs BOTH a guarded in-function import (or collection breaks suite-wide) and a constant fallback case (or the phase's load-bearing test is parametrized over zero cases, hence green and worthless)
 
 ### Pending Todos
 
@@ -98,6 +102,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-14T14:45:56.816Z
-Stopped at: Completed 03-01-PLAN.md
+Last session: 2026-09-14T16:33:40.837Z
+Stopped at: Completed 03-02-PLAN.md
 Resume file: None
