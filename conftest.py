@@ -269,3 +269,57 @@ def tenant_b(db_all):
 
     with tenant_context("tenant_b"):
         yield "tenant_b"
+
+
+#: Les deux magasins que `deux_magasins` crée, dans l'ordre. Deux **codes distincts et
+#: reconnaissables** plutôt que `MAG001` / `MAG002` : une assertion qui échoue en disant
+#: « attendu ANFA, obtenu MAARIF » se lit, là où deux codes séquentiels demandent de
+#: remonter à la fixture pour savoir lequel était lequel.
+MAGASINS_PAR_DEFAUT = (
+    ("ANFA", "Optique Anfa"),
+    ("MAARIF", "Optique Maârif"),
+)
+
+
+def _creer_magasins(codes=MAGASINS_PAR_DEFAUT):
+    """Crée les magasins nommés dans le locataire **actuellement lié**, et les renvoie.
+
+    Aucun alias n'est nommé : `MagasinFactory` laisse le routeur résoudre la connexion
+    depuis le contexte, ce qui est exactement le mécanisme que la suite de tenancy existe
+    pour vérifier. Un `using=` ici serait un contournement déguisé.
+    """
+    from tests.factories import MagasinFactory
+
+    return [MagasinFactory(code=code, nom=nom, actif=True) for code, nom in codes]
+
+
+@pytest.fixture
+def deux_magasins(tenant_a):
+    """**Deux** magasins actifs chez le client A — jamais un seul.
+
+    Même argument que `tenant_b`, un cran plus bas dans la hiérarchie. Un test de portée
+    magasin qui ne dispose que d'un magasin ne prouve rien : une vue qui ignore
+    complètement la portée, ou qui renvoie toujours le même magasin, passe chaque
+    assertion, parce que la bonne réponse et la mauvaise sont le même objet. Il faut un
+    second magasin dont les lignes doivent **ne pas** apparaître, exactement comme il faut
+    un second locataire (`03-RESEARCH.md` P16, `.planning/TESTING.md` §3).
+
+    C'est aussi la forme que PERM-04 exige : un gérant a accès à `ANFA` et pas à `MAARIF`,
+    et le droit accordé sur l'un ne fuit pas vers l'autre (CLAUDE.md #13).
+
+    Renvoie `[anfa, maarif]`, dans cet ordre.
+    """
+    return _creer_magasins()
+
+
+@pytest.fixture
+def magasins_du_client_b(tenant_b):
+    """Les mêmes deux magasins, chez le client B — le contrôle d'isolation croisée.
+
+    Les codes sont **identiques** à ceux du client A, délibérément. Deux opticiens
+    marocains peuvent parfaitement avoir tous les deux un magasin « ANFA », et un bug qui
+    résout un magasin par son code sans passer par la connexion du locataire rendrait
+    alors les données de l'autre affaire. Des codes distincts par locataire cacheraient ce
+    bug derrière une collision qui n'arrive jamais en test.
+    """
+    return _creer_magasins()
