@@ -78,6 +78,21 @@ inside a phase plan — raise it instead.
     `connections.settings` and wraps the view in `transaction.atomic(using=alias)` for each — with 300
     clients registered that is 300 transactions per request. Use explicit `atomic()` blocks instead.
 
+## Parallel execution
+
+Plans in the same wave run concurrently **in one worktree, sharing one index.** This has already bitten
+once: plan 03-11 committed without naming paths while plan 03-04 had four backend files staged, and
+absorbed them into a commit whose message describes only frontend work. Nothing was lost — the diff was
+identical — but the history misattributes four files.
+
+- **Always name the paths when committing**, exactly the files belonging to your plan. An unqualified
+  commit takes the whole index, including another agent's staged work.
+- **Never stage the whole tree** in a parallel wave.
+- **Do not rewrite history to fix it afterwards.** Resetting while another agent is writing to the same
+  worktree risks their work to correct a commit message. Record the mapping in the SUMMARY instead.
+- **Do not run `state advance-plan`** in a parallel wave — two agents incrementing one counter leaves it
+  wrong. Progress is recalculated from the summaries on disk.
+
 ## Testing
 
 **This project is test-first.** Full strategy: `.planning/TESTING.md`. The short version:
