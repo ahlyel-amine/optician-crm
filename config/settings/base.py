@@ -250,6 +250,33 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 
 
 # --------------------------------------------------------------------------------------
+# Identity
+# --------------------------------------------------------------------------------------
+# The user table lives in the control-plane database (CLAUDE.md #11): identity, business
+# membership and permission grants are fleet-wide, while every client database holds only
+# that optician's business data.
+#
+# The model carries a nullable `client` FK, which is the whole of the tenant claim —
+# `TenantMiddleware.resolve_client` already reads `user.client_id`, so this phase changes
+# zero lines of the Phase 2 tenancy layer.
+#
+# Swapping this value is only cheap before anything depends on `auth.User`, which is why
+# it happens in the first plan of the phase and why it was preceded by a blocking count of
+# existing clients. `django.contrib.admin`'s migrations reference AUTH_USER_MODEL, so the
+# development control-plane database was recreated rather than migrated.
+AUTH_USER_MODEL = "comptes.Utilisateur"
+
+# Argon2 first. Django ships the hasher; `argon2-cffi` is the C library it needs. The
+# order is the whole setting: the first entry hashes new passwords, and the rest exist so
+# that an existing hash can still be verified and transparently upgraded on login. PBKDF2
+# stays behind it for exactly that reason.
+PASSWORD_HASHERS = [
+    "django.contrib.auth.hashers.Argon2PasswordHasher",
+    "django.contrib.auth.hashers.PBKDF2PasswordHasher",
+]
+
+
+# --------------------------------------------------------------------------------------
 # Sessions and cookies
 # --------------------------------------------------------------------------------------
 SESSION_COOKIE_SECURE = True
