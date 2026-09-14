@@ -132,19 +132,19 @@ describe("la fixture partagee epingle l'espace insecable", () => {
 });
 
 /* ===========================================================================
- * IGNORE JUSQU'AU PLAN 03-11.
+ * ACTIF depuis le plan 03-11.
  *
- * `formaterMontant`, `formaterDateCourte` et `formaterDateHeure` n'existent pas
- * encore : ils sont ecrits au **plan 03-11**, qui RETIRE le `.skip` ci-dessous
- * en meme temps qu'il cree `src/format/montant.ts` et `src/format/date.ts`.
+ * `formaterMontant`, `formaterDateCourte` et `formaterDateHeure` existent
+ * desormais, dans `src/format/montant.ts` et `src/format/date.ts`. Cette suite
+ * etait ecrite et ignoree depuis le plan 03-03 ; 03-11 a retire l'annotation
+ * d'exclusion et livre les modules, dans cet ordre — la suite a d'abord echoue
+ * pour la bonne raison (« src/format/montant.ts n'existe pas encore »).
  *
- * Pourquoi `describe.skip` et pas `it.todo` : un `todo` ne verifie rien et se
- * fait oublier. Ici le corps des tests est ecrit, complet, et n'attend que son
- * module. L'import est DYNAMIQUE, a l'interieur du test : un import statique
- * casserait la collecte du fichier entier, donc aussi le test d'audit ci-dessus,
- * qui lui doit tourner des aujourd'hui.
+ * L'import reste DYNAMIQUE : c'est ce qui permettait a l'etat rouge d'exister
+ * sans casser la collecte du fichier, donc sans emporter le test d'audit plus
+ * bas, qui devait tourner des le premier jour.
  * ======================================================================== */
-describe.skip("le formatage client respecte la fixture partagee", () => {
+describe("le formatage client respecte la fixture partagee", () => {
   describe("cas_montants", () => {
     it.each(casMontants)("formaterMontant(%s) rend %s", async (entree, attendu) => {
       const { formaterMontant } = await chargerFormat<{
@@ -227,5 +227,93 @@ describe("aucune locale ne decide du format de l'argent", () => {
     }
 
     expect(fautifs).toEqual([]);
+  });
+});
+
+/* ===========================================================================
+ * ACTIF. Le contrat du module lui-meme.
+ *
+ * Le code de production ne lit jamais `tests/` : `src/format/montant.ts` porte
+ * ses propres constantes. C'est voulu — une SPA qui lirait une fixture de test
+ * a l'execution serait absurde. Mais une divergence entre les deux doit rendre
+ * la suite ROUGE, sinon « une seule specification » n'est qu'une intention.
+ * ======================================================================== */
+describe("les constantes du module s'accordent avec la fixture", () => {
+  it("separateurs, decimales et devise viennent bien du meme contrat", async () => {
+    const module = await chargerFormat<{
+      SEPARATEUR_MILLIERS: string;
+      SEPARATEUR_DECIMAL: string;
+      SEPARATEUR_AVANT_DEVISE: string;
+      DECIMALES: number;
+      DEVISE: string;
+    }>("montant");
+
+    expect(module.SEPARATEUR_MILLIERS).toBe(fixture.separateur_milliers);
+    expect(module.SEPARATEUR_DECIMAL).toBe(fixture.separateur_decimal);
+    expect(module.SEPARATEUR_AVANT_DEVISE).toBe(fixture.separateur_avant_devise);
+    expect(module.DECIMALES).toBe(fixture.decimales);
+    expect(module.DEVISE).toBe(fixture.devise);
+    // Et les points de code, pas seulement l'egalite de chaines.
+    expect(module.SEPARATEUR_MILLIERS.codePointAt(0)).toBe(ESPACE_INSECABLE);
+    expect(module.SEPARATEUR_AVANT_DEVISE.codePointAt(0)).toBe(ESPACE_INSECABLE);
+  });
+
+  it("le fuseau d'affichage du module est celui de la fixture", async () => {
+    const { FUSEAU_AFFICHAGE } = await chargerFormat<{ FUSEAU_AFFICHAGE: string }>("date");
+    expect(FUSEAU_AFFICHAGE).toBe(fixture.fuseau_affichage);
+  });
+});
+
+/* ===========================================================================
+ * ACTIF. Le transport est une CHAINE, et l'arrondi ne passe pas par un double.
+ * ======================================================================== */
+describe("le formateur prend la chaine que l'API livre", () => {
+  const chargerMontant = () =>
+    chargerFormat<{ formaterMontant: (entree: string | number) => string }>("montant");
+
+  it("n'exige pas un number : la chaine brute de DRF suffit", async () => {
+    const { formaterMontant } = await chargerMontant();
+
+    // COERCE_DECIMAL_TO_STRING est vrai cote DRF : un DecimalField arrive en
+    // chaine. Exiger un `number` obligerait chaque appelant a ecrire
+    // `Number(...)`, c'est-a-dire a fabriquer un flottant binaire par politesse.
+    expect(typeof formaterMontant("1800.00")).toBe("string");
+    expect(formaterMontant("1800.00")).toBe(formaterMontant("1800"));
+    expect(formaterMontant("1800.0000")).toBe("1\u00a0800,00\u00a0MAD");
+  });
+
+  it("arrondit au demi superieur sans jamais passer par un flottant", async () => {
+    const { formaterMontant } = await chargerMontant();
+
+    // 999.995 vaut 999.99499999999997 en double : un `Math.round(x * 100)`
+    // rendrait 999,99 la ou le serveur, qui quantize en ROUND_HALF_UP, rend
+    // 1 000,00. Ce seul cas separe une implementation sur chaine d'une
+    // implementation sur double, et il est dans la fixture pour cette raison.
+    expect(formaterMontant("999.995")).toBe("1\u00a0000,00\u00a0MAD");
+    expect(formaterMontant("0.005")).toBe("0,01\u00a0MAD");
+    expect(formaterMontant("2.675")).toBe("2,68\u00a0MAD");
+    // Et un montant au-dela de 53 bits reste juste, parce qu'aucun bit n'est en
+    // jeu : 9007199254740993 n'est pas representable en double.
+    expect(formaterMontant("9007199254740993.00")).toBe(
+      "9\u00a0007\u00a0199\u00a0254\u00a0740\u00a0993,00\u00a0MAD",
+    );
+  });
+
+  it("ne rend jamais un signe negatif sans montant", async () => {
+    const { formaterMontant } = await chargerMontant();
+
+    expect(formaterMontant("-12.30")).toBe("-12,30\u00a0MAD");
+    // -0,001 arrondi a deux decimales vaut zero : « -0,00 MAD » serait un signe
+    // sans montant, et sur une ligne de caisse cela se lit comme un retrait.
+    expect(formaterMontant("-0.001")).toBe("0,00\u00a0MAD");
+  });
+
+  it("refuse ce qui n'est pas un decimal plutot que de rendre NaN", async () => {
+    const { formaterMontant } = await chargerMontant();
+
+    // « NaN MAD » sur une facture est un chiffre faux sans message d'erreur,
+    // exactement ce que la couche ORM refuse deja cote serveur.
+    expect(() => formaterMontant("mille huit cents")).toThrow(TypeError);
+    expect(() => formaterMontant("")).toThrow(TypeError);
   });
 });

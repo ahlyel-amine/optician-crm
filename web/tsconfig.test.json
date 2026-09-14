@@ -1,0 +1,43 @@
+{
+  // Projet TypeScript des suites vitest.
+  //
+  // Pourquoi un projet separe plutot qu'un `"include": ["src", "tests"]` dans
+  // tsconfig.json : les tests tournent sous Node — ils lisent le disque
+  // (`node:fs`), la fixture partagee un cran au-dessus de web/, et `process.cwd()`.
+  // Ajouter `"node"` aux `types` du projet APPLICATIF rendrait `process`,
+  // `Buffer` et `node:fs` typables depuis `src/`, c'est-a-dire depuis du code qui
+  // part dans le navigateur : la construction resterait verte et la page
+  // exploserait a l'execution. La frontiere navigateur / Node est tenue par la
+  // configuration, pas par la vigilance.
+  //
+  // Ce projet n'est PAS reference par tsconfig.json : un projet reference ne peut
+  // pas desactiver l'emission (TS6310). Il est enchaine dans le script `build`,
+  // ce qui suffit — `npm run build` echoue si un test ne typecheck plus.
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "moduleDetection": "force",
+    "jsx": "react-jsx",
+    "types": ["vite/client", "node"],
+
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["tests"]
+}

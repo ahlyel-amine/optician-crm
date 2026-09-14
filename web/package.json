@@ -5,10 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && tsc -p tsconfig.test.json && vite build",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
+    "audit:format": "grep -rnE 'Intl\\.NumberFormat|toLocaleString|fr-MA' src --include=*.ts --include=*.tsx | grep -v '^src/format/' && { echo 'INTERDIT (03-UI-SPEC.md 8.1) : aucune locale ne decide du format de l_argent hors de src/format/'; exit 1; } || exit 0",
     "api:types": "openapi-typescript src/api/schema.yml -o src/api/types.gen.ts"
   },
   "dependencies": {

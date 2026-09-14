@@ -3,12 +3,15 @@
   // projet reference (tsconfig.node.json, la configuration des outils) puis
   // celui-ci.
   //
-  // `web/tests/` est **volontairement hors de ce projet** : les suites du plan
-  // 03-03 importent `@/format/montant`, un module qui n'existe pas encore et qui
-  // arrive au plan 03-11. Les y inclure ferait echouer la construction sur un
-  // etat rouge qui est voulu. vitest ne verifie pas les types par defaut, donc
-  // les tests tournent quand meme. Le plan 03-11 les reintegrera ici en meme
-  // temps qu'il ecrira le formateur.
+  // `web/tests/` etait volontairement hors de TOUTE verification de types au plan
+  // 03-03 : les suites y importaient des modules qui n'existaient pas encore, et
+  // les inclure aurait fait echouer la construction sur un etat rouge voulu.
+  //
+  // Le plan 03-11 a livre `src/format/` et `src/tableau/`, donc **les tests sont
+  // de nouveau typecheckes** — par `tsconfig.test.json`, enchaine dans le script
+  // `build`. Ils restent hors de CE projet parce qu'ils tournent sous Node et
+  // que leur donner `@types/node` ici rendrait `process` et `node:fs` typables
+  // depuis du code qui part dans le navigateur.
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.tsbuildinfo",
     "target": "ES2023",
