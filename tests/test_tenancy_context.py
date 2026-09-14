@@ -128,8 +128,13 @@ class _Principal:
     """Stands in for Phase 3's authenticated user carrying a control-plane client id.
 
     Deliberately not a request header and not a query parameter: a tenant identity the
-    caller can set freely is tenant spoofing (threat T-02-13). Phase 3 replaces this with
-    a signed JWT `client_id` claim; the middleware's contract does not change.
+    caller can set freely is tenant spoofing (threat T-02-13).
+
+    Phase 3 made this stand-in real rather than replacing it: `comptes.Utilisateur` carries
+    a nullable `client` FK, so `user.client_id` is exactly what the middleware already
+    read. The bearer-token claim an earlier draft of this docstring announced was never
+    built — it would have authenticated inside DRF, after every middleware, leaving nothing
+    bound. The middleware's contract is unchanged.
     """
 
     def __init__(self, client_id=None, authenticated=True):

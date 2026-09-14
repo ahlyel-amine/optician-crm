@@ -4,9 +4,9 @@ Three rules, each of which is a line of code and a security property:
 
 1. **Resolve the client from the authenticated principal, never from the request.** A
    tenant identity the caller can set — a header, a subdomain, a query parameter — is
-   tenant spoofing (threat T-02-13). Phase 3 issues JWTs carrying a `client_id` claim;
-   until then the principal's control-plane client id is the source. A subdomain may
-   later become a *secondary* signal validated **against** the claim, never instead of it.
+   tenant spoofing (threat T-02-13). The source is the principal's control-plane
+   `client_id` and nothing else. A subdomain may later become a *secondary* signal
+   validated **against** it, never instead of it.
 
 2. **Clear in a `finally`, on every path.** `clear()` after `get_response(request)`
    passes every happy-path test and leaks on every 500.
@@ -18,6 +18,15 @@ Three rules, each of which is a line of code and a security property:
 
 This middleware **must** sit after `AuthenticationMiddleware`, because resolving the
 client depends on the authenticated principal, and before any view.
+
+**Phase 3 authenticates with session cookies.** An earlier version of this docstring
+announced a signed bearer token carrying a `client_id` claim. That plan was reversed
+before any of it was built, and the reason is this very file: `AuthenticationMiddleware`
+populates `request.user` from the session *before* this middleware runs, whereas DRF's
+authentication classes run inside `APIView.initial()`, *after* every middleware. With a
+token authenticated by DRF, `request.user` here would be `AnonymousUser` on every request,
+nothing would bind, and the first business query of every request would raise
+`NoTenantBound`. Sessions cost this layer zero lines.
 """
 
 from __future__ import annotations
@@ -45,8 +54,12 @@ def resolve_client(request):
     than a transaction, so a non-ACTIVE client may have a database that is incomplete.
     That invariant is what makes TENANT-05 true.
 
-    Phase 3 replaces the `client_id` lookup below with a signed JWT claim. The contract
-    does not change: an authenticated, server-verified identity in, a `Client` row out.
+    Phase 3 changes nothing here. It was once expected to replace the lookup below with a
+    claim carried in a bearer token; it does not, for the reason given in the module
+    docstring. `comptes.Utilisateur.client` is named `client` precisely so that
+    `user.client_id` keeps meaning what this function already assumes. The contract is
+    unchanged and always was: an authenticated, server-verified identity in, a `Client`
+    row out.
     """
     from plateforme.control_plane.models import Client
 

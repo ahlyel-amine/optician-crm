@@ -177,7 +177,13 @@ LANGUAGE_CODE = "fr-fr"
 # Applications
 # --------------------------------------------------------------------------------------
 INSTALLED_APPS = [
-    "django.contrib.admin",
+    # `django.contrib.admin` itself, through a config that swaps in the operator
+    # AdminSite. The admin exposes db_name, db_host and the fleet's whole migration and
+    # backup history, so reaching it has to require being a platform operator — not
+    # merely being a superuser (threats T-03-01, T-03-02). Replacing the app entry rather
+    # than mounting a second site is what keeps the existing @admin.register decorators
+    # in control_plane/admin.py landing on the guarded site.
+    "plateforme.comptes.sites.AdminOperateurConfig",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
