@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Completed 02-02 and 02-03. Tenancy core is green. Paused before 02-04 (provisioning) for user review, as instructed.
-last_updated: "2026-09-13T17:27:03.586Z"
+status: paused
+stopped_at: Phase 2 complete and verified. The one verification gap (PgBouncer could not authenticate a provisioned client role) is closed by auth_query; 02-VERIFICATION.md records the evidence. Full suite 107 passed.
+last_updated: "2026-09-14T10:02:51.519Z"
 last_activity: 2026-09-13
 progress:
   total_phases: 12
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 7
-  completed_plans: 3
-  percent: 43
+  completed_plans: 7
+  percent: 100
 ---
 
 # Project State
@@ -80,6 +80,7 @@ Recent decisions affecting current work:
 - [Phase 02-03]: resolve_client reads the authenticated principal only, never a header or subdomain; Phase 3 swaps the lookup for a signed JWT client_id claim without changing the contract
 - [Phase 02-03]: TENANT-08 measured, not assumed: 300 registered aliases at concurrency 4 gave a peak of 4 server connections and settled to 0; CONN_MAX_AGE=600 exhausts PostgreSQL's connection slots
 - [Phase 02-03]: The tenancy django_db marker is applied in pytest_collection_modifyitems, not from a fixture body — pytest-django decides which test databases to create before any fixture runs
+- [Phase 02-08]: PgBouncer resolves client credentials by auth_query against a SECURITY DEFINER function (docker/postgres/init/01-pgbouncer-auth.sql), never by userlist.txt — a provisioned client needs no pooler edit and no reload. auth_dbname is required, or auth_query runs inside the client's own database where the function does not exist
 
 ### Pending Todos
 
@@ -93,6 +94,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-13T17:27:03.584Z
-Stopped at: Completed 02-02 and 02-03. Tenancy core is green. Paused before 02-04 (provisioning) for user review, as instructed.
+Last session: 2026-09-14T10:02:51.516Z
+Stopped at: Phase 2 complete and verified. The one verification gap (PgBouncer could not authenticate a provisioned client role) is closed by auth_query; 02-VERIFICATION.md records the evidence. Full suite 107 passed.
 Resume file: None
