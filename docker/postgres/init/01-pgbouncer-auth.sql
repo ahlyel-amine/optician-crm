@@ -90,5 +90,25 @@ ALTER FUNCTION public.pgbouncer_get_auth(text) OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.pgbouncer_get_auth(text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.pgbouncer_get_auth(text) TO pgbouncer_auth;
 
+-- --------------------------------------------------------------------------------------
+-- Keep client roles out of the maintenance database entirely.
+-- --------------------------------------------------------------------------------------
+-- Defence in depth, and the second half of the same default-grant problem. PostgreSQL
+-- grants CONNECT on every database to PUBLIC, so without this every `optique_u######`
+-- role can open `postgres` — the one database that now contains a superuser-owned
+-- function returning SCRAM verifiers. The REVOKE ALL above is what actually stops the
+-- call; this stops the caller getting near it, and neither is trusted to be the only
+-- control. `SqlProvisioner._restrict_connect` does exactly this for client databases;
+-- the maintenance database had been left out.
+--
+-- Order matters: revoke from PUBLIC first, then grant back to the two roles that need it.
+-- `postgres` and any other superuser bypass privilege checks and are unaffected.
+REVOKE CONNECT ON DATABASE postgres FROM PUBLIC;
+
+-- Django's test runner and the provisioning path both connect here to issue
+-- CREATE DATABASE. 00-databases.sql grants this too; repeated because that file may have
+-- run against a cluster that predates the REVOKE above.
+GRANT CONNECT ON DATABASE postgres TO optique_app;
+
 -- `auth_dbname` points at this database, so the lookup role must be able to open it.
 GRANT CONNECT ON DATABASE postgres TO pgbouncer_auth;

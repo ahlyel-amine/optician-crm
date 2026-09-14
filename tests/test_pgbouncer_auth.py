@@ -135,6 +135,113 @@ def test_tenant08_no_client_role_is_written_into_the_static_auth_file():
 
 
 # --------------------------------------------------------------------------------------
+# The lookup function is a privilege. Nobody but the pooler may call it.
+# --------------------------------------------------------------------------------------
+@pytest.mark.slow
+@pytest.mark.django_db(transaction=True)
+def test_tenant04_credential_lookup_is_reachable_only_by_the_pooler(
+    allow_runtime_tenant_aliases,
+):
+    """`pgbouncer_get_auth` returns any role's SCRAM verifier, so reaching it is a breach.
+
+    It has to be `SECURITY DEFINER` and owned by a superuser — that is the whole point of
+    not making `auth_user` a superuser. The cost is a superuser-owned function sitting in
+    the `postgres` maintenance database, and the thing that keeps it safe is two default
+    grants being taken away. Both are silent when absent, which is why they are asserted
+    here rather than trusted:
+
+    1. **EXECUTE.** PostgreSQL grants EXECUTE on a new function to PUBLIC. Without the
+       `REVOKE`, any role that can open this database can read every other client's
+       verifier — the same shape as the `REVOKE CONNECT ... FROM PUBLIC` fix in
+       `SqlProvisioner._restrict_connect`.
+    2. **CONNECT on `postgres`.** PostgreSQL grants CONNECT on every database to PUBLIC,
+       so without the `REVOKE` every client role can open the maintenance database and is
+       then one missing grant away from the function. Defence in depth: either control
+       alone is sufficient, and neither is trusted to be the only one.
+
+    `search_path` is asserted too: an unpinned `SECURITY DEFINER` function lets anyone who
+    can create objects in an earlier schema shadow an unqualified name in its body and
+    have it run as the owner.
+    """
+    from plateforme.control_plane.provisioning import provision_client
+    from plateforme.tenancy.maintenance import maintenance_connection
+
+    fn = "public.pgbouncer_get_auth(text)"
+    code = "test-pgb-priv"
+    try:
+        client = provision_client(
+            code=code, raison_sociale="Optique PgB Priv", magasins=["Centre"]
+        )
+
+        with maintenance_connection() as cur:
+            cur.execute("SELECT to_regprocedure(%s)", (fn,))
+            assert cur.fetchone()[0] is not None, (
+                f"{fn} does not exist. Apply docker/postgres/init/01-pgbouncer-auth.sql "
+                "— Docker only runs /docker-entrypoint-initdb.d on an empty volume, so "
+                "an existing development cluster needs it applied by hand."
+            )
+
+            cur.execute(
+                "SELECT prosecdef, proconfig FROM pg_proc WHERE oid = %s::regprocedure",
+                (fn,),
+            )
+            secdef, proconfig = cur.fetchone()
+            assert secdef, f"{fn} is not SECURITY DEFINER, so it cannot read pg_shadow."
+            assert any(
+                setting.startswith("search_path=") for setting in (proconfig or [])
+            ), (
+                f"{fn} is SECURITY DEFINER with no pinned search_path. A role able to "
+                "create objects in a schema earlier on the caller's search_path could "
+                "shadow a name inside it and have it executed as the owner."
+            )
+
+            cur.execute("SELECT has_function_privilege('pgbouncer_auth', %s, %s)", (fn, "EXECUTE"))
+            assert cur.fetchone()[0] is True, (
+                "pgbouncer_auth cannot execute the lookup, so auth_query cannot work at "
+                "all."
+            )
+
+            for grantee, label in (
+                ("public", "PUBLIC"),
+                (client.db_user, "a provisioned client role"),
+            ):
+                cur.execute("SELECT has_function_privilege(%s, %s, %s)", (grantee, fn, "EXECUTE"))
+                assert cur.fetchone()[0] is False, (
+                    f"{label} can execute {fn}, which returns the SCRAM verifier of every "
+                    "role in the cluster. PostgreSQL grants EXECUTE to PUBLIC by default; "
+                    "the REVOKE in 01-pgbouncer-auth.sql is the only thing that takes it "
+                    "away."
+                )
+
+            cur.execute(
+                "SELECT has_database_privilege(%s, 'postgres', 'CONNECT')",
+                (client.db_user,),
+            )
+            assert cur.fetchone()[0] is False, (
+                f"{client.db_user} can open the `postgres` maintenance database, where "
+                "the superuser-owned credential lookup lives. PostgreSQL grants CONNECT "
+                "to PUBLIC by default; revoke it and grant it back to optique_app and "
+                "pgbouncer_auth explicitly."
+            )
+
+        # The privilege bits above are what PostgreSQL *thinks*. This is what happens.
+        with pytest.raises(psycopg.OperationalError) as excinfo:
+            psycopg.connect(
+                host=settings.PG_ADMIN_HOST,
+                port=settings.PG_ADMIN_PORT,
+                user=client.db_user,
+                password=client.db_password,
+                dbname="postgres",
+                connect_timeout=5,
+            ).close()
+        assert "permission denied" in str(excinfo.value).lower(), (
+            f"a client role opened the maintenance database: {excinfo.value}"
+        )
+    finally:
+        _destroy(code)
+
+
+# --------------------------------------------------------------------------------------
 # The pooled path, end to end
 # --------------------------------------------------------------------------------------
 @pytest.mark.slow
