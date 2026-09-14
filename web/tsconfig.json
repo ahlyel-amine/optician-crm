@@ -1,0 +1,42 @@
+{
+  // Projet applicatif. `npm run build` lance `tsc -b`, qui construit d'abord le
+  // projet reference (tsconfig.node.json, la configuration des outils) puis
+  // celui-ci.
+  //
+  // `web/tests/` est **volontairement hors de ce projet** : les suites du plan
+  // 03-03 importent `@/format/montant`, un module qui n'existe pas encore et qui
+  // arrive au plan 03-11. Les y inclure ferait echouer la construction sur un
+  // etat rouge qui est voulu. vitest ne verifie pas les types par defaut, donc
+  // les tests tournent quand meme. Le plan 03-11 les reintegrera ici en meme
+  // temps qu'il ecrira le formateur.
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.tsbuildinfo",
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "moduleDetection": "force",
+    "jsx": "react-jsx",
+    "useDefineForClassFields": true,
+
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedSideEffectImports": true,
+
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["src"],
+  "references": [{ "path": "./tsconfig.node.json" }]
+}

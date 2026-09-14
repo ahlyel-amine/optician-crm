@@ -23,6 +23,15 @@ htmlcov/
 *.dump
 *.sql.gz
 
+# Frontend (web/)
+# Dependencies and build output only. Nothing under web/src/api/ is ignored: the
+# committed OpenAPI document and its generated types are the diff gate that makes
+# "the API contract did not change silently" verifiable (plan 03-10). Adding them
+# here would delete that gate.
+web/node_modules/
+web/dist/
+web/coverage/
+
 # Editors / OS
 .DS_Store
 .idea/

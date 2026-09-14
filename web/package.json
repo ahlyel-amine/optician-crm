@@ -1,0 +1,33 @@
+{
+  "name": "optique-web",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "api:types": "openapi-typescript src/api/schema.yml -o src/api/types.gen.ts"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "5.102.8",
+    "openapi-fetch": "0.17.0",
+    "openapi-react-query": "0.5.4",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "react-router-dom": "7.18.3"
+  },
+  "devDependencies": {
+    "@types/node": "26.5.1",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "openapi-typescript": "7.13.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.70.0",
+    "vite": "8.2.2",
+    "vitest": "4.1.11"
+  }
+}

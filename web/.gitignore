@@ -1,0 +1,21 @@
+# Dependances et artefacts de construction. Les chemins equivalents sont aussi
+# listes dans le .gitignore racine, parce que les outils lances depuis la racine
+# du depot ne lisent pas toujours celui-ci.
+node_modules/
+dist/
+
+# Rapports de couverture vitest
+coverage/
+
+# Journaux npm
+npm-debug.log*
+yarn-error.log*
+
+# Variables d'environnement Vite. `.env.example` reste suivi.
+.env
+.env.*
+!.env.example
+
+# NE PAS ignorer src/api/schema.yml ni src/api/types.gen.ts : ils sont committes,
+# et c'est la porte de diff du plan 03-10 qui rend verifiable la phrase « le
+# contrat d'API n'a pas change en silence ».

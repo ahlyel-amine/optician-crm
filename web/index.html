@@ -1,0 +1,21 @@
+<!doctype html>
+<!--
+  La langue du document est le francais, et le reste (APP-01). Il n'y a pas
+  d'interface arabe et il n'y en aura pas — BRAND-04 est du *contenu* arabe.
+
+  dir="ltr" est permanent (03-UI-SPEC.md 8.5). Les valeurs arabes — noms de
+  clients, adresses, raisons sociales — doivent malgre tout s'afficher
+  correctement a l'interieur : chaque valeur libre saisie par l'utilisateur est
+  enveloppee dans un <bdi>, et la pile de polices porte des faces arabes.
+-->
+<html lang="fr" dir="ltr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Optique</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
