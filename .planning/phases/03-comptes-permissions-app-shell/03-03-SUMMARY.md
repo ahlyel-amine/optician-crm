@@ -124,6 +124,13 @@ la liront telle quelle.
 > Mise au point sur la provenance : ces deux reponses ont ete transmises par le contexte
 > d'execution et par le commit `eaa154e` deja au depot. Aucun echange direct avec l'utilisateur
 > n'a eu lieu pendant cette execution.
+>
+> **Complement de l'orchestrateur — les deux reponses viennent bien de l'utilisateur.** Le
+> separateur U+00A0 a ete choisi explicitement lorsque les trois conventions concurrentes lui ont
+> ete presentees (Django `fr` U+00A0, ICU `fr-FR` U+202F, ICU `fr-MA` point), et consigne en
+> CLAUDE.md #14. Le preset a ete choisi en deux temps : `new-york` avec une couleur de base autre
+> que celle recommandee, puis `zinc` parmi slate / stone / gray / zinc. L'executant avait raison
+> de ne pas attester ce qu'il n'avait pas vu ; la trace est ici.
 
 ## Ce qui a ete verifie plutot que constate
 
