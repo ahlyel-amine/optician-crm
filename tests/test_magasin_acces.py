@@ -121,7 +121,6 @@ def test_perm05_un_agregat_est_calcule_sur_le_queryset_deja_filtre(db_all, deux_
     pytest.fail("non implémenté : plan 03-07")
 
 
-@pytest.mark.pending
 def test_perm05_le_catalogue_declare_prix_achat_marge_et_ca_global():
     """PERM-05 — la phase 3 livre le **mécanisme** ; les champs arrivent en phases 8 et 10.
 
@@ -135,4 +134,40 @@ def test_perm05_le_catalogue_declare_prix_achat_marge_et_ca_global():
     Rouge, il dirait que le catalogue a été écrit pour ce qui existe aujourd'hui, ce qui est
     la façon dont une garantie architecturale se perd : non par renversement, par omission.
     """
-    pytest.fail("non implémenté : plan 03-04")
+    from plateforme.comptes.permissions_catalogue import (
+        EXPLICATIONS,
+        PREREQUIS,
+        SECTIONS,
+        Permission,
+    )
+
+    differes = (
+        "article.voir_prix_achat",  # phase 8
+        "vente.voir_marge",  # phase 8
+        "dashboard.voir_ca_global",  # phase 10
+    )
+    for code in differes:
+        assert code in Permission.values, code
+        # Déclaré ne suffit pas : il doit être **accordable**, donc porté par une section
+        # de l'écran et pourvu de son explication. Un code présent dans l'énumération mais
+        # absent des sections est invisible, et la phase 8 le redécouvrirait sous pression.
+        assert any(code in section.codes for section in SECTIONS), code
+        assert EXPLICATIONS[code].strip().endswith("."), code
+
+    # La dépendance que `03-UI-SPEC.md` 7.6 impose entre les deux codes de phase 8 : voir
+    # la marge sans voir le prix d'achat rendrait le prix d'achat calculable à la main.
+    assert PREREQUIS["vente.voir_marge"] == ("article.voir_prix_achat",)
+
+    # Et le contrôle positif : aucun des trois n'a de colonne derrière lui en phase 3.
+    # Si l'un en acquiert une ici, ce n'est plus un mécanisme, c'est une fonctionnalité
+    # arrivée en avance et non testée.
+    from django.apps import apps
+
+    champs_metier = {
+        f"{modele._meta.label}.{champ.name}"
+        for config in apps.get_app_configs()
+        if config.name.startswith("domaine.")
+        for modele in config.get_models()
+        for champ in modele._meta.get_fields()
+    }
+    assert not {nom for nom in champs_metier if nom.endswith((".prix_achat", ".marge"))}

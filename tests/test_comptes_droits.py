@@ -28,6 +28,8 @@ modèles n'existent pas.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 
@@ -70,7 +72,6 @@ def test_perm02_un_compte_desactive_est_refuse_des_la_requete_suivante(db_all):
 # --------------------------------------------------------------------------------------
 # PERM-03 — le droit
 # --------------------------------------------------------------------------------------
-@pytest.mark.pending
 def test_perm03_un_droit_est_une_ligne_pas_un_palier(db_all):
     """PERM-03 / CLAUDE.md #6 — aucun palier de rôle, nulle part.
 
@@ -83,7 +84,175 @@ def test_perm03_un_droit_est_une_ligne_pas_un_palier(db_all):
     Le test affirme sur `DroitAccorde._meta` et sur le catalogue, pas sur une docstring :
     une docstring qui dit « pas de rôles » ne devient pas rouge quand quelqu'un en ajoute.
     """
-    pytest.fail("non implémenté : plan 03-04")
+    from django.apps import apps
+
+    from plateforme.comptes import permissions_catalogue
+    from plateforme.comptes.permissions_catalogue import Permission
+
+    # -- moitié catalogue : aucun champ de palier, nulle part dans `comptes` ------------
+    #
+    # `_meta.get_fields()` voit les colonnes réelles, y compris celles qu'une classe de
+    # base aurait apportées sans qu'on les relise — c'est pour cela que l'assertion porte
+    # là plutôt que sur le texte de la classe.
+    interdits = {"role", "roles", "tier", "palier", "niveau", "profil", "groupe", "groupes"}
+    for modele in apps.get_app_config("comptes").get_models():
+        noms = {champ.name.lower() for champ in modele._meta.get_fields()}
+        fautifs = noms & interdits
+        assert not fautifs, (
+            f"{modele.__name__} porte {sorted(fautifs)} : un palier de rôle est revenu "
+            f"dans le plan de contrôle (CLAUDE.md #6)."
+        )
+
+    # -- moitié catalogue : aucun ensemble préconstitué de codes ------------------------
+    #
+    # Un preset est un palier avec un nom sympathique. Les deux formes sont refusées : un
+    # attribut dont le *nom* l'annonce, et un attribut dont la *valeur* est une collection
+    # de codes prête à accorder. `SECTIONS` n'en est pas une — elle partitionne le
+    # catalogue pour l'affichage et ses éléments ne sont pas des chaînes ; `EXPLICATIONS`
+    # et `PREREQUIS` sont des applications code par code, pas des paquets.
+    codes = set(Permission.values)
+    for nom, valeur in vars(permissions_catalogue).items():
+        if nom.startswith("_"):
+            continue
+        assert not re.search(
+            r"preset|bundle|palier|role|tier|niveau|standard", nom, re.IGNORECASE
+        ), f"`{nom}` annonce un paquet de droits ; CLAUDE.md #6 n'en veut aucun."
+        if (
+            isinstance(valeur, (list, tuple, set, frozenset))
+            and valeur
+            and all(isinstance(element, str) for element in valeur)
+        ):
+            assert not set(valeur) <= codes, (
+                f"`{nom}` est un ensemble de codes du catalogue, donc un palier de rôle "
+                f"servi sous un autre nom."
+            )
+
+
+def test_perm03_les_sept_sections_couvrent_exactement_le_catalogue():
+    """PERM-03 — un code hors section est invisible à l'écran, donc inaccordable.
+
+    L'écran de droits (`03-UI-SPEC.md` 7.4) n'affiche pas `Permission.values` : il itère
+    les **sections**. Un code ajouté en phase 8 et oublié d'une section existerait donc
+    dans la base, dans le schéma et dans les tests, et nulle part où un propriétaire
+    puisse le cocher. Rouge, ce test dit soit cela, soit l'inverse — un code listé deux
+    fois, qui apparaîtrait sous deux interrupteurs pour une seule ligne de droit.
+
+    Les sept titres sont affirmés mot pour mot, parce que leur alignement sur la
+    navigation (`03-UI-SPEC.md` 5.3) est le contrat : un propriétaire qui accorde
+    « Consulter la caisse » doit pouvoir prévoir qu'une entrée `Caisse` apparaît chez
+    Karim.
+    """
+    from plateforme.comptes.permissions_catalogue import (
+        EXPLICATIONS,
+        SECTIONS,
+        Permission,
+    )
+
+    assert len(Permission.values) == 21
+    assert [section.titre for section in SECTIONS] == [
+        "Clients et ordonnances",
+        "Stock",
+        "Ventes et factures",
+        "Caisse",
+        "Fournisseurs et achats",
+        "Rappels et tableau de bord",
+        "Comptes",
+    ]
+
+    vus = [code for section in SECTIONS for code in section.codes]
+    doublons = sorted({code for code in vus if vus.count(code) > 1})
+    assert not doublons, f"codes listés dans plusieurs sections : {doublons}"
+    assert set(vus) == set(Permission.values), (
+        f"orphelins (aucune section) : {sorted(set(Permission.values) - set(vus))} ; "
+        f"inconnus (hors catalogue) : {sorted(set(vus) - set(Permission.values))}"
+    )
+
+    # Chaque code porte sa phrase d'explication : c'est le levier de coût de support de
+    # `03-UI-SPEC.md` 7.4, et un code sans explication est une case à cocher muette.
+    assert set(EXPLICATIONS) == set(Permission.values)
+    for code, phrase in EXPLICATIONS.items():
+        assert phrase.strip() and phrase.strip().endswith("."), code
+        assert code not in phrase, (
+            f"l'explication de {code} récite le code ; elle doit nommer la conséquence."
+        )
+
+
+def test_perm03_la_carte_des_prerequis_est_acyclique_et_close_sur_le_catalogue():
+    """PERM-03 — la cascade des prérequis est déclarée côté serveur, dans les deux sens.
+
+    `03-UI-SPEC.md` 7.6 : accorder `stock.ajuster` accorde `stock.voir`, et retirer
+    `stock.voir` retire `stock.ajuster`. Les deux sens sont appliqués côté serveur (plan
+    03-09) ; l'interface ne fait que l'expliquer. Rouge, ce test dirait qu'un prérequis
+    pointe un code qui n'existe pas — donc une cascade qui n'accorde rien sous une note
+    d'interface qui affirme le contraire — ou qu'un cycle est apparu, auquel cas la
+    fermeture d'un octroi ne termine pas, ou accorde tout le cycle d'un coup.
+    """
+    from plateforme.comptes.permissions_catalogue import (
+        PREREQUIS,
+        Permission,
+        dependants,
+        fermeture_prerequis,
+    )
+
+    # La liste est celle de `03-UI-SPEC.md` 7.6, affirmée en entier : une assertion
+    # « chaque clé est un code » laisserait passer une entrée discrètement supprimée.
+    assert PREREQUIS == {
+        "client.modifier": ("client.voir",),
+        "ordonnance.saisir": ("ordonnance.voir",),
+        "stock.ajuster": ("stock.voir",),
+        "vente.creer": ("vente.voir",),
+        "vente.remise": ("vente.voir",),
+        "vente.voir_marge": ("article.voir_prix_achat",),
+        "caisse.saisir": ("caisse.voir",),
+        "caisse.comptage": ("caisse.voir",),
+        "achat.commander": ("fournisseur.voir",),
+    }
+
+    codes = set(Permission.values)
+    for dependant, requis in PREREQUIS.items():
+        assert dependant in codes, dependant
+        assert isinstance(requis, tuple), dependant
+        for prerequis in requis:
+            assert prerequis in codes, prerequis
+            assert prerequis != dependant, dependant
+
+    # Acyclicité, par parcours en profondeur : un cycle rendrait `fermeture_prerequis`
+    # soit non terminante, soit silencieusement totale.
+    def descendre(depart):
+        chemin = [depart]
+
+        def marcher(code):
+            for suivant in PREREQUIS.get(code, ()):
+                assert suivant not in chemin, f"cycle : {' -> '.join(chemin + [suivant])}"
+                chemin.append(suivant)
+                marcher(suivant)
+                chemin.pop()
+
+        marcher(depart)
+
+    for code in codes:
+        descendre(code)
+
+    # Les deux sens de la cascade, dont le plan 03-09 a besoin.
+    assert fermeture_prerequis(["vente.voir_marge"]) == {
+        "vente.voir_marge",
+        "article.voir_prix_achat",
+    }
+    assert fermeture_prerequis(["caisse.saisir", "caisse.comptage"]) == {
+        "caisse.saisir",
+        "caisse.comptage",
+        "caisse.voir",
+    }
+    assert fermeture_prerequis([]) == frozenset()
+    assert dependants("vente.voir") == {"vente.creer", "vente.remise"}
+    assert dependants("compte.gerer") == frozenset()
+
+    # Un code inconnu est refusé plutôt qu'ignoré : une faute de frappe dans un octroi
+    # doit être bruyante, pas silencieusement sans effet.
+    with pytest.raises(ValueError):
+        fermeture_prerequis(["stock.inexistant"])
+    with pytest.raises(ValueError):
+        dependants("stock.inexistant")
 
 
 @pytest.mark.pending
