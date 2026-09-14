@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-11-PLAN.md
-last_updated: "2026-09-14T17:09:21.086Z"
+stopped_at: Completed 03-04-PLAN.md
+last_updated: "2026-09-14T17:09:39.930Z"
 last_activity: 2026-09-14
 progress:
   total_phases: 12
@@ -97,6 +97,9 @@ Recent decisions affecting current work:
 - [Phase 03]: Le bloc shadcn form est differe a la phase 4 : il tire react-hook-form, zod et @hookform/resolvers, que le plan 03-03 interdit. 21 blocs + sheet = 22 fichiers
 - [Phase 03]: Le formateur MAD client est ecrit a la main et arrondit sur les chiffres de la chaine (ROUND_HALF_UP), jamais sur un double : 999.995 doit rendre 1 000,00 MAD. Intl.NumberFormat et toLocaleString sont interdits hors de web/src/format/, verifie par npm run audit:format
 - [Phase 03]: Tout tableau passe par web/src/tableau/ : le registre filtre sur champ in ligne, zero ligne rend zero colonne, aucun th litteral, et toute valeur fournie par l'utilisateur est enveloppee dans un bdi par le composant Valeur. Regle a tenir des phases 4 a 10
+- [Phase 03-04]: Les droits sont stockes par (utilisateur, magasin_code, code), unique sur les trois colonnes — CLAUDE.md #13 et 03-UI-SPEC 0.1, et NON la forme sans dimension magasin de 03-RESEARCH section 4, que son propre bandeau de correction abandonne
+- [Phase 03-04]: magasin_code est le code metier, une valeur, jamais une cle etrangere : allow_relation refuse toute relation inter-alias, et le code survit a un pg_restore la ou un id est reattribue (TENANT-09)
+- [Phase 03-04]: La regle « un droit ne vise qu'un magasin accorde » est une regle Python assumee (DroitAccorde.save + service d'octroi 03-09) : une CHECK ne porte pas sur une autre table, et queryset.update la contourne
 
 ### Pending Todos
 
@@ -110,6 +113,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-14T17:09:06.118Z
-Stopped at: Completed 03-11-PLAN.md
+Last session: 2026-09-14T17:09:39.927Z
+Stopped at: Completed 03-04-PLAN.md
 Resume file: None
