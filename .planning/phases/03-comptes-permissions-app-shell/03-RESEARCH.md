@@ -1,3 +1,17 @@
+> **⚠️ TWO CORRECTIONS — decided after this research was written.**
+>
+> 1. **§4's grant model is superseded.** `DroitAccorde(utilisateur, code)` carries no magasin
+>    dimension, which reverses CLAUDE.md **#13**. Grants are stored per
+>    **(gérant, magasin, permission)** — the owner may override permissions per magasin, so the
+>    storage shape must support it from day one; the UI defaults to one uniform checklist and
+>    surfaces override only on request. Retrofitting the magasin dimension is a data migration.
+>    Use the shape in `03-UI-SPEC.md`, not the one below.
+> 2. **The MAD separator is settled:** `1 800,00 MAD` — U+00A0 non-breaking space, decimal comma,
+>    pinned explicitly on server and client (CLAUDE.md **#14**). Not ICU `fr-MA`'s full stop.
+>
+> Everything else here stands, including the session-authentication finding, which was verified and
+> has already corrected CLAUDE.md.
+
 # Phase 3: Comptes, Permissions & App Shell — Research
 
 **Researched:** 2026-09-14
