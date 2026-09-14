@@ -127,6 +127,27 @@ def test_perm03_un_droit_est_une_ligne_pas_un_palier(db_all):
                 f"servi sous un autre nom."
             )
 
+    # -- moitié stockage : accorder un code n'en rend aucun autre vrai ------------------
+    #
+    # C'est la forme que prend un palier réintroduit par la porte de service : un octroi
+    # qui en entraîne d'autres. Un droit est une ligne, donc accorder `stock.voir` crée
+    # exactement une ligne et laisse les vingt autres codes faux.
+    from plateforme.comptes.models import DroitAccorde
+    from tests.factories import AccesMagasinFactory, DroitAccordeFactory, GerantFactory
+
+    gerant = GerantFactory()
+    AccesMagasinFactory(utilisateur=gerant, magasin_code="ANFA")
+    DroitAccordeFactory(
+        utilisateur=gerant, magasin_code="ANFA", code=Permission.STOCK_VOIR
+    )
+
+    accordes = set(
+        DroitAccorde.objects.filter(utilisateur=gerant).values_list("code", flat=True)
+    )
+    assert accordes == {Permission.STOCK_VOIR.value}, (
+        f"accorder un code en a rendu d'autres vrais : {sorted(accordes)}"
+    )
+
 
 def test_perm03_les_sept_sections_couvrent_exactement_le_catalogue():
     """PERM-03 — un code hors section est invisible à l'écran, donc inaccordable.
@@ -255,7 +276,6 @@ def test_perm03_la_carte_des_prerequis_est_acyclique_et_close_sur_le_catalogue()
         dependants("stock.inexistant")
 
 
-@pytest.mark.pending
 def test_perm03_un_droit_est_stocke_par_gerant_magasin_et_permission(db_all, deux_magasins):
     """PERM-03 / CLAUDE.md #13 — la dimension magasin existe dans le stockage, dès le jour un.
 
@@ -271,10 +291,75 @@ def test_perm03_un_droit_est_stocke_par_gerant_magasin_et_permission(db_all, deu
     demande (`03-UI-SPEC.md` §6.4). C'est le stockage qui doit pouvoir, pas l'écran qui doit
     montrer.
     """
-    pytest.fail("non implémenté : plan 03-04")
+    from django.db import IntegrityError, models, transaction
+
+    from plateforme.comptes.models import DroitAccorde
+    from plateforme.comptes.permissions_catalogue import Permission
+    from tests.factories import AccesMagasinFactory, DroitAccordeFactory, GerantFactory
+
+    # -- la forme, affirmée sur `_meta` ------------------------------------------------
+    champs = {champ.name for champ in DroitAccorde._meta.get_fields()}
+    assert {"utilisateur", "magasin_code", "code"} <= champs
+
+    uniques = [
+        contrainte
+        for contrainte in DroitAccorde._meta.constraints
+        if isinstance(contrainte, models.UniqueConstraint)
+    ]
+    par_nom = {contrainte.name: contrainte for contrainte in uniques}
+    assert "uniq_droit_par_utilisateur_magasin_code" in par_nom
+    assert list(par_nom["uniq_droit_par_utilisateur_magasin_code"].fields) == [
+        "utilisateur",
+        "magasin_code",
+        "code",
+    ]
+    # Et aucune unicité plus étroite ne coexiste : `UniqueConstraint(utilisateur, code)`
+    # — la forme de `03-RESEARCH.md` §4 — rendrait impossible d'accorder le même droit
+    # dans deux magasins, donc reverserait CLAUDE.md #13 en restant verte sur la ligne
+    # au-dessus.
+    for contrainte in uniques:
+        assert "magasin_code" in contrainte.fields, contrainte.name
+
+    # `magasin_code` est une **valeur**. Une clé étrangère vers `magasins.Magasin` ne peut
+    # pas exister : le magasin vit dans la base du client et `TenantRouter.allow_relation`
+    # refuse toute relation inter-alias.
+    champ_magasin = DroitAccorde._meta.get_field("magasin_code")
+    assert not champ_magasin.is_relation
+    assert isinstance(champ_magasin, models.CharField)
+
+    # -- et le comportement que cette forme rend possible -------------------------------
+    anfa, maarif = deux_magasins
+    assert {anfa.code, maarif.code} == {"ANFA", "MAARIF"}
+
+    gerant = GerantFactory()
+    for code_magasin in (anfa.code, maarif.code):
+        AccesMagasinFactory(utilisateur=gerant, magasin_code=code_magasin)
+
+    for code_magasin in (anfa.code, maarif.code):
+        DroitAccordeFactory(
+            utilisateur=gerant,
+            magasin_code=code_magasin,
+            code=Permission.CAISSE_SAISIR,
+        )
+
+    # Le même code, deux magasins : deux lignes. Sous la forme de la recherche, la seconde
+    # aurait levé `IntegrityError`.
+    assert (
+        DroitAccorde.objects.filter(
+            utilisateur=gerant, code=Permission.CAISSE_SAISIR
+        ).count()
+        == 2
+    )
+
+    # Le doublon exact, lui, est refusé par la base et non par une convention.
+    with transaction.atomic(using="default"), pytest.raises(IntegrityError):
+        DroitAccordeFactory(
+            utilisateur=gerant,
+            magasin_code=anfa.code,
+            code=Permission.CAISSE_SAISIR,
+        )
 
 
-@pytest.mark.pending
 def test_perm03_un_droit_accorde_dans_un_magasin_ne_fuit_pas_vers_un_autre(
     db_all, deux_magasins
 ):
@@ -288,8 +373,55 @@ def test_perm03_un_droit_accorde_dans_un_magasin_ne_fuit_pas_vers_un_autre(
     Il faut **deux** magasins pour que ce test veuille dire quelque chose, d'où
     `deux_magasins` : avec un seul, « le droit du bon magasin » et « n'importe quel droit »
     sont le même objet et l'assertion passe au-dessus du bug (`03-RESEARCH.md` P16).
+
+    **Portée de cette version.** Le plan 03-04 pose le stockage, donc ce qui est affirmé
+    ici est la lecture du stockage. Le plan 03-05, qui pose `Acces` et `acces_pour()`,
+    étend ce même test à la résolution : `acces.peut(caisse.saisir, MAARIF)` doit être faux
+    là où `acces.peut(caisse.saisir, ANFA)` est vrai. Les deux moitiés vivent dans le même
+    test parce qu'elles sont la même promesse à deux couches, et qu'une contrainte à trois
+    colonnes au-dessus d'un `peut()` aveugle au magasin est précisément le cas que la
+    première moitié seule ne voit pas.
     """
-    pytest.fail("non implémenté : plan 03-05")
+    from plateforme.comptes.models import AccesMagasin, DroitAccorde
+    from plateforme.comptes.permissions_catalogue import Permission
+    from tests.factories import AccesMagasinFactory, DroitAccordeFactory, GerantFactory
+
+    anfa, maarif = deux_magasins
+    gerant = GerantFactory()
+
+    # Les **deux** magasins sont accordés au compte : ce que ce test mesure est le droit,
+    # pas l'accès. Sans cela il passerait pour la mauvaise raison — un droit qui ne fuit
+    # pas parce que le magasin n'est pas accessible ne prouve rien sur CLAUDE.md #13.
+    for code_magasin in (anfa.code, maarif.code):
+        AccesMagasinFactory(utilisateur=gerant, magasin_code=code_magasin)
+    assert set(
+        AccesMagasin.objects.filter(utilisateur=gerant).values_list(
+            "magasin_code", flat=True
+        )
+    ) == {"ANFA", "MAARIF"}
+
+    DroitAccordeFactory(
+        utilisateur=gerant, magasin_code=anfa.code, code=Permission.CAISSE_SAISIR
+    )
+
+    # Le contrôle positif, d'abord : sans lui, un stockage qui n'accorde jamais rien
+    # passerait l'assertion négative qui suit.
+    assert DroitAccorde.objects.filter(
+        utilisateur=gerant, magasin_code="ANFA", code=Permission.CAISSE_SAISIR
+    ).exists()
+
+    assert not DroitAccorde.objects.filter(
+        utilisateur=gerant, magasin_code="MAARIF", code=Permission.CAISSE_SAISIR
+    ).exists()
+
+    # Et la lecture sans dimension magasin — celle qu'un `peut(code)` ferait — ne doit
+    # ramener qu'Anfa. C'est l'assertion qui serait impossible à écrire sous la forme de
+    # `03-RESEARCH.md` §4, où la ligne n'a pas de colonne `magasin_code` à ramener.
+    assert set(
+        DroitAccorde.objects.filter(
+            utilisateur=gerant, code=Permission.CAISSE_SAISIR
+        ).values_list("magasin_code", flat=True)
+    ) == {"ANFA"}
 
 
 @pytest.mark.pending
@@ -324,7 +456,46 @@ def test_perm03_un_proprietaire_ne_peut_pas_accorder_a_un_utilisateur_dun_autre_
     pytest.fail("non implémenté : plan 03-09")
 
 
-@pytest.mark.pending
+def test_perm03_un_droit_ne_peut_viser_un_magasin_non_accorde(db_all):
+    """PERM-03 — un droit sans accès au magasin n'accorde rien : c'est un mensonge stocké.
+
+    Menace T-03-18 : la ligne est inerte tant que l'accès manque, puis devient active le
+    jour où le propriétaire accorde le magasin — donc un droit que personne n'a jamais
+    décidé d'accorder apparaît, plus tard, à l'occasion d'une action sans rapport.
+
+    **La base ne peut pas nous sauver ici**, et cela vaut d'être dit franchement plutôt
+    que d'être découvert : une contrainte `CHECK` porte sur une ligne, pas sur l'existence
+    d'une ligne dans une autre table. Contrairement à la garantie opérateur du plan 03-01,
+    celle-ci est une règle Python — posée dans `save()`, appliquée une seconde fois par le
+    service d'octroi (plan 03-09), et testée ici parce que rien d'autre ne la tient.
+    `queryset.update()` la contourne toujours ; c'est le prix admis de cette forme.
+    """
+    from django.core.exceptions import ValidationError
+
+    from plateforme.comptes.models import DroitAccorde
+    from plateforme.comptes.permissions_catalogue import Permission
+    from tests.factories import AccesMagasinFactory, DroitAccordeFactory, GerantFactory
+
+    gerant = GerantFactory()
+    AccesMagasinFactory(utilisateur=gerant, magasin_code="ANFA")
+
+    with pytest.raises(ValidationError):
+        DroitAccordeFactory(
+            utilisateur=gerant, magasin_code="MAARIF", code=Permission.CAISSE_SAISIR
+        )
+    assert not DroitAccorde.objects.filter(
+        utilisateur=gerant, magasin_code="MAARIF"
+    ).exists()
+
+    # Le contrôle positif : la même écriture, sur un magasin accordé, passe. Sans lui, un
+    # `save()` qui refuserait *tout* rendrait l'assertion ci-dessus verte et le modèle
+    # inutilisable.
+    droit = DroitAccordeFactory(
+        utilisateur=gerant, magasin_code="ANFA", code=Permission.CAISSE_SAISIR
+    )
+    assert droit.pk is not None
+
+
 def test_perm03_le_journal_enregistre_qui_a_accorde_quoi_et_quand(db_all):
     """PERM-03 — « qui a donné les marges à Karim ? » doit avoir une réponse après coup.
 
@@ -337,4 +508,54 @@ def test_perm03_le_journal_enregistre_qui_a_accorde_quoi_et_quand(db_all):
     qu'il est écrit mais supprimé en cascade avec le droit, donc qu'il ne répond à la
     question que tant que la question ne se pose pas.
     """
-    pytest.fail("non implémenté : plan 03-04")
+    from django.core.exceptions import ValidationError
+
+    from plateforme.comptes.models import DroitAccorde, JournalDroit
+    from plateforme.comptes.permissions_catalogue import Permission
+    from tests.factories import (
+        AccesMagasinFactory,
+        DroitAccordeFactory,
+        GerantFactory,
+        ProprietaireFactory,
+    )
+
+    proprietaire = ProprietaireFactory()
+    karim = GerantFactory(client=proprietaire.client)
+    AccesMagasinFactory(
+        utilisateur=karim, magasin_code="ANFA", accorde_par=proprietaire
+    )
+    droit = DroitAccordeFactory(
+        utilisateur=karim,
+        magasin_code="ANFA",
+        code=Permission.VENTE_VOIR_MARGE,
+        accorde_par=proprietaire,
+    )
+    entree = JournalDroit.objects.create(
+        utilisateur=karim,
+        action=JournalDroit.Action.ACCORDE,
+        cible=Permission.VENTE_VOIR_MARGE,
+        par=proprietaire,
+    )
+    horodatage = entree.le
+
+    # La révocation **supprime** la ligne d'octroi : c'est ce qui rend `peut()`
+    # trivialement juste, et c'est exactement ce qui effacerait la réponse si le journal
+    # y était rattaché.
+    droit.delete()
+    assert not DroitAccorde.objects.filter(pk=droit.pk).exists()
+
+    # « Qui a donné les marges à Karim ? » — la question se pose après coup, donc la
+    # réponse est relue depuis la base, pas depuis l'objet encore en mémoire.
+    survivante = JournalDroit.objects.get(pk=entree.pk)
+    assert survivante.utilisateur == karim
+    assert survivante.par == proprietaire
+    assert survivante.cible == Permission.VENTE_VOIR_MARGE.value
+    assert survivante.action == "accorde"
+    assert survivante.le == horodatage
+
+    # Append-only : une entrée ne se réécrit pas. Un journal modifiable répond à la
+    # question, mais pas forcément la vérité.
+    survivante.par = karim
+    with pytest.raises(ValidationError):
+        survivante.save()
+    assert JournalDroit.objects.get(pk=entree.pk).par == proprietaire

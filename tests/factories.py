@@ -151,10 +151,51 @@ class GerantFactory(UtilisateurFactory):
     est_proprietaire = False
 
 
-# `AccesMagasinFactory` et `DroitAccordeFactory` arrivent au **plan 03-04**, dans le même
-# changement que les modèles `AccesMagasin`, `DroitAccorde` et `JournalDroit` qu'elles
-# construisent. Elles ne sont pas ici parce qu'une factory ne peut pas différer la
-# résolution de son modèle : `Meta.model` est lu à la création de la classe, donc une
-# factory écrite avant son modèle casse la **collecte** de toute la suite — exactement le
-# mode de défaillance que les stubs `pending` de ce plan évitent par ailleurs. Leur place
-# est ici, sous ce commentaire, et elles écriront elles aussi sur `default`.
+# Les deux factories annoncées par le plan 03-02, arrivées avec leurs modèles au plan
+# 03-04. Elles écrivent sur `default`, comme tout ce qui précède : un octroi est une ligne
+# du plan de contrôle (CLAUDE.md #11).
+
+
+class AccesMagasinFactory(factory.django.DjangoModelFactory):
+    """L'accès d'un compte à **un** magasin, désigné par son code métier.
+
+    `magasin_code` est une chaîne et non une `SubFactory(MagasinFactory)`, et ce n'est pas
+    un raccourci de test : le magasin vit dans la base du client, l'accès dans le plan de
+    contrôle, et `TenantRouter.allow_relation` refuse une relation entre les deux. La
+    factory reflète donc la frontière au lieu de la masquer — elle n'a besoin d'aucun
+    contexte de locataire lié pour fonctionner.
+
+    `accorde_par` vaut par défaut un **opérateur de plateforme** (`UtilisateurFactory`,
+    donc `client=None`). C'est le seul principal fabricable sans risquer
+    `un_seul_proprietaire_par_client` quand deux octrois sont créés pour la même affaire.
+    Tout test qui s'intéresse à *qui* a accordé passe `accorde_par=` explicitement — celui
+    du journal le fait.
+    """
+
+    class Meta:
+        model = "comptes.AccesMagasin"
+        database = "default"
+
+    utilisateur = factory.SubFactory(GerantFactory)
+    magasin_code = "ANFA"
+    accorde_par = factory.SubFactory(UtilisateurFactory)
+
+
+class DroitAccordeFactory(factory.django.DjangoModelFactory):
+    """Un droit : **une** ligne `(utilisateur, magasin_code, code)`, CLAUDE.md #13.
+
+    Elle ne fabrique **pas** l'`AccesMagasin` correspondant au passage. `DroitAccorde.save`
+    refuse un droit visant un magasin non accordé (menace T-03-18), et une factory qui
+    créerait l'accès en douce rendrait ce refus intestable tout en donnant à chaque test
+    l'illusion qu'un droit suffit. L'appelant crée donc l'accès d'abord, ce qui est aussi
+    l'ordre dans lequel l'interface écrit (`03-UI-SPEC.md` 7.5).
+    """
+
+    class Meta:
+        model = "comptes.DroitAccorde"
+        database = "default"
+
+    utilisateur = factory.SubFactory(GerantFactory)
+    magasin_code = "ANFA"
+    code = "stock.voir"
+    accorde_par = factory.SubFactory(UtilisateurFactory)

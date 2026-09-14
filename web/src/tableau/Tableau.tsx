@@ -4,6 +4,7 @@ import { formaterDateCourte, formaterDateHeure, formaterMontant } from "@/format
 
 import type { Colonne } from "./registre";
 import { colonnesVisiblesSurLignes } from "./registre";
+import { Valeur } from "./Valeur";
 
 /**
  * `TableauProjete` — le seul tableau de l'application.
@@ -77,8 +78,12 @@ function rendreValeur(valeur: unknown, format: Colonne["format"]): ReactNode {
   if (format === "dateheure") {
     return <span className="tabular-nums">{formaterDateHeure(valeur as string)}</span>;
   }
-  // Tout le reste vient de l'utilisateur : nom, adresse, texte libre.
-  return valeur as ReactNode;
+  // Tout le reste vient de l'utilisateur : nom, adresse, reference, texte libre.
+  // Donc tout le reste est isole bidirectionnellement — pas seulement les
+  // colonnes qu'on croit pouvoir contenir de l'arabe. C'est un `<bdi>` par
+  // cellule, et c'est ce qui evite d'avoir a deviner, colonne par colonne et
+  // neuf phases durant, laquelle recevra un jour un nom en arabe.
+  return <Valeur>{valeur as ReactNode}</Valeur>;
 }
 
 const classeAlignement = (colonne: Colonne): string =>

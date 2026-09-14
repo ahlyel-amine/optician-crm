@@ -87,7 +87,16 @@ const chargerTableau = async <T>(nom: string): Promise<T> => {
 };
 
 type ProprietesTableau = {
-  colonnes: readonly { champ: string; libelle: string }[];
+  // Volontairement re-declare ici plutot qu'importe du composant : ce test
+  // decrit le CONTRAT attendu, et un test qui importe le type qu'il verifie ne
+  // verifie plus rien. `align` et `format` restent facultatifs — une colonne qui
+  // n'en declare pas doit rester rendable.
+  colonnes: readonly {
+    champ: string;
+    libelle: string;
+    align?: "left" | "right";
+    format?: "montant" | "date" | "dateheure";
+  }[];
   lignes: readonly Record<string, unknown>[];
   legende: string;
   totaux?: Readonly<Record<string, string>>;
@@ -297,5 +306,114 @@ describe("le registre filtre sur la presence du champ dans la ligne", () => {
       prix_achat: null,
     });
     expect(visibles.map((colonne) => colonne.champ)).toContain("prix_achat");
+  });
+});
+
+/* ===========================================================================
+ * `Valeur` — du contenu arabe dans une interface francaise (03-UI-SPEC.md 8.5)
+ *
+ * `dir="ltr"` sur `<html>` est permanent : il n'y a pas d'interface arabe, et
+ * BRAND-04 concerne du CONTENU arabe dans des documents imprimes. Mais les noms,
+ * les adresses et les enseignes en arabe doivent s'afficher correctement, et
+ * l'algorithme bidirectionnel d'Unicode ne demande pas la permission : un nom
+ * arabe voisin de ponctuation ou de chiffres fait migrer les caracteres neutres
+ * qui l'entourent, et la LIGNE SE LIT FAUX sans qu'un seul caractere n'ait
+ * change.
+ * ======================================================================== */
+describe("toute valeur fournie par l'utilisateur est isolee bidirectionnellement", () => {
+  /** Un nom arabe reel, en caracteres arabes : « Mohamed Alaoui ». */
+  const NOM_ARABE = "محمد العلوي";
+
+  it("Valeur enveloppe son contenu dans un bdi", async () => {
+    const { Valeur } = await chargerTableau<{
+      Valeur: React.ComponentType<{ children: React.ReactNode; langue?: string }>;
+    }>("Valeur");
+
+    const { container } = render(
+      createElement(Valeur, { children: NOM_ARABE, langue: "ar" }),
+    );
+
+    const isolant = container.querySelector("bdi");
+    expect(isolant).toBeTruthy();
+    expect(isolant?.textContent).toBe(NOM_ARABE);
+    // `lang` quand la langue de la valeur est connue : la synthese vocale doit
+    // lire un nom arabe en arabe, pas en francais (03-UI-SPEC.md section 10).
+    expect(isolant?.getAttribute("lang")).toBe("ar");
+  });
+
+  it("un nom arabe dans une ligne ne reordonne pas ce qui l'entoure", async () => {
+    const TableauProjete = await chargerTableauProjete();
+
+    // Une ligne melangeant un nom arabe, une reference latine et un numero —
+    // exactement la situation du comptoir. Sans isolation, la reference et le
+    // numero neutres se rangent du cote du texte arabe et la ligne se lit a
+    // l'envers.
+    const { container } = render(
+      createElement(TableauProjete, {
+        colonnes: [
+          { champ: "reference", libelle: "Reference", align: "left" },
+          { champ: "nom", libelle: "Nom", align: "left" },
+          { champ: "telephone", libelle: "Telephone", align: "left" },
+        ],
+        lignes: [{ reference: "CLI-2031", nom: NOM_ARABE, telephone: "0612-345678" }],
+        legende: "Clients",
+      }),
+    );
+
+    // Chaque valeur d'utilisateur est dans son propre bdi.
+    const isolants = [...container.querySelectorAll("tbody bdi")];
+    expect(isolants.length).toBe(3);
+    expect(isolants.map((isolant) => isolant.textContent)).toEqual([
+      "CLI-2031",
+      NOM_ARABE,
+      "0612-345678",
+    ]);
+
+    // Et l'ordre du DOM est l'ordre du registre, sans exception : c'est ce que
+    // l'isolation garantit et que son absence casse.
+    const cellules = [...container.querySelectorAll("tbody td")];
+    expect(cellules.map((cellule) => cellule.getAttribute("data-champ"))).toEqual([
+      "reference",
+      "nom",
+      "telephone",
+    ]);
+    for (const cellule of cellules) {
+      expect(cellule.querySelector("bdi")).toBeTruthy();
+    }
+  });
+
+  it("la colonne d'un nom reste alignee a gauche quel que soit le sens du contenu", async () => {
+    const TableauProjete = await chargerTableauProjete();
+
+    // Aligner une colonne selon le sens d'ecriture de son contenu ferait sauter
+    // les valeurs d'un bord a l'autre d'une ligne a la suivante, et le tableau
+    // cesserait d'etre une grille que l'oeil peut balayer. L'alignement est une
+    // decision du registre, jamais une deduction du contenu.
+    const colonnes = [{ champ: "nom", libelle: "Nom", align: "left" }] as const;
+
+    const latin = render(
+      createElement(TableauProjete, {
+        colonnes,
+        lignes: [{ nom: "Alaoui" }],
+        legende: "Clients",
+      }),
+    );
+    const celluleLatine = latin.container.querySelector("td");
+    latin.unmount();
+
+    const arabe = render(
+      createElement(TableauProjete, {
+        colonnes,
+        lignes: [{ nom: NOM_ARABE }],
+        legende: "Clients",
+      }),
+    );
+    const celluleArabe = arabe.container.querySelector("td");
+
+    expect(celluleArabe?.className).toBe(celluleLatine?.className);
+    expect(celluleArabe?.className).toContain("text-left");
+    // Et aucun `dir` pose par le tableau : c'est `<bdi>` qui isole, a l'interieur
+    // de la cellule, sans deplacer la cellule.
+    expect(celluleArabe?.getAttribute("dir")).toBeNull();
   });
 });
