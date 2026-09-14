@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-09)
 
 **Core value:** The counter completes a sale end to end — client, ordonnance, payment including acompte, landing in that magasin's caisse — producing a facture legally valid in Morocco every time.
-**Current focus:** Phase 2 — Tenancy Foundation & Control Plane (Phase 1 continues in parallel as a calendar track)
+**Current focus:** Phase 3 — Comptes, Permissions & App Shell (Phase 1 continues in parallel as a calendar track)
 
 ## Current Position
 
-Phase: 2 of 12 (Tenancy Foundation & Control Plane)
-Plan: 3 of 7 complete in current phase (02-01, 02-02, 02-03; next is 02-04)
-Status: Paused for review before provisioning creates real client databases
-Last activity: 2026-09-13
+Phase: 3 of 12 (Comptes, Permissions & App Shell)
+Plan: 0 of 14 complete in current phase; 14 plans in 11 waves are written and uncommitted, next is 03-01
+Status: Phase 2 complete and verified (7/7 plans, 107 tests green, 02-VERIFICATION.md records the PgBouncer auth_query closure). Phase 3 planned, awaiting plan-check and execution.
+Last activity: 2026-09-14
 
-Progress: [████░░░░░░] 43%
+Progress: [██░░░░░░░░] 17%
 
 ## Performance Metrics
 
