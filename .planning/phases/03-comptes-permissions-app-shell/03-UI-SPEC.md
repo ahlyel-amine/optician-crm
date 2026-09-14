@@ -3,7 +3,7 @@ phase: 3
 slug: comptes-permissions-app-shell
 status: draft
 shadcn_initialized: false
-preset: "shadcn CLI 4.21.0 — style new-york, baseColor neutral, cssVariables true (init is a Wave 0 task; web/ does not exist yet)"
+preset: "shadcn CLI 4.21.0 — style new-york, baseColor zinc, cssVariables true (init is a Wave 0 task; web/ does not exist yet)"
 created: 2026-09-14
 ---
 
@@ -135,7 +135,7 @@ half of PERM-06 and it is testable.
 | Property | Value |
 |----------|-------|
 | Tool | **shadcn/ui** (CLI `shadcn@4.21.0`) |
-| Preset | `npx shadcn@4.21.0 init -t vite` → style `new-york`, baseColor `neutral`, cssVariables `true`, rsc `false`, tsx `true`, alias `@/*` → `./src/*` |
+| Preset | `npx shadcn@4.21.0 init -t vite` → style `new-york`, baseColor `zinc`, cssVariables `true`, rsc `false`, tsx `true`, alias `@/*` → `./src/*` |
 | Component library | Radix primitives, as vendored by shadcn |
 | Styling | Tailwind CSS 4.3.3 via `@tailwindcss/vite` |
 | Icon library | `lucide-react` 1.46.0 |
@@ -149,16 +149,25 @@ half of PERM-06 and it is testable.
 table). The gate's recommendation is therefore adopted, with the init deferred one step:
 
 - **Wave 0, task 1:** scaffold `web/`, then run `npx shadcn@4.21.0 init -t vite` and commit
-  `web/components.json`. Confirm `style: "new-york"`, `tailwind.baseColor: "neutral"`,
+  `web/components.json`. Confirm `style: "new-york"`, `tailwind.baseColor: "zinc"`,
   `tailwind.cssVariables: true`. **`style` and `baseColor` cannot be changed after init** — a change
   means reinstalling every component, so they are pinned here rather than chosen at the prompt.
 - No interactive channel was available in this research run. If the developer declines shadcn, the
   fallback is Radix primitives installed directly plus a hand-written token layer — the tokens in
   §3-§5 are unaffected, only §2's block list becomes a build list. **Flag for confirmation.**
 
-**`baseColor: neutral` is deliberate.** It has zero chroma, so the only hue in the interface is the one
-the client supplies in Phase 9. A tinted base (zinc, stone) fights a client's brand colour and makes
-BRAND-01 look broken on half the palette.
+**`baseColor: zinc`, chosen by the user over this document's original `neutral` recommendation.**
+
+The argument for `neutral` was zero chroma: the only hue in the interface would be the one the client
+supplies in Phase 9, so no brand colour could clash with the base. That argument is sound but was
+overstated here, and this document did not follow it — the hex values below (`#F4F4F5`, `#E4E4E7`,
+`#52525B`) are **zinc**, not neutral (`#F5F5F5`, `#E5E5E5`, `#525252`). The palette was drafted in zinc
+while the preset line said neutral. Choosing zinc makes the document self-consistent.
+
+**The accepted trade-off:** zinc carries a slight blue chroma, so a Phase 9 client whose brand colour is
+warm — an orange or red logo — sits against faintly cool greys. The effect is subtle at these
+lightness levels and does not make BRAND-01 look broken. If a real client's branding ever does clash,
+the fix is a per-client override of the neutral ramp in their theme, not a re-init.
 
 ### Component inventory (shadcn official blocks, Phase 3)
 
