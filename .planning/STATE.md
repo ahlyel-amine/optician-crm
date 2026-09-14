@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-03-PLAN.md
-last_updated: "2026-09-14T16:46:48.448Z"
+stopped_at: Completed 03-11-PLAN.md
+last_updated: "2026-09-14T17:09:21.086Z"
 last_activity: 2026-09-14
 progress:
   total_phases: 12
   completed_phases: 1
   total_plans: 21
-  completed_plans: 10
-  percent: 48
+  completed_plans: 12
+  percent: 57
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-09-09)
 ## Current Position
 
 Phase: 3 of 12 (Comptes, Permissions & App Shell)
-Plan: 3 of 14 complete in current phase; 14 plans in 11 waves are written and uncommitted, next is 03-01
+Plan: 4 of 14 complete in current phase; 14 plans in 11 waves are written and uncommitted, next is 03-01
 Status: Ready to execute
 Last activity: 2026-09-14
 
@@ -57,6 +57,8 @@ Progress: [██░░░░░░░░] 17%
 | Phase 03 P01 | ~50m | 3 tasks | 17 files |
 | Phase 03 P02 | ~35m | 3 tasks | 8 files |
 | Phase 03 P03 | ~45m | 4 tasks | 20 files |
+| Phase 03 P11 | 20m | 3 tasks | 11 files |
+| Phase 03 P04 | ~45m | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -93,6 +95,8 @@ Recent decisions affecting current work:
 - [Phase 03]: web/ : proxy meme-origine /api et /static vers 127.0.0.1:8010, prouve par requete reelle — aucune dependance CORS de part et d'autre
 - [Phase 03]: Preset shadcn epingle : style new-york, baseColor zinc, cssVariables true. components.json ecrit a la main — le CLI 4.21.0 ne produit plus new-york
 - [Phase 03]: Le bloc shadcn form est differe a la phase 4 : il tire react-hook-form, zod et @hookform/resolvers, que le plan 03-03 interdit. 21 blocs + sheet = 22 fichiers
+- [Phase 03]: Le formateur MAD client est ecrit a la main et arrondit sur les chiffres de la chaine (ROUND_HALF_UP), jamais sur un double : 999.995 doit rendre 1 000,00 MAD. Intl.NumberFormat et toLocaleString sont interdits hors de web/src/format/, verifie par npm run audit:format
+- [Phase 03]: Tout tableau passe par web/src/tableau/ : le registre filtre sur champ in ligne, zero ligne rend zero colonne, aucun th litteral, et toute valeur fournie par l'utilisateur est enveloppee dans un bdi par le composant Valeur. Regle a tenir des phases 4 a 10
 
 ### Pending Todos
 
@@ -106,6 +110,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-14T16:46:48.445Z
-Stopped at: Completed 03-03-PLAN.md
+Last session: 2026-09-14T17:09:06.118Z
+Stopped at: Completed 03-11-PLAN.md
 Resume file: None
