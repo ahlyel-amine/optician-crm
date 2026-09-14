@@ -114,14 +114,24 @@ def test_tenant08_no_client_role_is_written_into_the_static_auth_file():
     does not go through auth_query. The moment an `optique_u######` line appears in it,
     the operational cost auth_query removed is back, and this test says so.
     """
-    text = PGBOUNCER_USERLIST.read_text()
-    for prefix in ("optique_u", "test_client_u"):
-        assert prefix not in text, (
-            f"{PGBOUNCER_USERLIST} contains a per-client role ({prefix}...). Client "
-            "credentials are resolved by auth_query against PostgreSQL; writing one into "
-            "the static file reintroduces the per-client file edit and reload that "
-            "auth_query exists to remove."
-        )
+    # Credential lines only. The file's own comments name the `optique_u######` shape in
+    # order to forbid it, and a naive substring search over the whole file would read that
+    # prohibition as a violation of itself.
+    credentials = [
+        line
+        for line in PGBOUNCER_USERLIST.read_text().splitlines()
+        if line.strip() and not line.lstrip().startswith(";")
+    ]
+    assert credentials, f"{PGBOUNCER_USERLIST} has no credential lines at all."
+
+    for line in credentials:
+        for prefix in (settings.TENANT_DB_USER_PREFIX, "optique_u", "test_client_u"):
+            assert prefix not in line, (
+                f"{PGBOUNCER_USERLIST} contains a per-client role ({line.split()[0]}). "
+                "Client credentials are resolved by auth_query against PostgreSQL; "
+                "writing one into the static file reintroduces the per-client file edit "
+                "and pooler reload that auth_query exists to remove."
+            )
 
 
 # --------------------------------------------------------------------------------------
@@ -250,7 +260,15 @@ def test_tenant08_wrong_password_is_still_refused_through_pgbouncer(
     """The negative control for auth_query: it must resolve credentials, not wave clients through.
 
     Without this, `auth_query` could be verifying nothing — `auth_type = trust`, or a
-    lookup function returning a NULL verifier — and the test above would still be green.
+    lookup function returning a NULL verifier — and the test above would still be green
+    for the wrong reason.
+
+    One role, one database, one moment: the *only* difference between the refusal and the
+    success below is four characters of password. PgBouncer reports both a wrong password
+    and an unknown role on the wire as `SASL authentication failed` (the more specific
+    `password authentication failed` appears only in its own log), so the paired positive
+    half is what makes the refusal mean "the verifier was checked" rather than "nothing
+    works here".
     """
     from plateforme.control_plane.provisioning import provision_client
 
@@ -266,8 +284,15 @@ def test_tenant08_wrong_password_is_still_refused_through_pgbouncer(
                 password=client.db_password + "-wrong",
                 dbname=client.db_name,
             ).close()
-        assert "password authentication failed" in str(excinfo.value).lower(), (
+        assert "authentication failed" in str(excinfo.value).lower(), (
             f"a wrong password was not refused by PgBouncer: {excinfo.value}"
         )
+
+        with _pooled_connect(
+            user=client.db_user, password=client.db_password, dbname=client.db_name
+        ) as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT current_user")
+                assert cur.fetchone()[0] == client.db_user
     finally:
         _destroy(code)

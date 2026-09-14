@@ -1,18 +1,29 @@
-; PgBouncer auth file — LOCAL DEVELOPMENT ONLY.
+; PgBouncer auth file — a fallback, no longer the mechanism.
 ;
-; The password below is the development-only credential created by
-; docker/postgres/init/00-databases.sql. It grants access to nothing but a throwaway
-; local container whose port is published on 127.0.0.1 only. It is not a secret, and no
-; real credential may ever be committed to this file.
+; Client credentials are resolved by `auth_query` against PostgreSQL (see
+; docker/pgbouncer/pgbouncer.ini and docker/postgres/init/01-pgbouncer-auth.sql), so a
+; newly provisioned client needs no entry here, no file edit and no PgBouncer reload.
+; **Never add a per-client `optique_u######` line to this file**; doing so reintroduces
+; exactly the deployment step auth_query removed, and
+; `test_tenant08_no_client_role_is_written_into_the_static_auth_file` will turn red.
 ;
-; It is stored in plain text on purpose. PgBouncer can authenticate a *client* from a
-; stored SCRAM verifier, but it cannot use that verifier to authenticate itself to
+; Two things genuinely cannot come from auth_query, which is why the file still exists:
+;
+;   1. `auth_user` itself. PgBouncer has to authenticate to PostgreSQL in order to run the
+;      lookup, so the credential it runs the lookup with cannot itself be looked up.
+;   2. The admin console (`admin_users` / `stats_users`). It is served by PgBouncer, not
+;      by PostgreSQL, so no query is involved.
+;
+; Both passwords below are development-only credentials, created by
+; docker/postgres/init/*.sql on a throwaway local container whose ports are published on
+; 127.0.0.1 only. They are not secrets, and no real credential may ever be committed here.
+;
+; They are stored in plain text on purpose. PgBouncer can authenticate a *client* from a
+; stored SCRAM verifier, but it cannot use that verifier to authenticate *itself* to
 ; PostgreSQL — SCRAM verifiers are not password-equivalent for outbound authentication.
-; With the plain password here, PgBouncer computes the SCRAM exchange for the client and
-; still has what it needs to log in to the server.
+; With the plain password here, PgBouncer has what it needs to log in to the server.
 ;
-; In production, do not ship this file. Use auth_query against pg_shadow instead:
-;   auth_user = pgbouncer_auth
-;   auth_query = SELECT usename, passwd FROM pg_shadow WHERE usename = $1
-; so credentials live only in PostgreSQL and a new client role needs no PgBouncer reload.
+; In production this file holds the `pgbouncer_auth` line and nothing else, sourced from
+; the secret store rather than from the repository.
+"pgbouncer_auth" "pgbouncer_auth_dev_only"
 "optique_app" "optique_dev_only"
