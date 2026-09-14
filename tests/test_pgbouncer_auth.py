@@ -46,7 +46,7 @@ PGBOUNCER_INI = DOCKER / "pgbouncer" / "pgbouncer.ini"
 PGBOUNCER_USERLIST = DOCKER / "pgbouncer" / "userlist.txt"
 
 
-def _pooled_connect(*, user: str, password: str, dbname: str):
+def _pooled_connect(*, user: str, password: str, dbname: str, autocommit: bool = False):
     """Open a connection **through PgBouncer**, never directly to PostgreSQL.
 
     `settings.PGBOUNCER_PORT`, not `DATABASES["default"]["PORT"]` — under the test
@@ -60,7 +60,34 @@ def _pooled_connect(*, user: str, password: str, dbname: str):
         password=password,
         dbname=dbname,
         connect_timeout=5,
+        autocommit=autocommit,
     )
+
+
+def _show_pools() -> list[dict]:
+    """`SHOW POOLS` from PgBouncer's own admin console, as a list of dicts.
+
+    The console is served by PgBouncer itself, not by PostgreSQL, so it is the only place
+    the pooler's view of the world can be read rather than inferred. It authenticates from
+    `auth_file` (`admin_users = optique_app`), which is one of the two reasons that file
+    still exists.
+
+    `SHOW` takes no parameters, so psycopg3 sends it over the simple query protocol — the
+    admin console does not speak the extended protocol.
+    """
+    with psycopg.connect(
+        host=settings.PGBOUNCER_HOST,
+        port=settings.PGBOUNCER_PORT,
+        user="optique_app",
+        password="optique_dev_only",
+        dbname="pgbouncer",
+        connect_timeout=5,
+        autocommit=True,
+    ) as admin:
+        with admin.cursor() as cur:
+            cur.execute("SHOW POOLS")
+            columns = [d.name for d in cur.description]
+            return [dict(zip(columns, row)) for row in cur.fetchall()]
 
 
 def _pgbouncer_ini() -> configparser.ConfigParser:
@@ -403,3 +430,103 @@ def test_tenant08_wrong_password_is_still_refused_through_pgbouncer(
                 assert cur.fetchone()[0] == client.db_user
     finally:
         _destroy(code)
+
+
+# --------------------------------------------------------------------------------------
+# The budget arithmetic, with genuinely distinct credentials
+# --------------------------------------------------------------------------------------
+POOLED_CLIENTS = 3
+
+
+@pytest.mark.slow
+@pytest.mark.django_db(transaction=True)
+def test_tenant08_idle_clients_hold_no_server_connection_through_pgbouncer(
+    allow_runtime_tenant_aliases,
+):
+    """Three real clients, three distinct credentials, connected and idle: zero server connections.
+
+    `test_tenant08_connection_count_does_not_scale_with_alias_count` proves the Django half
+    of TENANT-08 — registration is lazy, `CONN_MAX_AGE = 0` really closes — but it does so
+    with 300 aliases sharing **one** credential, pointed straight at PostgreSQL. It had to:
+    until `auth_query` landed, no second credential could get past the pooler at all.
+
+    Now it can, so the two facts the whole budget rests on are observable rather than
+    quoted from documentation:
+
+    1. **Pools are keyed by (user, database).** Asserted by finding one pool per client,
+       each with that client's own role — not one shared pool, which is what a pooler
+       collapsing every tenant onto a single identity would show.
+    2. **A connected client between transactions occupies no server connection.** That is
+       what `pool_mode = transaction` buys, and it is why `min_pool_size = 0` makes the
+       fleet-wide ceiling depend on concurrency rather than on client count. With all
+       three clients connected and idle, `sv_active` across their pools must be 0.
+
+    Autocommit is not incidental. Leave a transaction open and the server connection stays
+    linked for its whole lifetime — `sv_active` would be 3, and the budget would be
+    `O(clients)` again. Django's default autocommit is what keeps this true in production;
+    this test would notice `ATOMIC_REQUESTS` style long transactions arriving at the pooler.
+    """
+    from plateforme.control_plane.provisioning import provision_client
+
+    codes = [f"test-pgb-pool-{i}" for i in range(POOLED_CLIENTS)]
+    open_connections = []
+    try:
+        clients = [
+            provision_client(
+                code=code, raison_sociale=f"Optique Pool {i}", magasins=["Centre"]
+            )
+            for i, code in enumerate(codes)
+        ]
+
+        for client in clients:
+            conn = _pooled_connect(
+                user=client.db_user,
+                password=client.db_password,
+                dbname=client.db_name,
+                autocommit=True,
+            )
+            open_connections.append(conn)
+            with conn.cursor() as cur:
+                cur.execute("SELECT current_database()")
+                assert cur.fetchone()[0] == client.db_name
+
+        # Every client is still connected here, and every one of them is idle.
+        pools = {
+            (row["database"], row["user"]): row
+            for row in _show_pools()
+            if row["database"] in {c.db_name for c in clients}
+        }
+
+        expected = {(c.db_name, c.db_user) for c in clients}
+        assert set(pools) == expected, (
+            f"PgBouncer's pools are {sorted(pools)}, expected {sorted(expected)}. One "
+            "pool per (user, database) is the premise of the whole connection budget; a "
+            "single shared pool would mean every client reaches PostgreSQL under one "
+            "identity."
+        )
+        assert len({user for _, user in pools}) == POOLED_CLIENTS, (
+            "the pools do not carry distinct per-client roles, so this proves nothing "
+            "the old shared-credential test did not already prove."
+        )
+
+        active = sum(row["sv_active"] for row in pools.values())
+        assert active == 0, (
+            f"{POOLED_CLIENTS} idle clients are pinning {active} server connection(s). "
+            "Under transaction pooling a connected client between transactions must hold "
+            "none — that is the entire difference between a budget of O(concurrency) and "
+            "one of O(client_count) (TENANT-08). Either pool_mode drifted off "
+            "'transaction', or something is holding a transaction open across the idle "
+            "period."
+        )
+
+        clients_seen = sum(row["cl_active"] for row in pools.values())
+        assert clients_seen == POOLED_CLIENTS, (
+            f"PgBouncer reports {clients_seen} connected clients, expected "
+            f"{POOLED_CLIENTS}. The sv_active assertion above is only evidence if the "
+            "clients were actually connected while it was made."
+        )
+    finally:
+        for conn in open_connections:
+            conn.close()
+        for code in codes:
+            _destroy(code)
