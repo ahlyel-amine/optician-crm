@@ -119,7 +119,7 @@ offline sync layer; **both were superseded** — see "Rejected" below.
 | Web | React + Vite + TypeScript SPA |
 | API types | `drf-spectacular` → OpenAPI → generated TypeScript client |
 | Mobile | Expo (React Native) at Phase 11, against the same API and generated client |
-| Auth | DRF with short-lived JWT (`djangorestframework-simplejwt`) |
+| Auth | **Django session authentication** for the web SPA — not JWT. `TenantMiddleware` reads `request.user` at middleware time, but DRF authenticates inside `APIView.initial()`, *after* all middleware — so under JWT nothing binds and every business query raises `NoTenantBound`. Verified against the installed DRF. Sessions change zero lines of the Phase 2 tenancy layer. Mobile (Phase 11) is not blocked: `DEFAULT_AUTHENTICATION_CLASSES` is a list. |
 | Money | `Decimal` / `DecimalField` — never float, never binary float |
 | Errors | Sentry, every event tagged with client and magasin |
 | Payments | Chari Pay primary, CMI fallback, behind one gateway interface |
