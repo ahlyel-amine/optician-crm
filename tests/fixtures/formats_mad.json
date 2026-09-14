@@ -1,0 +1,21 @@
+{
+  "separateur_decimal": ",",
+  "separateur_milliers": "\u00a0",
+  "separateur_avant_devise": "\u00a0",
+  "decimales": 2,
+  "devise": "MAD",
+  "arrondi": "ROUND_HALF_UP",
+  "format_date_court": "dd/MM/yyyy",
+  "fuseau_affichage": "Africa/Casablanca",
+  "cas_montants": [
+    ["0.00",       "0,00\u00a0MAD"],
+    ["0.05",       "0,05\u00a0MAD"],
+    ["1800.00",    "1\u00a0800,00\u00a0MAD"],
+    ["1234567.89", "1\u00a0234\u00a0567,89\u00a0MAD"],
+    ["-12.30",     "-12,30\u00a0MAD"],
+    ["999.995",    "1\u00a0000,00\u00a0MAD"]
+  ],
+  "cas_dates": [
+    ["2026-09-14T09:14:00Z", "14/09/2026", "14/09/2026 à 10:14"]
+  ]
+}

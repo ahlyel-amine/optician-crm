@@ -184,12 +184,22 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",
+    # OpenAPI 3 schema, from which the TypeScript client is generated (PERM-06, APP-01).
+    # Owns no models, but `checks.py` exempts only `django.*`, so it is classified in
+    # CONTROL_PLANE_APPS like every other third-party app here.
+    "drf_spectacular",
     "django_celery_beat",
     # Tenancy infrastructure. Owns no models; its ready() registers the tenancy.E001
     # system check and touches no database.
     "plateforme.tenancy",
     # Control plane — lives on `default` only, and `allow_migrate` pins it there.
     "plateforme.control_plane",
+    # Identity for the whole fleet: AUTH_USER_MODEL lives here (CLAUDE.md #11). Control
+    # plane, because Django needs auth/contenttypes/admin co-located in one database and
+    # because a login exists before any client database does.
+    "plateforme.comptes",
+    # The single projection layer (PERM-06). No models — a registry and its consumers.
+    "plateforme.projection",
     # Business apps — their tables exist only in client databases, never in `default`.
     # Every one of these must also be in BUSINESS_APPS in plateforme/tenancy/router.py,
     # in the same commit. An unclassified app makes `manage.py check` fail with

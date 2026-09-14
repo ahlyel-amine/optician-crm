@@ -38,6 +38,10 @@ from plateforme.tenancy.context import CrossTenantAccess, current_alias
 #: `rest_framework` is in `INSTALLED_APPS`, and `tenancy` is the label Django derives for
 #: `plateforme.tenancy` itself. Omit either and `tenancy.E001` fires the moment the check
 #: registers.
+#: `comptes` carries `AUTH_USER_MODEL` (CLAUDE.md #11): identity, business membership and
+#: permission grants belong to the fleet, not to one optician's database. `projection` and
+#: `drf_spectacular` own no models at all, but the check exempts only `django.*` names, so
+#: an app with nothing to migrate still has to be classified or `manage.py check` fails.
 CONTROL_PLANE_APPS = frozenset(
     {
         "control_plane",
@@ -48,7 +52,10 @@ CONTROL_PLANE_APPS = frozenset(
         "messages",
         "django_celery_beat",
         "rest_framework",
+        "drf_spectacular",
         "tenancy",
+        "comptes",
+        "projection",
     }
 )
 

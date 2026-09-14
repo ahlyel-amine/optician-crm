@@ -18,6 +18,8 @@ dependencies = [
     "cryptography==50.0.1",
     "django-environ==0.14.0",
     "sentry-sdk==2.69.1",
+    "drf-spectacular==0.30.0",
+    "argon2-cffi==25.1.0",
 ]
 
 [dependency-groups]
