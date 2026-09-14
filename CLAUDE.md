@@ -59,7 +59,15 @@ inside a phase plan — raise it instead.
     the client database exists. The dividing line: the **control plane holds identity, business
     membership and permission grants**; the **client database holds all business data**, ordonnances
     included. Isolation is about the health and commercial data, not the login row.
-12. **Never set `ATOMIC_REQUESTS = True`.** `BaseHandler.make_view_atomic()` iterates *every* alias in
+12. **PostgreSQL's defaults are permissive — every new database and privileged object needs an
+    explicit `REVOKE`.** `CONNECT` is granted to `PUBLIC` on every new database, and `EXECUTE` to
+    `PUBLIC` on every new function. Three separate cross-access holes in this project came from that
+    single default: client databases reachable by any client role, the `postgres` maintenance database
+    reachable by any role, and a `SECURITY DEFINER` function returning SCRAM verifiers. All three were
+    invisible to code review because the guarantee they broke was written in Python, one layer above.
+    **When you add a database, a role or a `SECURITY DEFINER` function, write the `REVOKE` in the same
+    change, and add a test that connects as the wrong principal and is refused.**
+13. **Never set `ATOMIC_REQUESTS = True`.** `BaseHandler.make_view_atomic()` iterates *every* alias in
     `connections.settings` and wraps the view in `transaction.atomic(using=alias)` for each — with 300
     clients registered that is 300 transactions per request. Use explicit `atomic()` blocks instead.
 
