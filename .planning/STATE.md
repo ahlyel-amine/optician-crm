@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: paused
-stopped_at: Phase 2 complete and verified. The one verification gap (PgBouncer could not authenticate a provisioned client role) is closed by auth_query; 02-VERIFICATION.md records the evidence. Full suite 107 passed.
-last_updated: "2026-09-14T10:02:51.519Z"
-last_activity: 2026-09-13
+status: executing
+stopped_at: Completed 03-01-PLAN.md
+last_updated: "2026-09-14T14:45:56.819Z"
+last_activity: 2026-09-14
 progress:
   total_phases: 12
   completed_phases: 1
-  total_plans: 7
-  completed_plans: 7
-  percent: 100
+  total_plans: 21
+  completed_plans: 8
+  percent: 38
 ---
 
 # Project State
@@ -26,8 +26,8 @@ See: .planning/PROJECT.md (updated 2026-09-09)
 ## Current Position
 
 Phase: 3 of 12 (Comptes, Permissions & App Shell)
-Plan: 0 of 14 complete in current phase; 14 plans in 11 waves are written and uncommitted, next is 03-01
-Status: Phase 2 complete and verified (7/7 plans, 107 tests green, 02-VERIFICATION.md records the PgBouncer auth_query closure). Phase 3 planned, awaiting plan-check and execution.
+Plan: 1 of 14 complete in current phase; 14 plans in 11 waves are written and uncommitted, next is 03-01
+Status: Ready to execute
 Last activity: 2026-09-14
 
 Progress: [██░░░░░░░░] 17%
@@ -54,6 +54,7 @@ Progress: [██░░░░░░░░] 17%
 *Updated after each plan completion*
 | Phase 2 P02 | 1 session | 3 tasks | 17 files |
 | Phase 2 P03 | 1 session | 3 tasks | 18 files |
+| Phase 03 P01 | ~50m | 3 tasks | 17 files |
 
 ## Accumulated Context
 
@@ -81,6 +82,9 @@ Recent decisions affecting current work:
 - [Phase 02-03]: TENANT-08 measured, not assumed: 300 registered aliases at concurrency 4 gave a peak of 4 server connections and settled to 0; CONN_MAX_AGE=600 exhausts PostgreSQL's connection slots
 - [Phase 02-03]: The tenancy django_db marker is applied in pytest_collection_modifyitems, not from a fixture body — pytest-django decides which test databases to create before any fixture runs
 - [Phase 02-08]: PgBouncer resolves client credentials by auth_query against a SECURITY DEFINER function (docker/postgres/init/01-pgbouncer-auth.sql), never by userlist.txt — a provisioned client needs no pooler edit and no reload. auth_dbname is required, or auth_query runs inside the client's own database where the function does not exist
+- [Phase 03]: AUTH_USER_MODEL swapped to comptes.Utilisateur by recreating the development control-plane database; pre-flight found 0 clients, so no data migration was needed
+- [Phase 03]: No PermissionsMixin on Utilisateur: Group is a role tier (CLAUDE.md #6), and its absence is the guarantee, asserted by a test
+- [Phase 03]: CLAUDE.md #12 fourth instance closed: REVOKE CONNECT on optique_control, applied to the local cluster by hand because Docker only runs initdb.d on an empty volume
 
 ### Pending Todos
 
@@ -94,6 +98,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-14T10:02:51.516Z
-Stopped at: Phase 2 complete and verified. The one verification gap (PgBouncer could not authenticate a provisioned client role) is closed by auth_query; 02-VERIFICATION.md records the evidence. Full suite 107 passed.
+Last session: 2026-09-14T14:45:56.816Z
+Stopped at: Completed 03-01-PLAN.md
 Resume file: None
