@@ -599,7 +599,7 @@ That second sentence is deliberate: it pre-empts the single most likely misunder
 CLAUDE.md #6 and costs one line instead of a support call.
 
 **Creation dialog** (shadcn `dialog`, 480px): `Nom complet`, `Adresse e-mail`, `Mot de passe provisoire`
-with a `Générer` button, and a read-only note `Ce mot de passe devra être changé à la première
+with a `Générer un mot de passe` button, and a read-only note `Ce mot de passe devra être changé à la première
 connexion.` Confirm label `Créer le compte`. On success the dialog closes, the new row is highlighted
 for 2 seconds, and the route goes straight to the detail page — because a freshly created account has
 no droits and no magasin, which is the next thing to do.
@@ -621,7 +621,7 @@ D.  Historique    journal replié, lecture seule                 (JournalDroit)
 
 **A — Identité.** Name and e-mail editable inline. `Statut` is a dropdown, not a switch: a switch
 implies an instant toggle, and deactivation deserves a confirmation (7.8). `Réinitialiser le mot de
-passe` opens a dialog showing a generated password once, with a `Copier` button and the line
+passe` opens a dialog showing a generated password once, with a `Copier le mot de passe` button and the line
 `Notez-le maintenant : il ne sera plus affiché.` — because there is no email path.
 
 **B — Magasins (PERM-04).** A checkbox per magasin of the business, with the magasin code as muted
@@ -762,7 +762,14 @@ This removes an entire class of "Karim can't see the stock he's supposed to adju
 
 "Absent, not disabled" applies inside this screen too: a gérant-manager who lacks
 `article.voir_prix_achat` does not see that row when editing a colleague. Greying it out would tell them
-the permission exists and that they lack it. The server enforces; the UI matches.
+the permission exists and that they lack it.
+
+**This is a wire-level guarantee, not a rendering rule.** The catalogue endpoint serves each viewer a
+catalogue already intersected with their own droits and magasins — a code the viewer does not hold is
+**absent from the JSON**, exactly as an unauthorised field is absent from a row payload (§8.3). The
+client renders whatever it receives and has no filtering branch of its own, so there is no client-side
+list of hidden codes to leak through a devtools inspection, a cached response or a future refactor.
+The same parametrized conformance test that covers field projection covers this catalogue.
 
 ### 7.8 Saving, undoing and destroying
 
