@@ -382,6 +382,7 @@ def test_perm03_un_droit_accorde_dans_un_magasin_ne_fuit_pas_vers_un_autre(
     colonnes au-dessus d'un `peut()` aveugle au magasin est précisément le cas que la
     première moitié seule ne voit pas.
     """
+    from plateforme.comptes.acces import acces_pour
     from plateforme.comptes.models import AccesMagasin, DroitAccorde
     from plateforme.comptes.permissions_catalogue import Permission
     from tests.factories import AccesMagasinFactory, DroitAccordeFactory, GerantFactory
@@ -423,9 +424,29 @@ def test_perm03_un_droit_accorde_dans_un_magasin_ne_fuit_pas_vers_un_autre(
         ).values_list("magasin_code", flat=True)
     ) == {"ANFA"}
 
+    # ----------------------------------------------------------------------------------
+    # La moitié **résolution**, annoncée par la docstring et livrée par le plan 03-05.
+    # ----------------------------------------------------------------------------------
+    # C'est ici que la dimension magasin cesse d'être une colonne et devient une réponse.
+    # Une contrainte à trois colonnes au-dessus d'un `peut()` aveugle au magasin stocke
+    # correctement une distinction que le code ne fait pas : les quatre assertions
+    # ci-dessus resteraient vertes, et le gérant ferait quand même sa remise à Maârif.
+    acces = acces_pour(gerant)
 
-@pytest.mark.pending
-def test_perm03_la_revocation_prend_effet_sans_reconnexion(db_all):
+    assert acces.peut(Permission.CAISSE_SAISIR, magasin_id=anfa.pk) is True
+    assert acces.peut(Permission.CAISSE_SAISIR, magasin_id=maarif.pk) is False, (
+        "Le droit accordé à Anfa a répondu oui pour Maârif. CLAUDE.md #13 est renversé "
+        "non par le stockage — il porte bien la colonne — mais par la résolution qui "
+        "l'ignore."
+    )
+
+    # Et le contrôle positif de la résolution elle-même : les deux magasins sont bien dans
+    # la portée. Sans cette ligne, un `acces_pour` qui n'aurait rien résolu du tout
+    # passerait l'assertion négative qui précède.
+    assert acces.magasins_ids == frozenset({anfa.pk, maarif.pk})
+
+
+def test_perm03_la_revocation_prend_effet_sans_reconnexion(db_all, deux_magasins):
     """PERM-03 — retirer un droit mord à la requête suivante, sans déconnecter personne.
 
     C'est la promesse que `03-UI-SPEC.md` §7.8 affiche à l'écran, en toutes lettres, sous
@@ -433,8 +454,45 @@ def test_perm03_la_revocation_prend_effet_sans_reconnexion(db_all):
     résolu une fois et posé en session, ou mis en cache par utilisateur, donc le droit
     retiré à 14 h continue de s'appliquer jusqu'à la déconnexion. Une promesse affichée et
     non tenue est pire qu'une promesse absente — le propriétaire croit avoir agi.
+
+    **Ce que ce test peut affirmer au plan 03-05, et pourquoi c'est déjà la promesse
+    entière.** Il n'y a pas encore de vue à appeler ; ce qui est vérifié est donc la
+    propriété qui rend la promesse vraie : `acces_pour` lit les lignes de droits **à chaque
+    appel**, et le middleware l'appelle une fois par requête. Un cache par utilisateur, un
+    `lru_cache`, ou un `Acces` posé en session se verrait ici et nulle part ailleurs — les
+    tests de vue des plans suivants, qui construisent une requête neuve, ne sauraient pas
+    distinguer un cache d'une résolution.
     """
-    pytest.fail("non implémenté : plan 03-05")
+    from plateforme.comptes.acces import acces_pour
+    from plateforme.comptes.models import DroitAccorde
+    from plateforme.comptes.permissions_catalogue import Permission
+    from tests.factories import AccesMagasinFactory, DroitAccordeFactory, GerantFactory
+
+    anfa, _maarif = deux_magasins
+    gerant = GerantFactory()
+    AccesMagasinFactory(utilisateur=gerant, magasin_code=anfa.code)
+    droit = DroitAccordeFactory(
+        utilisateur=gerant, magasin_code=anfa.code, code=Permission.CAISSE_SAISIR
+    )
+
+    avant = acces_pour(gerant)
+    assert avant.peut(Permission.CAISSE_SAISIR, magasin_id=anfa.pk) is True
+
+    # 14 h : le propriétaire retire le droit. Personne n'est déconnecté, aucune session
+    # n'est invalidée, aucun cache n'est purgé — parce qu'il n'y en a pas.
+    droit.delete()
+    assert not DroitAccorde.objects.filter(pk=droit.pk).exists()
+
+    apres = acces_pour(gerant)
+    assert apres.peut(Permission.CAISSE_SAISIR, magasin_id=anfa.pk) is False, (
+        "Le droit retiré s'applique encore. Un Acces mis en cache, ou résolu une seule "
+        "fois et gardé, rend fausse la phrase que 03-UI-SPEC 7.8 affiche en toutes "
+        "lettres sous la liste des droits."
+    )
+    # Et le compte lui-même n'a rien perdu d'autre : le magasin reste accordé. Retirer un
+    # droit n'est pas retirer un accès, et une révocation qui emporterait les deux serait
+    # verte sur l'assertion ci-dessus pour la mauvaise raison.
+    assert apres.magasins_ids == frozenset({anfa.pk})
 
 
 @pytest.mark.pending

@@ -66,7 +66,6 @@ def test_perm04_un_gerant_ne_peut_pas_ecrire_dans_un_magasin_non_accorde(
     pytest.fail("non implémenté : plan 03-07")
 
 
-@pytest.mark.pending
 def test_perm04_un_droit_obsolete_sur_un_magasin_inactif_n_accorde_rien(
     db_all, deux_magasins
 ):
@@ -79,11 +78,47 @@ def test_perm04_un_droit_obsolete_sur_un_magasin_inactif_n_accorde_rien(
     jour où son code est réutilisé pour une nouvelle boutique, l'accès s'y rouvre tout seul.
 
     L'accès effectif se calcule : droits stockés ∩ magasins actifs.
+
+    **Le contrôle positif est ici la moitié qui compte.** « Maârif n'est pas dans la
+    portée » est vrai d'un `acces_pour` qui ne résoudrait jamais rien ; ce test l'affirme
+    donc d'abord *avec* Maârif actif, puis le désactive et réaffirme qu'Anfa tient
+    toujours. Sans ces deux bornes, une résolution cassée passerait pour une résolution
+    correcte.
     """
-    pytest.fail("non implémenté : plan 03-05")
+    from plateforme.comptes.acces import acces_pour
+    from plateforme.comptes.permissions_catalogue import Permission
+    from tests.factories import AccesMagasinFactory, DroitAccordeFactory, GerantFactory
+
+    anfa, maarif = deux_magasins
+    gerant = GerantFactory()
+    for magasin in (anfa, maarif):
+        AccesMagasinFactory(utilisateur=gerant, magasin_code=magasin.code)
+        DroitAccordeFactory(
+            utilisateur=gerant,
+            magasin_code=magasin.code,
+            code=Permission.CAISSE_SAISIR,
+        )
+
+    avant = acces_pour(gerant)
+    assert avant.magasins_ids == frozenset({anfa.pk, maarif.pk})
+    assert avant.peut(Permission.CAISSE_SAISIR, magasin_id=maarif.pk) is True
+
+    # Le magasin ferme. La ligne AccesMagasin et la ligne DroitAccorde survivent — elles
+    # ne sont pas supprimées, et c'est le cas nominal, pas un accident.
+    maarif.actif = False
+    maarif.save()
+
+    apres = acces_pour(gerant)
+    assert apres.magasins_ids == frozenset({anfa.pk})
+    assert maarif.pk not in apres.droits_par_magasin
+    assert apres.peut(Permission.CAISSE_SAISIR, magasin_id=maarif.pk) is False
+    assert apres.magasins_pour(Permission.CAISSE_SAISIR) == frozenset({anfa.pk})
+
+    # Le contrôle positif : Anfa, lui, n'a rien perdu. Sans cette ligne, une résolution
+    # qui renverrait ANONYME à la moindre difficulté passerait ce test.
+    assert apres.peut(Permission.CAISSE_SAISIR, magasin_id=anfa.pk) is True
 
 
-@pytest.mark.pending
 def test_perm04_lacces_du_proprietaire_est_lensemble_complet_et_non_un_filtre_saute(
     db_all, deux_magasins
 ):
@@ -98,8 +133,51 @@ def test_perm04_lacces_du_proprietaire_est_lensemble_complet_et_non_un_filtre_sa
 
     Rouge, ce test dirait que la branche existe. Il l'affirme sur l'objet `Acces`
     lui-même — un test qui ne regarderait que la réponse HTTP ne saurait pas distinguer.
+
+    Deux assertions de nature différente, et il faut les deux : la **valeur** (les 21
+    codes, pour chacun des deux magasins actifs) et la **propriété** (le corps de `peut`
+    ne mentionne pas `est_proprietaire`). La valeur seule laisserait passer une
+    implémentation qui matérialise *et* court-circuite ; la propriété seule laisserait
+    passer un propriétaire qui ne peut rien.
     """
-    pytest.fail("non implémenté : plan 03-05")
+    import inspect
+
+    from plateforme.comptes import acces as module_acces
+    from plateforme.comptes.acces import acces_pour
+    from plateforme.comptes.permissions_catalogue import Permission
+    from tests.factories import ProprietaireFactory
+
+    anfa, maarif = deux_magasins
+    proprietaire = ProprietaireFactory()
+    acces = acces_pour(proprietaire)
+
+    assert acces.est_proprietaire is True
+    assert acces.magasins_ids == frozenset({anfa.pk, maarif.pk})
+
+    catalogue = frozenset(Permission.values)
+    assert len(catalogue) == 21
+    for magasin in (anfa, maarif):
+        # Littéralement l'ensemble complet, magasin par magasin : matérialisé, pas déduit.
+        assert acces.droits_par_magasin[magasin.pk] == catalogue
+        for code in catalogue:
+            assert acces.peut(code, magasin_id=magasin.pk) is True
+
+    # Et donc, la conjonction sans magasin est vraie elle aussi — sans branche.
+    for code in catalogue:
+        assert acces.peut(code) is True
+
+    source_peut = inspect.getsource(module_acces.Acces.peut)
+    assert "est_proprietaire" not in source_peut, (
+        "Le corps de `peut` mentionne `est_proprietaire`. C'est le raccourci que "
+        "03-RESEARCH.md P3 décrit : un second chemin de code, sans filtre, qu'un bug "
+        "peut atteindre pour un non-propriétaire. L'accès du propriétaire se matérialise "
+        "dans `acces_pour`, une fois, à la résolution."
+    )
+    assert "pour_le_schema" not in source_peut, (
+        "Même raison, autre porte : un court-circuit `if pour_le_schema` dans `peut` "
+        "rouvrirait le second chemin de code que ce test existe pour fermer. L'accès du "
+        "générateur OpenAPI est matérialisé lui aussi."
+    )
 
 
 # --------------------------------------------------------------------------------------
@@ -171,3 +249,220 @@ def test_perm05_le_catalogue_declare_prix_achat_marge_et_ca_global():
         for champ in modele._meta.get_fields()
     }
     assert not {nom for nom in champs_metier if nom.endswith((".prix_achat", ".marge"))}
+
+
+# --------------------------------------------------------------------------------------
+# PERM-03 / PERM-06 — la forme de l'accès résolu (plan 03-05)
+# --------------------------------------------------------------------------------------
+def test_perm06_lacces_absent_vaut_aucun_droit():
+    """CLAUDE.md #8 appliqué à la couche de permissions : l'absence vaut zéro, pas « tout ».
+
+    `03-RESEARCH.md` P2 décrit le fail-open exactement : `getattr(request, "acces", None)`
+    suivi de « si None, tout montrer ». Le contre-poison n'est pas une convention d'appel,
+    c'est qu'il existe une **valeur** à mettre par défaut. `Acces.ANONYME` est cette
+    valeur, et ce test la pinne sur les 21 codes plutôt que sur un échantillon : un
+    catalogue qui grandit en phase 8 est couvert sans qu'on y pense.
+
+    Aucune base de données. Si ce test venait à en demander une, c'est que l'accès anonyme
+    a cessé d'être une constante — et une constante est précisément ce qu'il doit être pour
+    servir de défaut partout.
+    """
+    from django.contrib.auth.models import AnonymousUser
+
+    from plateforme.comptes.acces import Acces, acces_pour
+    from plateforme.comptes.permissions_catalogue import Permission
+
+    for code in Permission.values:
+        assert Acces.ANONYME.peut(code) is False, code
+        # Y compris nommément : « je ne sais pas quel magasin » ne doit pas devenir « oui ».
+        assert Acces.ANONYME.peut(code, magasin_id=1) is False, code
+        assert Acces.ANONYME.peut_quelque_part(code) is False, code
+        assert Acces.ANONYME.magasins_pour(code) == frozenset(), code
+
+    assert Acces.ANONYME.magasins_ids == frozenset()
+    assert dict(Acces.ANONYME.droits_par_magasin) == {}
+
+    # Les portes d'entrée de la résolution, fermées : pas d'utilisateur du tout, et
+    # l'utilisateur non authentifié de Django.
+    assert acces_pour(None) is Acces.ANONYME
+    assert acces_pour(AnonymousUser()) is Acces.ANONYME
+
+
+def test_perm03_peut_sans_magasin_est_une_conjonction_pas_une_union(db_all, deux_magasins):
+    """PERM-03 / CLAUDE.md #13 — « détenu partout », jamais « détenu quelque part ».
+
+    C'est la décision que les phases 5 à 10 hériteront sans la relire, donc elle est pinnée
+    ici plutôt que laissée à une docstring. La projection de champs s'applique à un
+    **serializer**, pas à une ligne : au moment où elle décide de garder ou d'ôter
+    `prix_achat`, elle ne sait pas encore de quel magasin sera la ligne rendue. Si
+    `peut(code)` répondait « oui, quelque part », le gérant qui détient le droit à Anfa
+    recevrait le prix d'achat des articles de Maârif.
+
+    L'union existe — `peut_quelque_part` — et ce test la sépare de l'autorisation en les
+    affirmant **contradictoires sur le même accès**. Un `peut()` implémenté par une union
+    rendrait ces deux assertions identiques, et ce fichier ne pourrait plus voir la
+    différence.
+
+    Deux magasins obligatoires : avec un seul, conjonction et union sont la même fonction.
+    """
+    from plateforme.comptes.acces import acces_pour
+    from plateforme.comptes.permissions_catalogue import Permission
+    from tests.factories import AccesMagasinFactory, DroitAccordeFactory, GerantFactory
+
+    anfa, maarif = deux_magasins
+    gerant = GerantFactory()
+    # Les **deux** magasins sont accordés : ce que ce test mesure est le droit, pas l'accès.
+    for magasin in (anfa, maarif):
+        AccesMagasinFactory(utilisateur=gerant, magasin_code=magasin.code)
+    DroitAccordeFactory(
+        utilisateur=gerant, magasin_code=anfa.code, code=Permission.CAISSE_SAISIR
+    )
+
+    acces = acces_pour(gerant)
+    assert acces.magasins_ids == frozenset({anfa.pk, maarif.pk})
+    assert acces.peut(Permission.CAISSE_SAISIR, magasin_id=anfa.pk) is True
+    assert acces.peut(Permission.CAISSE_SAISIR, magasin_id=maarif.pk) is False
+
+    assert acces.peut(Permission.CAISSE_SAISIR) is False, (
+        "Sans argument magasin, `peut` a répondu oui pour un code détenu dans un seul des "
+        "deux magasins accordés. C'est une union, donc une fuite : la projection de champs "
+        "livrerait les données de Maârif sur la foi d'un droit accordé à Anfa."
+    )
+    assert acces.peut_quelque_part(Permission.CAISSE_SAISIR) is True
+    assert acces.magasins_pour(Permission.CAISSE_SAISIR) == frozenset({anfa.pk})
+
+    # Et l'état que la quasi-totalité des entreprises verra (03-UI-SPEC 7.5) : une ligne
+    # **uniforme**, où tous les magasins accordés sont d'accord. La conjonction devient
+    # vraie, sans que `peut` ait changé de règle.
+    DroitAccordeFactory(
+        utilisateur=gerant, magasin_code=maarif.code, code=Permission.CAISSE_SAISIR
+    )
+    uniforme = acces_pour(gerant)
+    assert uniforme.peut(Permission.CAISSE_SAISIR) is True
+    assert uniforme.magasins_pour(Permission.CAISSE_SAISIR) == frozenset(
+        {anfa.pk, maarif.pk}
+    )
+
+
+def test_perm04_un_operateur_sans_client_resout_vers_anonyme(db_all):
+    """PERM-04 — un opérateur de plateforme n'a aucun accès métier, par conception.
+
+    `client_id is None` veut dire « n'appartient à aucune affaire ». C'est le compte qui
+    provisionne, migre et dépanne ; il n'est le gérant de personne. `resolve_client` le
+    traite déjà ainsi (aucun locataire lié), et ce test dit que la couche de permissions
+    ne le rattrape pas par une autre porte : un opérateur qui hériterait d'un accès métier
+    serait un compte d'administration avec vue sur les données de santé de toute la flotte.
+
+    Rouge, il dirait que `acces_pour` est parti de `est_proprietaire` ou des lignes de
+    droits sans d'abord demander à quelle affaire ce compte appartient.
+    """
+    from plateforme.comptes.acces import Acces, acces_pour
+    from tests.factories import UtilisateurFactory
+
+    operateur = UtilisateurFactory()
+    assert operateur.client_id is None
+    assert operateur.is_authenticated is True  # le contrôle positif : il est bien connecté
+
+    assert acces_pour(operateur) is Acces.ANONYME
+
+
+#: Les **deux** usages sanctionnés de `peut_quelque_part`, et il n'y en a pas de troisième.
+#: Chaque site d'appel dans `plateforme/` doit porter le marqueur
+#: `# usage-sanctionne: peut_quelque_part <étiquette>` sur sa propre ligne ou sur l'une des
+#: deux qui la précèdent. Ajouter une étiquette ici est un acte délibéré qui se relit en
+#: revue ; c'est exactement ce que le test veut forcer.
+USAGES_SANCTIONNES_PEUT_QUELQUE_PART = {
+    #: Le champ `navigation` de `/api/auth/moi/` (plan 03-08) — masquer une entrée de menu
+    #: n'autorise rien ; l'écran derrière est protégé par `peut(code, magasin_id)`.
+    "navigation",
+    #: Le catalogue pré-intersecté servi à un gérant-gestionnaire (plan 03-09) — il décide
+    #: quelles cases sont *offrables*, pas ce qui est permis.
+    "catalogue",
+}
+
+
+def test_perm04_peut_quelque_part_n_est_appele_que_depuis_ses_deux_usages_sanctionnes():
+    """PERM-04 — l'échappatoire à l'union est gardée par un test, pas par une docstring.
+
+    `peut_quelque_part` est une **union** là où `peut` est une conjonction. Ce n'est jamais
+    une autorisation : elle répond « quelque part », et « quelque part » ne dit pas *ici*.
+    Deux usages en ont légitimement besoin, tous deux au sujet de ce qu'on *propose* à
+    l'écran et non de ce qu'on *sert*.
+
+    Partout ailleurs, cette phase contraint ses échappatoires par une énumération
+    (`tenancy.E001`, `projection.E001`, l'énumération des `MagasinScopedViewSet`, le garde
+    source sur `.values()`). Celle-ci le mérite d'autant plus que son mode de défaillance
+    est **silencieux dans le bon sens** : un troisième appelant ne casse rien visiblement,
+    il autorise trop, discrètement, et personne n'ouvre de ticket.
+
+    **Ce que ce test affirme aujourd'hui, et ce qu'il affirmera plus tard.** Les deux
+    appelants sanctionnés n'existent pas encore — ils arrivent aux plans 03-08 et 03-09.
+    Le test n'est pas `pending` pour autant : il affirme dès maintenant (a) que l'ensemble
+    sanctionné compte **exactement deux** entrées, (b) que tout site d'appel existant porte
+    l'une d'elles, et (c) qu'aucune étiquette ne sert deux fois. Le nombre d'appelants monte
+    donc de 0 à 2 au fil des deux plans, sans qu'aucune assertion ne bouge, et un troisième
+    appelant est rouge à la seconde où il est écrit — non parce qu'il déborde un compteur,
+    mais parce qu'il n'a pas d'étiquette libre à prendre.
+    """
+    import ast
+    import pathlib
+
+    assert len(USAGES_SANCTIONNES_PEUT_QUELQUE_PART) == 2, (
+        "L'ensemble des usages sanctionnés n'en compte plus deux. Élargir cet ensemble "
+        "est la façon dont l'union redevient une autorisation ; si un troisième usage est "
+        "vraiment légitime, il se justifie dans un plan, pas dans un import."
+    )
+
+    racine = pathlib.Path(__file__).resolve().parent.parent / "plateforme"
+    definition = racine / "comptes" / "acces.py"
+    assert definition.exists(), "acces.py a disparu — le garde ne garde plus rien."
+
+    appelants = []
+    for fichier in sorted(racine.rglob("*.py")):
+        if fichier == definition:
+            continue  # la définition et sa docstring ne sont pas des appels
+        lignes = fichier.read_text(encoding="utf-8").splitlines()
+        arbre = ast.parse("\n".join(lignes), filename=str(fichier))
+        for noeud in ast.walk(arbre):
+            if not isinstance(noeud, ast.Call):
+                continue
+            nom = getattr(noeud.func, "attr", None) or getattr(noeud.func, "id", None)
+            if nom != "peut_quelque_part":
+                continue
+            # Le marqueur est accepté sur la ligne de l'appel ou sur les deux qui la
+            # précèdent, parce qu'un appel formaté par black tient rarement sur une ligne.
+            etiquette = None
+            for ligne in lignes[max(0, noeud.lineno - 3) : noeud.lineno]:
+                _, separateur, reste = ligne.partition(
+                    "# usage-sanctionne: peut_quelque_part "
+                )
+                if separateur:
+                    etiquette = reste.strip()
+            appelants.append(
+                (str(fichier.relative_to(racine.parent)), noeud.lineno, etiquette)
+            )
+
+    sans_marqueur = [a for a in appelants if a[2] is None]
+    assert not sans_marqueur, (
+        f"Appel(s) non sanctionné(s) de `peut_quelque_part` : {sans_marqueur}. "
+        "`peut_quelque_part` est une union et n'autorise rien. Si c'est une décision "
+        "d'autorisation, c'est `peut(code, magasin_id=...)` qu'il faut ; si c'est bien un "
+        "des deux usages d'affichage, marquer la ligne "
+        "`# usage-sanctionne: peut_quelque_part <étiquette>`."
+    )
+
+    inconnues = {a[2] for a in appelants} - USAGES_SANCTIONNES_PEUT_QUELQUE_PART
+    assert not inconnues, (
+        f"Étiquette(s) hors de l'ensemble sanctionné : {sorted(inconnues)}. "
+        f"Les deux seules sont {sorted(USAGES_SANCTIONNES_PEUT_QUELQUE_PART)}."
+    )
+
+    etiquettes = [a[2] for a in appelants]
+    doublons = {e for e in etiquettes if etiquettes.count(e) > 1}
+    assert not doublons, (
+        f"Étiquette(s) réutilisée(s) : {sorted(doublons)}. Une étiquette désigne **un** "
+        "site d'appel ; la réutiliser est la façon la plus simple de faire passer un "
+        "troisième appelant pour l'un des deux."
+    )
+
+    assert len(appelants) == len(set(etiquettes)) <= 2
