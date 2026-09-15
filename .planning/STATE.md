@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-04-PLAN.md
-last_updated: "2026-09-14T17:09:39.930Z"
+stopped_at: Completed 03-05-PLAN.md
+last_updated: "2026-09-15T13:23:56.774Z"
 last_activity: 2026-09-14
 progress:
   total_phases: 12
   completed_phases: 1
   total_plans: 21
-  completed_plans: 12
-  percent: 57
+  completed_plans: 13
+  percent: 62
 ---
 
 # Project State
@@ -59,6 +59,7 @@ Progress: [██░░░░░░░░] 17%
 | Phase 03 P03 | ~45m | 4 tasks | 20 files |
 | Phase 03 P11 | 20m | 3 tasks | 11 files |
 | Phase 03 P04 | ~45m | 2 tasks | 6 files |
+| Phase 03 P05 | 50m | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -100,6 +101,8 @@ Recent decisions affecting current work:
 - [Phase 03-04]: Les droits sont stockes par (utilisateur, magasin_code, code), unique sur les trois colonnes — CLAUDE.md #13 et 03-UI-SPEC 0.1, et NON la forme sans dimension magasin de 03-RESEARCH section 4, que son propre bandeau de correction abandonne
 - [Phase 03-04]: magasin_code est le code metier, une valeur, jamais une cle etrangere : allow_relation refuse toute relation inter-alias, et le code survit a un pg_restore la ou un id est reattribue (TENANT-09)
 - [Phase 03-04]: La regle « un droit ne vise qu'un magasin accorde » est une regle Python assumee (DroitAccorde.save + service d'octroi 03-09) : une CHECK ne porte pas sur une autre table, et queryset.update la contourne
+- [Phase 03]: peut(code) sans magasin est une conjonction sur tous les magasins accordes, jamais une union (fail-closed, 03-05)
+- [Phase 03]: l'acces du proprietaire et Acces.SCHEMA sont materialises, donc peut() n'a aucune branche de privilege (03-05)
 
 ### Pending Todos
 
@@ -113,6 +116,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-14T17:09:39.927Z
-Stopped at: Completed 03-04-PLAN.md
+Last session: 2026-09-15T13:23:56.769Z
+Stopped at: Completed 03-05-PLAN.md
 Resume file: None
