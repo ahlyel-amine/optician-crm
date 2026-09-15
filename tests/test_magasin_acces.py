@@ -466,3 +466,368 @@ def test_perm04_peut_quelque_part_n_est_appele_que_depuis_ses_deux_usages_sancti
     )
 
     assert len(appelants) == len(set(etiquettes)) <= 2
+
+
+# --------------------------------------------------------------------------------------
+# PERM-04 / T-03-26 / T-03-27 — AccesMiddleware (plan 03-05, tâche 2)
+# --------------------------------------------------------------------------------------
+def test_perm04_accesmiddleware_est_installe_strictement_apres_tenantmiddleware():
+    """L'ordre n'est pas cosmétique : avant `TenantMiddleware`, la résolution ne peut pas lire.
+
+    Résoudre à quels magasins un octroi se réfère demande une requête dans la base **du
+    client** — `Magasin.objects.filter(actif=True, code__in=...)`. Cette requête passe par
+    le routeur, qui lit l'alias lié, et qui **lève** `NoTenantBound` quand il n'y en a pas.
+    Placé avant `TenantMiddleware`, `AccesMiddleware` ne se plaindrait pourtant de rien à
+    l'installation : l'objet est paresseux, donc l'erreur n'apparaîtrait qu'au premier point
+    de terminaison qui touche `request.acces`, en production, sur la requête d'un opticien.
+
+    L'assertion porte sur les **index** dans `settings.MIDDLEWARE` et non sur le texte du
+    fichier : un `grep` verrait « AccesMiddleware après TenantMiddleware » dans un
+    commentaire aussi bien que dans la liste.
+    """
+    from django.conf import settings
+
+    chemins = list(settings.MIDDLEWARE)
+    attendus = (
+        "django.contrib.auth.middleware.AuthenticationMiddleware",
+        "plateforme.tenancy.middleware.TenantMiddleware",
+        "plateforme.comptes.middleware.AccesMiddleware",
+    )
+    for chemin in attendus:
+        assert chemin in chemins, f"{chemin} a disparu de MIDDLEWARE"
+
+    index = [chemins.index(chemin) for chemin in attendus]
+    assert index == sorted(index), (
+        f"L'ordre est {[chemins[i] for i in sorted(index)]}. Il doit être "
+        f"Authentication → Tenant → Acces : l'identité d'abord, l'alias du client "
+        f"ensuite, et seulement alors la résolution qui a besoin des deux."
+    )
+
+
+def test_perm04_accesmiddleware_ne_pose_rien_dans_un_contextvar():
+    """T-03-26 — l'accès vit sur la requête, dont la durée de vie le borne. Rien à nettoyer.
+
+    Le `reset(token)` banni dans `plateforme/tenancy/` l'est aussi ici, et pour une raison
+    plus forte : dans `comptes`, il n'y a **rien** à nettoyer, donc il n'y a aucune raison
+    d'introduire ce qui demanderait un nettoyage. Le risque réel est le mimétisme — quelqu'un
+    lit le middleware de locataire, voit un `contextvar` et un `finally`, et reproduit la
+    forme sans la raison. Un `contextvar` sur un thread de travail réutilisé qu'on oublie de
+    vider rend l'accès d'une requête visible dans la suivante.
+
+    Le test lit le **source** parce que c'est la seule façon de rougir sur une forme qui
+    n'est pas encore un bug : un `contextvar` correctement nettoyé passerait tous les tests
+    de comportement, et resterait une porte ouverte pour le prochain `finally` oublié.
+    """
+    import pathlib
+
+    source = pathlib.Path(
+        pathlib.Path(__file__).resolve().parent.parent
+        / "plateforme"
+        / "comptes"
+        / "middleware.py"
+    ).read_text(encoding="utf-8")
+
+    # Les lignes de l'interdiction elle-même sont évidemment exemptées : elles nomment ce
+    # qu'elles interdisent, c'est leur travail. Ce qui est traqué est du **code**.
+    code = [
+        ligne
+        for ligne in source.splitlines()
+        if ligne.strip() and not ligne.lstrip().startswith("#")
+    ]
+    # Retirer la docstring de module, qui porte l'interdiction en toutes lettres.
+    dans_docstring = False
+    effectif = []
+    for ligne in code:
+        marques = ligne.count('"""')
+        if dans_docstring:
+            if marques:
+                dans_docstring = False
+            continue
+        if marques == 1:
+            dans_docstring = True
+            continue
+        if marques >= 2:
+            continue
+        effectif.append(ligne)
+
+    fautifs = [
+        ligne
+        for ligne in effectif
+        if "contextvar" in ligne.lower() or "reset(" in ligne.replace(" ", "")
+    ]
+    assert not fautifs, (
+        f"`plateforme/comptes/middleware.py` porte du code de contexte : {fautifs}. "
+        "L'accès se pose sur la requête ; il n'y a rien à nettoyer, donc rien à oublier."
+    )
+
+
+def test_perm04_request_acces_est_paresseux_et_ne_coute_rien_sil_nest_pas_touche(
+    db_all, deux_magasins
+):
+    """T-03-27 — un point de terminaison qui ne lit pas `request.acces` ne paie rien.
+
+    Sans paresse, chaque requête — la sonde de santé, le service d'un fichier statique, la
+    page de connexion — paierait deux requêtes SQL de droits sur deux bases, dont une dans
+    la base du client. Ce n'est pas seulement du gaspillage : c'est une connexion au
+    locataire ouverte sur des chemins qui n'ont aucune raison d'en avoir une.
+
+    Le compte de requêtes est la seule preuve possible. `SimpleLazyObject` se comporte
+    exactement comme l'objet enveloppé dès qu'on le touche, donc aucune assertion sur la
+    valeur ne saurait distinguer « paresseux » de « résolu à l'entrée ».
+
+    Les deux moitiés sont nécessaires : zéro requête pour la vue qui n'y touche pas, et
+    **plus de zéro** pour celle qui y touche. La première seule serait verte si
+    `acces_pour` ne faisait jamais rien.
+    """
+    from django.db import connections
+    from django.test import RequestFactory
+    from django.test.utils import CaptureQueriesContext
+
+    from plateforme.comptes.middleware import AccesMiddleware
+    from plateforme.comptes.permissions_catalogue import Permission
+    from tests.factories import AccesMagasinFactory, DroitAccordeFactory, GerantFactory
+
+    anfa, _maarif = deux_magasins
+    gerant = GerantFactory()
+    AccesMagasinFactory(utilisateur=gerant, magasin_code=anfa.code)
+    DroitAccordeFactory(
+        utilisateur=gerant, magasin_code=anfa.code, code=Permission.STOCK_VOIR
+    )
+
+    fabrique = RequestFactory()
+
+    def _requete():
+        requete = fabrique.get("/sante/")
+        requete.user = gerant
+        return requete
+
+    def _compter(vue):
+        """Les requêtes SQL sur les **deux** bases : le plan de contrôle et le client."""
+        middleware = AccesMiddleware(vue)
+        with CaptureQueriesContext(connections["default"]) as controle:
+            with CaptureQueriesContext(connections["tenant_a"]) as locataire:
+                middleware(_requete())
+        return len(controle) + len(locataire)
+
+    indifferente = _compter(lambda requete: "aucun droit consulté")
+    assert indifferente == 0, (
+        f"Une vue qui ne touche jamais `request.acces` a coûté {indifferente} requête(s). "
+        "L'accès doit être paresseux : la sonde de santé n'a pas à interroger la base d'un "
+        "opticien."
+    )
+
+    curieuse = _compter(
+        lambda requete: requete.acces.peut(Permission.STOCK_VOIR, magasin_id=anfa.pk)
+    )
+    assert curieuse > 0, (
+        "Une vue qui lit `request.acces` n'a déclenché aucune requête. Soit la résolution "
+        "est mise en cache — ce que la révocation sans reconnexion interdit — soit elle ne "
+        "lit rien du tout."
+    )
+
+
+def test_perm06_sur_un_chemin_anonyme_request_acces_vaut_anonyme(db_all):
+    """Le défaut est une **valeur**, y compris là où le middleware s'exécute bel et bien.
+
+    Sur la page de connexion, sur une sonde de santé, sur tout ce qui précède
+    l'authentification, `request.acces` existe et vaut `Acces.ANONYME`. Il n'est ni absent
+    — ce qui inviterait au `getattr(request, "acces", None)` puis au « si None, tout
+    montrer » de `03-RESEARCH.md` P2 — ni `None`.
+
+    Et aucune requête métier n'est tentée : un chemin anonyme n'a pas de locataire lié, donc
+    la moindre requête sur `Magasin` y lèverait `NoTenantBound`. La résolution doit sortir
+    avant, sur les trois conditions d'entrée, et pas après avoir interrogé quoi que ce soit.
+    """
+    from django.contrib.auth.models import AnonymousUser
+    from django.db import connections
+    from django.test import RequestFactory
+    from django.test.utils import CaptureQueriesContext
+
+    from plateforme.comptes.acces import Acces
+    from plateforme.comptes.middleware import AccesMiddleware
+    from plateforme.comptes.permissions_catalogue import Permission
+
+    vu = {}
+
+    def vue(requete):
+        vu["acces"] = requete.acces
+        # On le touche pour de bon : la paresse ne doit pas cacher le comportement.
+        vu["peut"] = requete.acces.peut(Permission.STOCK_VOIR)
+        vu["magasins"] = requete.acces.magasins_ids
+        return "ok"
+
+    requete = RequestFactory().get("/api/auth/connexion/")
+    requete.user = AnonymousUser()
+
+    with CaptureQueriesContext(connections["default"]) as requetes:
+        AccesMiddleware(vue)(requete)
+
+    assert vu["acces"] == Acces.ANONYME
+    assert vu["peut"] is False
+    assert vu["magasins"] == frozenset()
+    assert len(requetes) == 0, (
+        f"Un chemin anonyme a déclenché {len(requetes)} requête(s) : {requetes.captured_queries}. "
+        "Aucun locataire n'y est lié ; la résolution doit sortir sur `ANONYME` avant de "
+        "consulter quoi que ce soit."
+    )
+
+
+def test_perm04_lacces_ne_fuit_pas_entre_deux_requetes_sur_un_thread_reutilise():
+    """T-03-26 — un seul thread, trois requêtes, trois accès distincts.
+
+    Même forme que `test_tenant04_context_does_not_leak_between_requests_on_one_thread` de
+    la phase 2, et pour la même raison : un thread neuf démarre avec un contexte vide et
+    masquerait le bug pour toujours. Le pool à **un** travailleur est ce que fait le
+    travailleur gthread de gunicorn, et l'identité du thread est asserée pour qu'un
+    refactor qui en lancerait un par requête rougisse ici plutôt que de rendre le test
+    décoratif.
+
+    **Le résolveur est remplacé par un compteur, délibérément.** Ce qui est sous test est la
+    *discipline de rangement* du middleware — attribut de requête contre état partagé — et
+    non la résolution, qui a ses propres tests avec une vraie base. Passer par la base ici
+    obligerait à écrire des lignes depuis le thread du pool, hors de la transaction que
+    pytest-django annule, donc à laisser des comptes derrière soi dans la base de test. Le
+    faux résolveur rend en outre la fuite *observable* : deux accès aux identifiants
+    distincts, là où deux résolutions réelles du même compte seraient indiscernables.
+    """
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    from django.test import RequestFactory
+
+    from plateforme.comptes import middleware as module_middleware
+    from plateforme.comptes.acces import Acces
+    from plateforme.comptes.middleware import AccesMiddleware
+
+    class _Principal:
+        """Ce que `AuthenticationMiddleware` aurait posé : une identité, rien de plus."""
+
+        def __init__(self, identifiant):
+            self.pk = identifiant
+            self.is_authenticated = identifiant is not None
+
+    def _faux_acces(identifiant):
+        return Acces(
+            utilisateur_id=identifiant,
+            client_id=1,
+            est_proprietaire=False,
+            droits_par_magasin={identifiant: frozenset({f"code.{identifiant}"})},
+            magasins_ids=frozenset({identifiant}),
+        )
+
+    appels = []
+
+    def _resolveur(utilisateur):
+        appels.append(getattr(utilisateur, "pk", None))
+        if not getattr(utilisateur, "is_authenticated", False):
+            return Acces.ANONYME
+        return _faux_acces(utilisateur.pk)
+
+    threads_vus = []
+    fabrique = RequestFactory()
+
+    def _identite_du_thread():
+        # `Thread.name`, jamais `get_ident()` : l'identifiant système est recyclé dès qu'un
+        # thread se termine, donc une version de ce test qui lancerait un thread par
+        # requête rapporterait une seule identité et passerait contre du code qui fuit.
+        return threading.current_thread().name
+
+    def servir(identifiant):
+        threads_vus.append(_identite_du_thread())
+        requete = fabrique.get("/api/stock/")
+        requete.user = _Principal(identifiant)
+        vu = {}
+
+        def vue(requete_recue):
+            vu["utilisateur_id"] = requete_recue.acces.utilisateur_id
+            vu["magasins"] = frozenset(requete_recue.acces.magasins_ids)
+            return "ok"
+
+        AccesMiddleware(vue)(requete)
+        return vu
+
+    def sonder():
+        """La quatrième requête : celle qui n'installe rien et ne doit donc rien voir."""
+        threads_vus.append(_identite_du_thread())
+        requete = fabrique.get("/api/stock/")
+        requete.user = _Principal(None)
+        return hasattr(requete, "acces")
+
+    original = module_middleware.acces_pour
+    module_middleware.acces_pour = _resolveur
+    try:
+        pool = ThreadPoolExecutor(max_workers=1)
+        try:
+            premier = pool.submit(servir, 11).result()
+            second = pool.submit(servir, 22).result()
+            anonyme = pool.submit(servir, None).result()
+            residu = pool.submit(sonder).result()
+        finally:
+            pool.shutdown(wait=True)
+    finally:
+        module_middleware.acces_pour = original
+
+    assert len(set(threads_vus)) == 1, (
+        f"Les soumissions ont tourné sur {len(set(threads_vus))} threads différents. Un "
+        "thread neuf démarre vierge et cacherait la fuite pour toujours ; le pool doit en "
+        "réutiliser un seul, exactement comme le travailleur gthread de gunicorn."
+    )
+
+    assert premier == {"utilisateur_id": 11, "magasins": frozenset({11})}
+    assert second == {"utilisateur_id": 22, "magasins": frozenset({22})}, (
+        f"La deuxième requête sur le thread réutilisé a vu {second}. Elle doit voir "
+        "l'accès de son propre principal ; voir celui du premier signifie que l'accès est "
+        "rangé ailleurs que sur la requête."
+    )
+    assert anonyme == {"utilisateur_id": None, "magasins": frozenset()}, (
+        f"La requête anonyme sur le thread réutilisé a vu {anonyme} — elle a hérité de "
+        "l'accès d'un compte précédent, ce qui est l'élévation de privilèges la plus "
+        "directe que cette couche puisse produire."
+    )
+    assert residu is False, (
+        "Une requête qui n'est pas passée par le middleware porte quand même un attribut "
+        "`acces`. Il vient donc d'ailleurs que de la requête."
+    )
+
+    # Trois résolutions pour trois requêtes : aucune mise en cache par utilisateur ni par
+    # thread ne s'est glissée entre le middleware et le résolveur.
+    assert appels == [11, 22, None]
+
+
+def test_perm04_le_middleware_pose_le_vrai_acces_resolu(db_all, deux_magasins):
+    """Le contrôle positif du test précédent : le middleware est branché sur `acces_pour`.
+
+    Le test de fuite remplace le résolveur, donc il passerait contre un middleware branché
+    sur n'importe quoi. Celui-ci ferme la boucle avec une vraie base, un vrai gérant et un
+    vrai octroi : ce que la vue reçoit est exactement ce que `acces_pour` rend.
+    """
+    from django.test import RequestFactory
+
+    from plateforme.comptes.acces import acces_pour
+    from plateforme.comptes.middleware import AccesMiddleware
+    from plateforme.comptes.permissions_catalogue import Permission
+    from tests.factories import AccesMagasinFactory, DroitAccordeFactory, GerantFactory
+
+    anfa, maarif = deux_magasins
+    gerant = GerantFactory()
+    for magasin in (anfa, maarif):
+        AccesMagasinFactory(utilisateur=gerant, magasin_code=magasin.code)
+    DroitAccordeFactory(
+        utilisateur=gerant, magasin_code=anfa.code, code=Permission.STOCK_VOIR
+    )
+
+    vu = {}
+
+    def vue(requete):
+        vu["acces"] = requete.acces.peut(Permission.STOCK_VOIR, magasin_id=anfa.pk)
+        vu["ailleurs"] = requete.acces.peut(Permission.STOCK_VOIR, magasin_id=maarif.pk)
+        vu["objet"] = requete.acces.droits_par_magasin
+        return "ok"
+
+    requete = RequestFactory().get("/api/stock/")
+    requete.user = gerant
+    AccesMiddleware(vue)(requete)
+
+    assert vu["acces"] is True
+    assert vu["ailleurs"] is False
+    assert dict(vu["objet"]) == dict(acces_pour(gerant).droits_par_magasin)

@@ -229,6 +229,12 @@ MIDDLEWARE = [
     # And before any view, so that a business query outside this middleware's scope
     # raises NoTenantBound rather than reading the control-plane database.
     "plateforme.tenancy.middleware.TenantMiddleware",
+    # Strictement APRES TenantMiddleware : resoudre a quels magasins un octroi se refere
+    # demande une requete dans la base DU CLIENT (Magasin.objects.filter(actif=True, ...)),
+    # donc l'alias doit deja etre lie. Place plus haut, ce middleware ne se plaindrait de
+    # rien a l'installation — l'objet est paresseux — et echouerait a la premiere vue qui
+    # touche request.acces, en production.
+    "plateforme.comptes.middleware.AccesMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
