@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-08-PLAN.md
-last_updated: "2026-09-16T21:15:18.936Z"
+stopped_at: Completed 03-09-PLAN.md
+last_updated: "2026-09-16T21:48:08.543Z"
 last_activity: 2026-09-16
 progress:
   total_phases: 12
   completed_phases: 1
   total_plans: 21
-  completed_plans: 16
-  percent: 76
+  completed_plans: 17
+  percent: 81
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-09-09)
 ## Current Position
 
 Phase: 3 of 12 (Comptes, Permissions & App Shell)
-Plan: 9 of 14 complete in current phase (03-01 à 03-08 et 03-11) ; l'authentification par session existe et la vague 6 est close — les cinq points de terminaison /api/auth/ sont servis, PERM-01 est vert. Le prochain est 03-09 (surface d'octroi), qui consomme le catalogue et le second usage sanctionné de peut_quelque_part
+Plan: 10 of 14 complete in current phase (03-01 à 03-09 et 03-11) ; la surface d'écriture existe — créer et désactiver un compte gérant, accorder et révoquer par magasin avec la cascade des prérequis appliquée côté serveur, et un catalogue déjà intersecté servi à /api/comptes/catalogue/. Les deux usages sanctionnés de peut_quelque_part sont pris. `tests/test_comptes_droits.py` n'a plus aucun `pending`. Le prochain est 03-10 (le schéma OpenAPI commité), qui verra entrer neuf opérations nouvelles
 Status: Executing
 Last activity: 2026-09-16
 
-Progress: [████████░░] 76%
+Progress: [████████░░] 81%
 
 ## Performance Metrics
 
@@ -63,6 +63,7 @@ Progress: [████████░░] 76%
 | Phase 03 P06 | ~70m | 3 tasks | 10 files |
 | Phase 03 P07 | ~75m | 3 tasks | 6 files |
 | Phase 03 P08 | ~75m | 3 tasks | 11 files |
+| Phase 03 P09 | ~85m | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -130,6 +131,13 @@ Recent decisions affecting current work:
 - [Phase 03-08]: 03-08: toute nouvelle APIView porte un extend_schema dans le plan qui la cree — AutoSchema ignore une APIView nue, donc la route est absente du contrat TypeScript en silence
 - [Phase 03-08]: 03-08: pas de reinitialisation par courriel — aucun fournisseur d'e-mail dans la pile ; approvisionnement des phases 1 et 12, dont l'inscription libre service aura besoin
 - [Phase 03-08]: 03-08: django-axes non adopte (T-03-56 acceptee) — classifiers arretes a Django 6.0, modeles a classer dans CONTROL_PLANE_APPS, seconde table chaude sur le plan de controle
+- [Phase 03-09]: 03-09: la regle d'octroi vit dans plateforme/comptes/services.py, jamais dans la vue — l'onboarding (TENANT-06) et l'inscription libre service de la phase 12 doivent obtenir la meme cascade sans requete HTTP
+- [Phase 03-09]: 03-09: PeutGererLesComptes lit acces.peut(compte.gerer) sans branche « or est_proprietaire » — l'acces du proprietaire est materialise depuis 03-05, donc il passe par le meme chemin ; consequence assumee, un proprietaire sans magasin actif est refuse
+- [Phase 03-09]: 03-09: le contrat de reponse d'une bascule est lignes / cascade / magasins_accordes / magasins_etendus, avec etat actif|inactif|mixte — le plan 03-14 construit l'ecran contre lui et un test nomme le fixe
+- [Phase 03-09]: 03-09: un magasin ajoute etend les lignes UNIFORMES et jamais les personnalisees, calcul fait sur l'etat d'avant l'ajout ; l'inverse distribuerait une permission jamais accordee (T-03-62)
+- [Phase 03-09]: 03-09: la cible d'une gestion de compte n'est jamais le proprietaire ni soi-meme (03-UI-SPEC 7.7) — sans cela un gerant-gestionnaire reinitialise le mot de passe du proprietaire et prend son compte
+- [Phase 03-09]: 03-09: le dernier magasin d'un compte n'est PAS refuse cote serveur — un compte neuf en a legitimement zero, donc « au moins un » est un garde-fou d'interface, pas un invariant
+- [Phase 03-09]: 03-09: le catalogue offrable est intersecte AVANT serialisation et « catalogue » rejoint RENDUS — une ligne de CHAMPS_PROTEGES produit desormais quatre assertions, pas trois
 
 ### Pending Todos
 
@@ -143,6 +151,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-16T21:15:18.934Z
-Stopped at: Completed 03-08-PLAN.md
+Last session: 2026-09-16T21:47:52.298Z
+Stopped at: Completed 03-09-PLAN.md
 Resume file: None
