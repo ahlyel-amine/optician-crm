@@ -23,3 +23,12 @@ REST_FRAMEWORK = {
 # Served over plain HTTP locally, so secure-only cookies would never be sent back.
 SESSION_COOKIE_SECURE = False
 CSRF_COOKIE_SECURE = False
+
+# Development tolerance only, for the SPA served by Vite on a different port than
+# Django. This sits **behind** the same-origin proxy, it does not replace it: with
+# `changeOrigin: false` in `web/vite.config.ts` the browser's `Origin` already matches
+# the host Django reconstructs, and this list is never read. It covers calling
+# `127.0.0.1:8010` directly, and a machine where Vite's port differs.
+# **Never in `base.py`.** In production, trusting `localhost` hands a trusted origin to
+# anyone who controls a local name resolution.
+CSRF_TRUSTED_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]

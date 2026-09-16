@@ -22,6 +22,24 @@ import { defineConfig } from "vite";
 // Chaque panne classique du type « le cookie marche en local et pas en prod »
 // est concue hors d'existence. Ne pas remplacer ce proxy par une origine
 // distincte plus un en-tete CORS.
+//
+// **Les deux proxies sont declares en forme objet, avec `changeOrigin: false`
+// explicite. Ne pas revenir a la forme chaine.** La forme chaine
+// (`"/api": "http://127.0.0.1:8010"`) a l'air identique et met
+// `changeOrigin: true` par defaut : le proxy reecrit alors l'en-tete `Host` en
+// `127.0.0.1:8010`.
+//
+// C'est fatal ici, parce que `CsrfViewMiddleware` reconstruit l'origine attendue
+// depuis `request.get_host()`. Un `Host` reecrit fait diverger cette origine
+// calculee de l'`Origin` que le navigateur a envoye, et **toute ecriture est
+// refusee en 403** :
+// `Origin checking failed - http://localhost:5173 does not match any trusted
+// origins.` La connexion elle-meme cesse de fonctionner.
+//
+// Preserver le `Host` du navigateur est ce qui fait calculer a Django exactement
+// l'origine que le navigateur a envoyee. C'est aussi ce que fait un vrai reverse
+// proxy en production : `changeOrigin: false` aligne donc le developpement sur la
+// production au lieu de l'en ecarter.
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
@@ -32,8 +50,8 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/api": "http://127.0.0.1:8010",
-      "/static": "http://127.0.0.1:8010",
+      "/api": { target: "http://127.0.0.1:8010", changeOrigin: false },
+      "/static": { target: "http://127.0.0.1:8010", changeOrigin: false },
     },
   },
 });
