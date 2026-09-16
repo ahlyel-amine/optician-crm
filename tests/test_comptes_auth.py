@@ -35,6 +35,11 @@ DECONNEXION = "/api/auth/deconnexion/"
 MOI = "/api/auth/moi/"
 MOT_DE_PASSE = "/api/auth/mot-de-passe/"
 
+#: L'origine que la SPA presente en developpement : Vite sert sur ce port et le
+#: navigateur joint cet en-tete `Origin` a toute ecriture. Ecrite ici parce que deux
+#: tests la liront le jour ou un second point de terminaison sera couvert.
+ORIGINE_NAVIGATEUR = "http://localhost:5173"
+
 
 def _client_api(csrf=False):
     from rest_framework.test import APIClient
@@ -666,6 +671,103 @@ def test_perm01_une_requete_api_sans_jeton_csrf_est_refusee(affaire_reelle):
         f"La même écriture *avec* jeton a reçu {avec.status_code} : le refus ci-dessus ne "
         "prouvait donc rien sur le CSRF."
     )
+
+
+def test_perm01_une_requete_avec_en_tete_origin_n_est_pas_refusee_par_le_csrf(affaire_reelle):
+    """PERM-01 — le contrôle d'origine du CSRF doit accepter l'origine du navigateur.
+
+    **Pourquoi ce test existe.** La suite entière était verte pendant qu'un vrai
+    navigateur était refusé en 403 sur `/api/auth/connexion/`, avec
+    « Origin checking failed - http://localhost:5173 does not match any trusted
+    origins. » Aucun test n'envoyait d'en-tête `Origin`, et Django saute
+    **intégralement** le contrôle d'origine quand l'en-tête est absent en HTTP simple
+    (`CsrfViewMiddleware.process_view`). La même requête curl passe de 200 à 403 selon la
+    seule présence de `-H "Origin: ..."`. Ce test est le trou refermé : sans lui, la
+    régression revient sans que rien ne rougisse.
+
+    **Pourquoi l'hôte reste `testserver`.** `setup_test_environment()` l'ajoute à
+    `ALLOWED_HOSTS` et le client de test le présente. On ne le change pas : le défaut
+    reproduit ici est précisément une origine qui **diffère** de l'hôte vu par Django,
+    ce que produisait le proxy Vite en réécrivant `Host` en `127.0.0.1:8010`.
+
+    **Pourquoi la liste vient de `config.settings.local`.** `config/settings/test.py` fait
+    `from .base import *` et ne lit jamais `local.py`, donc `CSRF_TRUSTED_ORIGINS` est
+    absent du run de tests — et doit le rester. Le test importe donc la liste
+    **réellement livrée** aux développeurs et l'applique par `override_settings`. Une
+    constante recopiée dans le test resterait verte le jour où `local.py` perd l'entrée.
+
+    **Piège Django, vérifié dans le 6.1.x installé — à connaître avant d'écrire un autre
+    test qui envoie un `Origin`.** `csrf_protect` est
+    `decorator_from_middleware(CsrfViewMiddleware)`, et `make_middleware_decorator`
+    (`django/utils/decorators.py`) instancie le middleware **une seule fois, à l'import du
+    module de vues**. `allowed_origins_exact` et `csrf_trusted_origins_hosts` sont des
+    `cached_property` (`django/middleware/csrf.py`), et `django/test/signals.py` ne
+    contient **aucun** récepteur qui les invalide sur `setting_changed`. La première
+    requête du processus portant un `Origin` qui ne correspond pas à l'hôte fige donc la
+    liste **pour tout le processus**. Conséquence tenue ici : les deux jambes partagent
+    **un seul** `override_settings`. Deux overrides successifs avec deux valeurs
+    différentes donneraient silencieusement la première valeur aux deux, et le second
+    test serait vert ou rouge sans rapport avec ce qu'il croit mesurer.
+    """
+    from django.test import override_settings
+
+    import config.settings.local as reglages_dev
+    from tests.factories import MOT_DE_PASSE_DE_TEST, ProprietaireFactory
+
+    origines = list(getattr(reglages_dev, "CSRF_TRUSTED_ORIGINS", []))
+    proprietaire = ProprietaireFactory(client=affaire_reelle.client)
+
+    with override_settings(CSRF_TRUSTED_ORIGINS=origines):
+        # `enforce_csrf_checks=True` est obligatoire : sans lui le handler de test pose
+        # `request._dont_enforce_csrf_checks = True`, `csrf_protect` rend la main sans
+        # rien vérifier, et ce test serait vert au-dessus du défaut.
+        api = _client_api(csrf=True)
+
+        amorce = api.get(CSRF)
+        assert amorce.status_code == 204
+        jeton = api.cookies["csrftoken"].value
+
+        identifiants = {
+            "email": proprietaire.email,
+            "mot_de_passe": MOT_DE_PASSE_DE_TEST,
+        }
+
+        # Jambe A, le contrôle positif du refus : identifiants valides, jeton valide,
+        # origine tierce. Elle prouve que le contrôle d'origine est vivant — donc que la
+        # jambe B ne passera pas parce qu'on aurait désarmé le CSRF quelque part.
+        tierce = api.post(
+            CONNEXION,
+            identifiants,
+            format="json",
+            headers={"origin": "http://malveillant.example", "x-csrftoken": jeton},
+        )
+        assert tierce.status_code == 403, (
+            f"Une connexion depuis une origine tierce a reçu {tierce.status_code} au lieu "
+            "de 403. Le contrôle d'origine ne tourne plus : `csrf_protect` a disparu de "
+            "`VueConnexion`, le client de test n'impose pas le CSRF, ou toute origine est "
+            "devenue de confiance. Le login CSRF est une vraie attaque — on force une "
+            "victime dans la session de l'attaquant."
+        )
+
+        # Jambe B, la régression. En dernier, parce que c'est la seule qui réussit, donc
+        # la seule qui fasse tourner le jeton via `rotate_token`.
+        navigateur = api.post(
+            CONNEXION,
+            identifiants,
+            format="json",
+            headers={"origin": ORIGINE_NAVIGATEUR, "x-csrftoken": jeton},
+        )
+        assert navigateur.status_code != 403, (
+            f"Une connexion portant `Origin: {ORIGINE_NAVIGATEUR}` a été refusée en 403. "
+            "L'origine du navigateur n'est de confiance nulle part : CSRF_TRUSTED_ORIGINS "
+            f"vaut {origines!r} dans config/settings/local.py, et le proxy de "
+            "développement réécrit peut-être encore l'en-tête Host (forme chaîne du proxy "
+            "Vite, donc `changeOrigin: true` par défaut)."
+        )
+        assert navigateur.status_code == 200, (
+            f"La connexion depuis l'origine du navigateur a reçu {navigateur.status_code} "
+            f"au lieu de 200 : {getattr(navigateur, 'data', None)!r}"
+        )
 
 
 def test_perm01_moi_ne_rend_que_les_magasins_accordes_et_le_catalogue(affaire_reelle):
