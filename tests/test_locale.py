@@ -31,10 +31,20 @@ formateur ne le voie. `assert total == 1800.0` passe pendant que l'argent est fa
 from __future__ import annotations
 
 import json
+import re
 from decimal import Decimal
 from pathlib import Path
 
 import pytest
+
+from tests.ressources_fixture import (  # noqa: F401 — fixtures pytest, importées pour être disponibles
+    PRIX_VENTE,
+    VueRessourceFixture,
+    acces_avec_le_droit,
+    registre_de_la_fixture,
+    ressource,
+    table_ressource_fixture,
+)
 
 #: La spécification partagée. Le chemin est écrit une fois ; `web/tests/format.test.ts`
 #: remonte au même fichier depuis `web/`.
@@ -221,26 +231,113 @@ def test_app03_le_fuseau_est_converti_dans_le_formateur_pas_dans_les_reglages():
 # --------------------------------------------------------------------------------------
 # Tâche 2 — le français de l'API et l'invariant monétaire de bout en bout
 # --------------------------------------------------------------------------------------
-@pytest.mark.pending
-def test_app01_les_erreurs_de_lapi_sont_en_francais():
+CONNEXION = "/api/auth/connexion/"
+
+
+def _corps_json(reponse):
+    """Le JSON **tel qu'il part sur le fil**, pas `response.data`.
+
+    La différence est tout le sujet de ces deux tests : `response.data` porte encore les
+    objets Python que le sérialiseur a produits, donc un `Decimal` y ressemble à un
+    montant juste. Ce qui décide du type côté navigateur est le rendu JSON, et c'est lui
+    qu'il faut lire.
+    """
+    if not getattr(reponse, "is_rendered", True):
+        reponse.render()
+    return json.loads(reponse.content.decode("utf-8"))
+
+
+def test_app01_les_erreurs_de_lapi_sont_en_francais(affaire_reelle):
     """APP-01 — l'interface est française jusque dans ses messages d'échec.
 
-    Les chaînes qu'un opticien voit le plus souvent au moment où il a le plus besoin de les
-    comprendre sont les messages de validation, et ce sont celles qu'on ne traduit pas :
-    elles viennent de DRF, pas de nos gabarits. Rouge, ce test dirait que `LANGUAGE_CODE`
-    ou le catalogue `fr` de DRF n'est pas en place, donc qu'un formulaire refusé répond
-    *« This field is required. »* dans un produit par ailleurs entièrement français.
+    Les chaînes qu'un opticien voit le plus souvent au moment où il a le plus besoin de
+    les comprendre sont les messages de validation, et ce sont celles qu'on ne traduit
+    pas : elles viennent de DRF, pas de nos gabarits. Rouge, ce test dirait que
+    `LANGUAGE_CODE` ou le catalogue `fr` de DRF n'est pas en place, donc qu'un formulaire
+    refusé répond *« This field is required. »* dans un produit par ailleurs entièrement
+    français.
 
-    Il assertent sur une réponse d'API réelle, pas sur le réglage : `LANGUAGE_CODE = "fr-fr"`
-    peut être posé et neutralisé par un `LocaleMiddleware` qui négocie l'`Accept-Language`
-    du navigateur — c'est-à-dire par le poste de l'utilisateur, ce qui n'est pas une
-    décision produit.
+    Il assertent sur une réponse d'API réelle, pas sur le réglage : `LANGUAGE_CODE =
+    "fr-fr"` peut être posé et neutralisé par un middleware de négociation de langue, qui
+    lit l'`Accept-Language` du navigateur — c'est-à-dire le poste de l'utilisateur, ce qui
+    n'est pas une décision produit.
     """
-    pytest.fail("non implémenté : plan 03-10")
+    from rest_framework.test import APIClient
+
+    reponse = APIClient().post(CONNEXION, {}, format="json")
+
+    assert reponse.status_code == 400, reponse.data
+    corps = _corps_json(reponse)
+    messages = [str(m) for liste in corps.values() for m in liste]
+    assert messages, f"Aucun message de validation dans {corps!r}."
+    assert all("Ce champ est obligatoire." == m for m in messages), (
+        f"Les messages de validation ne sont pas en français : {messages!r}. Le catalogue "
+        "`fr` de DRF est livré avec la bibliothèque ; ce test vérifie NOTRE configuration, "
+        "pas le fonctionnement de Django."
+    )
 
 
-@pytest.mark.pending
-def test_app03_un_montant_traverse_le_json_en_chaine_pas_en_flottant():
+def test_app01_la_langue_ne_depend_pas_dun_entete_fourni_par_le_client(affaire_reelle):
+    """T-03-71 — la langue est une décision produit, pas une préférence de navigateur.
+
+    Le produit est monolingue et le restera (`03-RESEARCH.md` §8, i18n délibérément
+    reportée à *jamais*, sauf demande d'une interface arabe). Installer un middleware de
+    négociation de langue ferait donc trois choses, toutes indésirables : il rendrait la
+    langue de l'API dépendante d'un en-tête que l'appelant contrôle — dans un produit dont
+    tout l'argument de la phase 2 est que rien de significatif ne vient du client — il
+    ajouterait `Vary: Accept-Language` à **chaque** réponse, ce qui coûte en cache pour
+    une dimension inutilisée, et il ferait basculer les messages de DRF en anglais pour
+    l'opticien dont le poste est en anglais, ce qui est précisément le poste le plus
+    susceptible d'exister dans une boutique.
+
+    Deux assertions, et il faut les deux. L'une prouve le comportement : un en-tête
+    anglais n'obtient pas d'anglais. L'autre prouve **pourquoi**, et resterait rouge le
+    jour où quelqu'un ajouterait le middleware sans rien casser d'autre, parce que le
+    catalogue anglais est la source par défaut et qu'une chaîne non traduite passerait
+    inaperçue.
+    """
+    from django.conf import settings
+    from rest_framework.test import APIClient
+
+    assert not any("LocaleMiddleware" in couche for couche in settings.MIDDLEWARE), (
+        "Un middleware de négociation de langue est installé. La langue du produit ne se "
+        "négocie pas : voir la docstring de ce test."
+    )
+    assert "Vary" not in APIClient().post(CONNEXION, {}, format="json").headers.get(
+        "Vary", "Accept-Language"
+    ).replace("Accept-Language", "Vary"), "Vary: Accept-Language sur une réponse d'API."
+
+    reponse = APIClient().post(
+        CONNEXION, {}, format="json", headers={"accept-language": "en-US,en;q=0.9"}
+    )
+    messages = [str(m) for liste in _corps_json(reponse).values() for m in liste]
+    assert all(m == "Ce champ est obligatoire." for m in messages), (
+        f"Un en-tête Accept-Language anglais a changé la langue de l'API : {messages!r}."
+    )
+
+
+def test_app03_le_reglage_de_localisation_retire_de_django_n_est_pose_nulle_part():
+    """Un réglage qui ne fait rien est pire qu'un réglage absent : il rassure.
+
+    Le réglage de localisation des nombres a été **retiré** de Django ; l'écrire
+    aujourd'hui, dans un sens ou dans l'autre, n'a littéralement aucun effet. Le risque
+    n'est donc pas qu'il casse quelque chose, c'est qu'une revue le lise et en conclue que
+    le formatage des montants est géré — alors que ce qui le gère est
+    `plateforme/projection/formats.py` et rien d'autre (`03-RESEARCH.md` correction 5).
+    """
+    from pathlib import Path as _Path
+
+    reglages = sorted((_Path("config") / "settings").glob("*.py"))
+    assert reglages, "Aucun module de réglages trouvé : le test ne vérifierait rien."
+    for module in reglages:
+        assert "USE_L10N" not in module.read_text(encoding="utf-8"), (
+            f"{module} pose un réglage retiré de Django. Voir la docstring de ce test."
+        )
+
+
+def test_app03_un_montant_traverse_le_json_en_chaine_pas_en_flottant(
+    ressource, deux_magasins
+):
     """APP-03 / CLAUDE.md #7 — `COERCE_DECIMAL_TO_STRING` est une garantie, pas un réglage.
 
     Un `DecimalField` sérialisé en nombre JSON devient un double IEEE-754 dans le
@@ -250,21 +347,160 @@ def test_app03_un_montant_traverse_le_json_en_chaine_pas_en_flottant():
 
     Rouge, ce test dirait que le réglage a été désactivé — souvent pour faire taire un
     composant de graphique qui voulait des nombres. Le composant a tort.
+
+    Les deux assertions sont voulues : le type observé sur le fil peut être juste par
+    accident (une valeur ronde, un sérialiseur écrit à la main), et le réglage seul ne
+    prouve pas qu'un sérialiseur ne le contourne pas. Ensemble, elles tiennent.
     """
-    pytest.fail("non implémenté : plan 03-10")
+    from django.conf import settings
+
+    assert settings.REST_FRAMEWORK["COERCE_DECIMAL_TO_STRING"] is True
+
+    proprietaire, _ = acces_avec_le_droit(deux_magasins)
+    corps = _corps_json(_appeler_ressource(proprietaire, ressource))
+
+    assert isinstance(corps["prix_vente"], str), (
+        f"`prix_vente` traverse le JSON en {type(corps['prix_vente']).__name__} et non en "
+        "chaîne : la valeur est déjà un double dans le navigateur."
+    )
+    assert corps["prix_vente"] == f"{PRIX_VENTE:.2f}"
 
 
-@pytest.mark.pending
-def test_app03_aucun_montant_n_est_un_flottant_dans_une_reponse():
+def test_app03_aucun_montant_n_est_un_flottant_dans_une_reponse(ressource, deux_magasins):
     """APP-03 / CLAUDE.md #7 — la version balayante du test ci-dessus, et la seule durable.
 
-    Le test ciblé vérifie un point de terminaison ; celui-ci parcourt les réponses et
-    échoue sur **tout** nombre JSON à la place d'un montant, y compris ceux qu'un
-    `annotate()` de phase 8 aura ajoutés sans passer par un `DecimalField`. C'est là que se
-    trouve la vraie dérive : personne ne désactive `COERCE_DECIMAL_TO_STRING`, quelqu'un
-    ajoute une somme calculée.
+    Le test ciblé vérifie une clé ; celui-ci parcourt la charge utile entière et échoue
+    sur **tout** nombre JSON non entier, y compris ceux qu'un `annotate()` de phase 8 ou
+    un `SerializerMethodField` auront ajoutés sans passer par un `DecimalField`. C'est là
+    que se trouve la vraie dérive : personne ne désactive `COERCE_DECIMAL_TO_STRING`,
+    quelqu'un ajoute une somme calculée.
 
     Rouge, il nomme le chemin et la clé fautifs, ce qui est ce qui rend un test balayant
     utilisable plutôt que décourageant.
+
+    **Le contrôle positif est la moitié du test.** Une charge utile sans aucun montant
+    passe « aucun flottant » sans rien prouver, et c'est l'état par défaut d'une phase 3
+    qui n'a pas encore de facturation. La ressource de test, elle, porte deux champs
+    monétaires : le balayage exige donc d'en avoir vu au moins un, en chaîne.
     """
-    pytest.fail("non implémenté : plan 03-10")
+    proprietaire, _ = acces_avec_le_droit(deux_magasins)
+    charge = _corps_json(_appeler_ressource(proprietaire, ressource))
+
+    _refuser_les_flottants({"ressource-fixture": charge})
+
+    montants = _montants_en_chaine(charge, "ressource-fixture")
+    assert montants, (
+        "Le balayage n'a rencontré aucun montant : il est vert et vide. La ressource de "
+        "test porte deux champs monétaires ; si elle n'en sert plus, ce contrôle positif "
+        "doit être reporté sur une charge utile qui en porte."
+    )
+
+
+def test_app03_aucun_flottant_dans_les_charges_utiles_servies_par_lapi(affaire_reelle):
+    """Le même balayage, sur les points de terminaison réellement montés.
+
+    Il est **séparé** du précédent pour une raison mécanique et non esthétique : les
+    fixtures de locataire statique lient le contexte pour toute la durée du test, et
+    `TenantMiddleware` refuse — correctement — de servir une requête dont le thread porte
+    déjà un contexte (CLAUDE.md #8). Une vraie requête HTTP et un locataire `tenant_a`
+    lié à la main ne peuvent donc pas coexister dans un test, et essayer produirait un
+    `TenantContextLeak` qui n'a rien à voir avec l'argent.
+
+    **Il est vert et sans montant aujourd'hui, et c'est assumé.** La phase 3 ne sert
+    aucune monnaie : l'amorçage, le catalogue de droits et la liste des comptes n'en
+    portent pas. Son contrôle positif est le test précédent ; celui-ci est l'assertion qui
+    commencera à mordre en phase 6, sur les mêmes quatre points de terminaison plus ceux
+    qu'elle ajoutera. Le garder vide maintenant coûte une seconde et évite d'avoir à s'en
+    souvenir plus tard.
+    """
+    from rest_framework.test import APIClient
+
+    from tests.factories import MOT_DE_PASSE_DE_TEST, ProprietaireFactory
+
+    api = APIClient()
+    proprietaire = ProprietaireFactory(client=affaire_reelle.client)
+    connexion = api.post(
+        CONNEXION,
+        {"email": proprietaire.email, "mot_de_passe": MOT_DE_PASSE_DE_TEST},
+        format="json",
+    )
+    assert connexion.status_code == 200, connexion.data
+
+    charges = {
+        CONNEXION: _corps_json(connexion),
+        "/api/auth/moi/": _corps_json(api.get("/api/auth/moi/")),
+        "/api/comptes/": _corps_json(api.get("/api/comptes/")),
+        "/api/comptes/catalogue/": _corps_json(api.get("/api/comptes/catalogue/")),
+    }
+    assert all(charge for charge in charges.values()), (
+        f"Une charge utile est vide, donc balayée pour rien : "
+        f"{[nom for nom, charge in charges.items() if not charge]}"
+    )
+    _refuser_les_flottants(charges)
+
+
+def _refuser_les_flottants(charges):
+    """L'assertion partagée par les deux balayages, avec son message."""
+    flottants = [t for nom, charge in charges.items() for t in _flottants(charge, nom)]
+    assert not flottants, (
+        "Un nombre JSON non entier est servi là où un montant est attendu : "
+        + ", ".join(f"{chemin} = {valeur!r}" for chemin, valeur in flottants)
+        + ". L'argent traverse le JSON en chaîne (CLAUDE.md #7) ; un `annotate()` ou un "
+        "`SerializerMethodField` qui rend un float contourne `COERCE_DECIMAL_TO_STRING` "
+        "sans jamais le désactiver."
+    )
+
+
+def _appeler_ressource(utilisateur, instance):
+    """Une vraie requête sur la ressource de test : principal -> middleware -> vue -> JSON.
+
+    Même idiome que `tests/test_projection.py` : `force_authenticate` est obligatoire
+    parce que le setter `Request.user` de DRF réécrit `_request.user`, donc une vue sans
+    classe d'authentification y poserait `AnonymousUser` **après** le middleware et
+    l'accès paresseux se résoudrait en `Acces.ANONYME` — le test verrait une charge utile
+    projetée, pour une raison qui n'a rien à voir avec l'argent.
+    """
+    from rest_framework.test import APIRequestFactory, force_authenticate
+
+    from plateforme.comptes.middleware import AccesMiddleware
+
+    vue = VueRessourceFixture.as_view({"get": "retrieve"})
+    requete = APIRequestFactory().get(f"/api/ressources-fixture/{instance.pk}/")
+    requete.user = utilisateur
+    force_authenticate(requete, user=utilisateur)
+    reponse = AccesMiddleware(lambda recue: vue(recue, pk=instance.pk))(requete)
+    reponse.render()
+    return reponse
+
+
+def _flottants(valeur, chemin):
+    """Tout `float` de la charge utile, avec le chemin qui y mène.
+
+    `json.loads` rend un `float` pour tout nombre JSON non entier, donc cette marche
+    attrape exactement ce qu'il faut : `"1800.00"` reste une chaîne et passe, `1800.0`
+    est un double et échoue. Les entiers sont laissés tranquilles — un identifiant, un
+    compte de lignes ou une quantité n'est pas un montant, et les refuser rendrait ce
+    test insupportable sans rien protéger.
+    """
+    if isinstance(valeur, float):
+        return [(chemin, valeur)]
+    if isinstance(valeur, dict):
+        return [t for cle, v in valeur.items() for t in _flottants(v, f"{chemin}.{cle}")]
+    if isinstance(valeur, list):
+        return [t for i, v in enumerate(valeur) for t in _flottants(v, f"{chemin}[{i}]")]
+    return []
+
+
+def _montants_en_chaine(valeur, chemin):
+    """Les chaînes qui ressemblent à un montant décimal — le contrôle positif du balayage."""
+    if isinstance(valeur, str):
+        return [(chemin, valeur)] if re.fullmatch(r"-?\d+\.\d{2}", valeur) else []
+    if isinstance(valeur, dict):
+        return [
+            t for cle, v in valeur.items() for t in _montants_en_chaine(v, f"{chemin}.{cle}")
+        ]
+    if isinstance(valeur, list):
+        return [
+            t for i, v in enumerate(valeur) for t in _montants_en_chaine(v, f"{chemin}[{i}]")
+        ]
+    return []

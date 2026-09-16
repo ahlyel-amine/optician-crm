@@ -172,6 +172,34 @@ USE_TZ = True
 TIME_ZONE = "UTC"
 USE_I18N = True
 LANGUAGE_CODE = "fr-fr"
+# Sans activation explicite, `get_language()` rend `LANGUAGE_CODE` sur chaque thread, donc
+# `gettext` resout le francais partout et les messages de validation de DRF sortent en
+# francais : la bibliotheque livre son catalogue `fr`. C'est tout ce qu'il faut (APP-01),
+# et trois choses sont ABSENTES d'ici expres. Chacune a un test nomme dans
+# `tests/test_locale.py`, qui redeviendrait rouge si on les ajoutait.
+#
+# 1. **Aucun middleware de negociation de langue.** Il ferait dependre la langue de
+#    l'en-tete `Accept-Language`, c'est-a-dire du poste de l'utilisateur — dans un produit
+#    dont tout l'argument de la phase 2 est que rien de significatif ne vient du client
+#    (menace T-03-71) — et ajouterait `Vary: Accept-Language` a chaque reponse. Le produit
+#    est monolingue et le restera : BRAND-04 est du *contenu* arabe dans des documents
+#    imprimes, pas une *interface* arabe.
+#
+# 2. **Aucun reglage de localisation des nombres.** Celui auquel on pense a ete RETIRE de
+#    Django ; l'ecrire aujourd'hui, dans un sens ou dans l'autre, ne fait litteralement
+#    rien. Le risque n'est pas qu'il casse quelque chose, c'est qu'une revue le lise et en
+#    conclue que le formatage des montants est gere ici. Il ne l'est pas : il est
+#    entierement dans `plateforme/projection/formats.py`, epingle a la main, parce que les
+#    trois bases de locale plausibles rendent trois separateurs de milliers differents
+#    (CLAUDE.md #14). Et `TIME_ZONE` reste `UTC` : la conversion vers Africa/Casablanca se
+#    fait dans ce meme formateur, jamais ici.
+#
+# 3. **La regle d'API que rien d'automatique ne peut verifier :** chaque total que
+#    l'interface affiche est un total fourni par le serveur — `total_ht`, `total_tva`,
+#    `total_ttc`, `reste_a_payer`, `solde_caisse`. La SPA ne doit jamais additionner deux
+#    montants, et si elle n'en a jamais besoin, elle ne le peut jamais. Le bug a attraper
+#    en revue n'est donc pas une addition cote client : c'est un serialiseur qui **omet**
+#    un total dont l'interface a besoin.
 
 
 # --------------------------------------------------------------------------------------
