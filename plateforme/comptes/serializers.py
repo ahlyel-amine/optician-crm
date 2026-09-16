@@ -556,3 +556,93 @@ def charge_utile_resultat(resultat) -> dict:
         "magasins_accordes": list(resultat.magasins_accordes),
         "magasins_etendus": list(resultat.magasins_etendus),
     }
+
+
+# ======================================================================================
+# PERM-06 — le catalogue **offrable**, intersecté avant sérialisation (plan 03-09)
+# ======================================================================================
+
+
+class CatalogueOffrableSerializer(CatalogueSerializer):
+    """La forme de `GET /api/comptes/catalogue/`. Déclarée pour le schéma, pas pour sérialiser.
+
+    Le catalogue **complet** est servi par `/api/auth/moi/` via `catalogue_des_droits()` :
+    il est identique pour chaque affaire du produit, donc il ne divulgue rien, et l'écran
+    403 de `03-UI-SPEC.md` 8.6 nomme le droit manquant précisément pour cette raison.
+
+    Celui-ci répond à une autre question — **ce que l'appelant peut accorder** — et sa
+    réponse dépend donc de l'appelant. Elle porte en plus les magasins qu'il détient,
+    parce que l'écran de droits a besoin des deux axes pour dessiner une ligne.
+    """
+
+    magasins = MagasinSerializer(many=True, read_only=True)
+
+
+def catalogue_offrable(acces, magasins) -> dict:
+    """Le catalogue **déjà intersecté** avec les droits et les magasins de l'appelant.
+
+    C'est la seule recommandation de fond du `03-UI-CHECK.md`, et elle est appliquée ici
+    plutôt que dans la SPA pour une raison précise, écrite dans `03-UI-SPEC.md` 7.7 :
+    **« This is a wire-level guarantee, not a rendering rule. »** Un code que l'éditeur
+    ne détient pas est **absent du JSON**, exactement comme un champ non autorisé est
+    absent d'une charge utile de ligne. Le client rend ce qu'il reçoit et n'a **aucune
+    branche de filtrage** à lui, donc il n'existe aucune liste de codes cachés à extraire
+    d'une inspection du navigateur, d'une réponse en cache ou d'un remaniement futur.
+
+    Griser la ligne aurait été l'autre option, et c'est celle qu'on écrit sans y penser.
+    Elle apprend au gérant-gestionnaire que la permission existe et qu'il ne la détient
+    pas — ce qui est exactement ce que « absent, pas désactivé » refuse. L'interface ne
+    doit donc pas avoir à la masquer : elle ne la reçoit pas.
+
+    **`peut_quelque_part` est l'union, et c'est ici l'outil juste** — pour la seule fois
+    avec la navigation. La question posée n'est pas « a-t-il le droit d'agir ici ? » mais
+    « cette case a-t-elle un sens pour lui ? », et un gérant qui détient
+    `article.voir_prix_achat` à Anfa doit pouvoir l'accorder à un collègue d'Anfa. Le
+    refus par magasin, lui, est appliqué au moment de l'octroi par
+    `plateforme.comptes.services`, qui interroge `peut(code, magasin_id)` — la question
+    précise. L'union propose, la conjonction dispose.
+
+    Conséquence que `03-UI-SPEC.md` 7.4 tire et qui vaut d'être écrite : un code ajouté
+    en phase 8 apparaît dans l'écran **sans aucun changement côté SPA**, et un libellé ne
+    peut jamais dériver de son code — les deux viennent d'ici.
+    """
+    visibles = {
+        str(code)
+        for code in Permission.values
+        # usage-sanctionne: peut_quelque_part catalogue
+        if acces.peut_quelque_part(code)
+    }
+
+    sections = []
+    for section in SECTIONS:
+        droits = [
+            {
+                "code": str(code),
+                "libelle": _libelle(code),
+                "explication": EXPLICATIONS[code],
+            }
+            for code in section.codes
+            if str(code) in visibles
+        ]
+        # Une section vide n'est pas servie : un titre sans ligne dirait « il y a des
+        # droits ici, mais pas pour vous », ce qui est la version typographique du
+        # grisage.
+        if droits:
+            sections.append({"titre": section.titre, "droits": droits})
+
+    # La carte des prérequis est restreinte aux codes visibles, des deux côtés. Une
+    # entrée nommant un code absent réintroduirait par la porte de service ce que
+    # l'intersection vient de retirer.
+    prerequis = {}
+    for code, requis in PREREQUIS.items():
+        if str(code) not in visibles:
+            continue
+        retenus = [str(r) for r in requis if str(r) in visibles]
+        if retenus:
+            prerequis[str(code)] = retenus
+
+    return {
+        "sections": sections,
+        "prerequis": prerequis,
+        "magasins": MagasinSerializer(magasins, many=True).data,
+    }

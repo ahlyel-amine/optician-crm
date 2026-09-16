@@ -38,5 +38,6 @@ _routeur.register("", views.VueComptes, basename="compte")
 #: Il n'y a aucune route de retrait : `VueComptes` n'hérite pas de `DestroyModelMixin` et
 #: `http_method_names` n'inclut pas `delete`. Un compte se désactive (`03-UI-SPEC.md` 7.8).
 urlpatterns_gestion = [
+    path("catalogue/", views.VueCatalogue.as_view(), name="comptes-catalogue"),
     path("", include(_routeur.urls)),
 ]

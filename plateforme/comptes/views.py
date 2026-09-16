@@ -58,6 +58,7 @@ from plateforme.comptes.serializers import (
     AmorcageSerializer,
     BasculeDroitSerializer,
     BasculeMagasinSerializer,
+    CatalogueOffrableSerializer,
     ChangementMotDePasseSerializer,
     CompteCreeSerializer,
     CompteSerializer,
@@ -67,6 +68,7 @@ from plateforme.comptes.serializers import (
     ResultatOctroiSerializer,
     StatutSerializer,
     UniformisationSerializer,
+    catalogue_offrable,
     charge_utile_moi,
     charge_utile_resultat,
 )
@@ -719,3 +721,35 @@ class VueComptes(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Gene
         with _erreurs_de_service():
             resultat = operation(cible, donnees["magasin_code"], par=request.user)
         return Response(charge_utile_resultat(resultat))
+
+
+class VueCatalogue(APIView):
+    """`GET /api/comptes/catalogue/` — ce que **cet** appelant peut accorder.
+
+    Deux catalogues coexistent et répondent à deux questions différentes ; les confondre
+    serait une régression silencieuse.
+
+    | Route | Question | Réponse |
+    |---|---|---|
+    | `/api/auth/moi/` | quels droits **existent** ? | les 21, pour tout le monde |
+    | `/api/comptes/catalogue/` | lesquels **puis-je accorder** ? | l'intersection |
+
+    Le premier est identique pour chaque affaire du produit, donc il ne divulgue rien.
+    Le second dépend de l'appelant, et c'est tout son intérêt : un gérant-gestionnaire
+    qui ne détient pas `article.voir_prix_achat` n'en voit pas la ligne en éditant un
+    collègue, **parce qu'elle n'est pas dans la réponse** (`03-UI-SPEC.md` 7.7).
+
+    L'intersection est faite **avant** la sérialisation, dans `catalogue_offrable`. Après
+    serait un filtrage de rendu, et un filtrage de rendu laisse la donnée dans l'objet
+    qu'il filtre.
+    """
+
+    permission_classes = [permissions.IsAuthenticated, PeutGererLesComptes]
+
+    @extend_schema(
+        responses={200: CatalogueOffrableSerializer},
+        summary="Les droits et les magasins que l'appelant peut accorder",
+    )
+    def get(self, request):
+        acces = acces_de_la_requete(request)
+        return Response(catalogue_offrable(acces, _magasins(acces)))

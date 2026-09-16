@@ -56,9 +56,18 @@ from tests.ressources_fixture import (  # noqa: F401 — fixtures pytest, import
 #: paramétré sur une clé que plus personne ne protège — donc vert, donc sans valeur.
 CHAMP_DE_REPLI = (CLE_PROTEGEE, CODE_PROTEGE)
 
-#: Les trois rendus qui doivent s'accorder. La phase 9 en ajoutera un quatrième (le PDF A4
-#: de WeasyPrint) ; il rejoint cette liste, et les assertions apparaissent toutes seules.
-RENDUS = ["api", "export", "document"]
+#: Les rendus qui doivent s'accorder. La phase 9 en ajoutera un autre (le PDF A4 de
+#: WeasyPrint) ; il rejoint cette liste, et les assertions apparaissent toutes seules.
+#:
+#: **`catalogue` est le quatrième, ajouté par le plan 03-09**, et `03-UI-SPEC.md` 7.7 le
+#: demande en toutes lettres : « The same parametrized conformance test that covers field
+#: projection covers this catalogue. » Il n'est pas un rendu de *champ* comme les trois
+#: autres — il ne sert pas une ressource, il sert la liste des droits **offrables** — mais
+#: il lit le même registre par l'autre bout : une clé de `CHAMPS_PROTEGES` nomme un code,
+#: et un éditeur qui ne détient pas ce code ne doit pas le voir dans son catalogue. Une
+#: ligne ajoutée au registre en phase 8 produit donc quatre assertions, et la
+#: recommandation de fond du `03-UI-CHECK.md` cesse d'être une convention.
+RENDUS = ["api", "export", "document", "catalogue"]
 
 
 def champs_proteges_parametres():
@@ -235,6 +244,33 @@ def test_perm06_champ_protege_absent_de_lapi_de_lexport_et_du_document(
             contexte_document(classe_serializer, instance, acces=acces_proprietaire),
         )
         assert valeur_rendue in temoin
+
+    elif rendu == "catalogue":
+        import json
+
+        from plateforme.comptes.serializers import catalogue_offrable
+
+        # Le registre lu par l'autre bout : la clé nomme un champ, `code` nomme le droit
+        # qui le garde. Un éditeur qui ne détient pas ce droit ne peut pas l'accorder,
+        # donc il ne doit pas le lire dans son catalogue (`03-UI-SPEC.md` 7.7).
+        #
+        # L'assertion porte sur le **JSON sérialisé** et non sur le dictionnaire, pour la
+        # même raison que les trois branches ci-dessus : « absent » se vérifie sur ce qui
+        # part sur le fil.
+        servi = json.dumps(catalogue_offrable(acces_gerant, []), ensure_ascii=False)
+        assert code not in servi, (
+            f"Le code {code!r} est dans le catalogue servi à un éditeur qui ne le "
+            "détient pas. Le filtrer côté client laisserait la liste des codes cachés "
+            "dans la réponse, ce qui est la recommandation de fond du 03-UI-CHECK.md."
+        )
+
+        temoin = json.dumps(
+            catalogue_offrable(acces_proprietaire, []), ensure_ascii=False
+        )
+        assert code in temoin, (
+            "Le propriétaire ne reçoit pas le code dans son catalogue : l'intersection "
+            "ne sert rien à personne, et l'assertion d'absence ci-dessus ne prouve rien."
+        )
 
     else:  # pragma: no cover — un rendu ajouté sans sa branche
         pytest.fail(
@@ -1080,7 +1116,45 @@ def test_perm06_le_document_rend_exactement_les_colonnes_projetees(
     )
 
 
-@pytest.mark.pending
+def _catalogue_rendu(utilisateur):
+    """`GET /api/comptes/catalogue/`, joué sans client HTTP, et **rendu**.
+
+    Même idiome que `_appeler` plus haut, et pour la même raison : un vrai client HTTP
+    passerait par `TenantMiddleware`, qui exige une base client provisionnée. La requête
+    traverse en revanche `AccesMiddleware`, donc l'accès est résolu par le chemin de
+    production et non posé à la main.
+
+    La réponse est **rendue** avant d'être retournée, parce que ce que ce test affirme
+    porte sur le JSON qui part sur le fil — `reponse.data` est une structure Python, et
+    un filtrage appliqué après sérialisation y serait invisible.
+    """
+    from rest_framework.test import APIRequestFactory, force_authenticate
+
+    from plateforme.comptes.middleware import AccesMiddleware
+    from plateforme.comptes.views import VueCatalogue
+
+    vue = VueCatalogue.as_view()
+    requete = APIRequestFactory().get("/api/comptes/catalogue/")
+    requete.user = utilisateur
+    force_authenticate(requete, user=utilisateur)
+    reponse = AccesMiddleware(lambda recue: vue(recue))(requete)
+    reponse.render()
+    return reponse
+
+
+def _gerant_gestionnaire_dun_seul_magasin(magasin, codes):
+    """Un gérant détenant `compte.gerer` et `codes` dans **un seul** des deux magasins."""
+    from plateforme.comptes.acces import acces_pour
+    from plateforme.comptes.permissions_catalogue import Permission
+    from tests.factories import AccesMagasinFactory, DroitAccordeFactory, GerantFactory
+
+    gerant = GerantFactory()
+    AccesMagasinFactory(utilisateur=gerant, magasin_code=magasin.code)
+    for code in (Permission.COMPTE_GERER, *codes):
+        DroitAccordeFactory(utilisateur=gerant, magasin_code=magasin.code, code=code)
+    return gerant, acces_pour(gerant)
+
+
 def test_perm06_le_catalogue_servi_a_un_gerant_manager_est_deja_intersecte(
     db_all, deux_magasins
 ):
@@ -1098,5 +1172,103 @@ def test_perm06_le_catalogue_servi_a_un_gerant_manager_est_deja_intersecte(
     rend ce qu'il reçoit et n'a aucune branche de filtrage à lui, donc rien à faire fuir par
     un cache, un outil de développement ou un refactor à venir (`03-UI-CHECK.md`,
     recommandation sur §7.7).
+
+    **L'assertion porte sur `rendered_content`**, c'est-à-dire sur les octets. Une
+    assertion sur `reponse.data` laisserait passer un filtrage appliqué au rendu, qui est
+    précisément le mode de fuite que cette recommandation existe pour fermer.
     """
-    pytest.fail("non implémenté : plan 03-09")
+    from plateforme.comptes.permissions_catalogue import (
+        EXPLICATIONS,
+        PREREQUIS,
+        Permission,
+    )
+    from tests.factories import ProprietaireFactory
+
+    anfa, maarif = deux_magasins
+    gerant, acces = _gerant_gestionnaire_dun_seul_magasin(
+        anfa, [Permission.STOCK_VOIR, Permission.CAISSE_VOIR, Permission.CAISSE_SAISIR]
+    )
+    assert acces.peut(Permission.COMPTE_GERER) is True, (
+        "Le gérant du test n'administre pas les comptes : le catalogue lui répondrait "
+        "403 et le test vérifierait une permission, pas une intersection."
+    )
+
+    reponse = _catalogue_rendu(gerant)
+    assert reponse.status_code == 200, reponse.data
+    octets = reponse.rendered_content
+
+    assert Permission.ARTICLE_VOIR_PRIX_ACHAT.value.encode() not in octets, (
+        "Le code `article.voir_prix_achat` est dans le JSON servi à un gérant qui ne le "
+        "détient pas. Même si l'interface ne l'affiche pas, il est lisible dans les "
+        "outils de développement, dans une réponse en cache, et dans le prochain "
+        "refactor — c'est-à-dire qu'il n'est pas absent, il est caché."
+    )
+    assert maarif.code.encode() not in octets, (
+        "Le magasin Maârif est dans le catalogue d'un gérant d'Anfa. C'est une "
+        "énumération des magasins qu'il ne détient pas."
+    )
+
+    codes_servis = {
+        droit["code"]
+        for section in reponse.data["sections"]
+        for droit in section["droits"]
+    }
+    assert codes_servis == {
+        Permission.COMPTE_GERER.value,
+        Permission.STOCK_VOIR.value,
+        Permission.CAISSE_VOIR.value,
+        Permission.CAISSE_SAISIR.value,
+    }, f"Le catalogue intersecté ne correspond pas aux droits détenus : {sorted(codes_servis)}"
+    assert [m["code"] for m in reponse.data["magasins"]] == [anfa.code]
+
+    # La carte des prérequis est restreinte aux codes visibles : une entrée nommant un
+    # code absent réintroduirait par la porte de service ce que l'intersection retire.
+    prerequis = reponse.data["prerequis"]
+    assert prerequis == {Permission.CAISSE_SAISIR.value: [Permission.CAISSE_VOIR.value]}
+    for dependant, requis in prerequis.items():
+        assert dependant in codes_servis
+        assert set(requis) <= codes_servis
+
+    # ----------------------------------------------------------------------------------
+    # Le contrôle positif. **Sans lui, un catalogue toujours vide passerait tout ce qui
+    # précède** — et c'est exactement le genre d'implémentation qu'un test d'absence
+    # encourage.
+    # ----------------------------------------------------------------------------------
+    proprietaire = ProprietaireFactory()
+    temoin = _catalogue_rendu(proprietaire)
+    assert temoin.status_code == 200, temoin.data
+
+    tous = {
+        droit["code"]
+        for section in temoin.data["sections"]
+        for droit in section["droits"]
+    }
+    assert tous == set(Permission.values)
+    assert len(tous) == 21
+    assert {m["code"] for m in temoin.data["magasins"]} == {anfa.code, maarif.code}
+    assert Permission.ARTICLE_VOIR_PRIX_ACHAT.value.encode() in temoin.rendered_content
+
+    # Les libellés et les explications viennent du serveur, jamais de la SPA
+    # (`03-UI-SPEC.md` 7.4) : un code ajouté en phase 8 apparaît à l'écran sans qu'une
+    # ligne change côté client, et un libellé ne peut pas dériver de son code.
+    par_code = {
+        droit["code"]: droit
+        for section in temoin.data["sections"]
+        for droit in section["droits"]
+    }
+    for code in Permission.values:
+        assert par_code[code]["libelle"] == Permission(code).label
+        assert par_code[code]["explication"] == EXPLICATIONS[code]
+    assert [section["titre"] for section in temoin.data["sections"]] == [
+        "Clients et ordonnances",
+        "Stock",
+        "Ventes et factures",
+        "Caisse",
+        "Fournisseurs et achats",
+        "Rappels et tableau de bord",
+        "Comptes",
+    ]
+    assert temoin.data["prerequis"] == {
+        str(code): [str(requis) for requis in valeurs]
+        for code, valeurs in PREREQUIS.items()
+    }
