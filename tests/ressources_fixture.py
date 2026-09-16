@@ -48,6 +48,7 @@ from rest_framework.response import Response
 from config.celery import app as application_celery
 from domaine.magasins.models import MagasinScopedModel, MagasinScopedQuerySet
 from plateforme.comptes.permissions_catalogue import Permission
+from plateforme.projection.filtres import ProjectedFieldFilter, ProjectedOrderingFilter
 from plateforme.projection.registre import cle_de_champ
 from plateforme.projection.serializers import SerializerProjete, acces_du_contexte
 from plateforme.projection.vues import (
@@ -182,6 +183,50 @@ urlpatterns = [
         name="ressource-fixture-detail",
     ),
 ]
+
+
+class VueRessourceFiltrable(VueRessourceFixture):
+    """La même ressource, avec le tri et le filtre branchés. Le sujet de l'oracle A-03-07.
+
+    **Une vue à part, et volontairement hors de `urlpatterns`.** Le test de schéma du plan
+    03-06 prend ce module pour `ROOT_URLCONF` ; y ajouter une vue changerait le document
+    que ce plan-là a rendu déterministe, pour une raison qui n'a rien à voir avec lui.
+
+    Les deux listes déclarent le champ protégé **exprès**. C'est tout l'intérêt : une
+    allowlist qui l'omettrait déjà à la main rendrait le test vert sans que
+    `champs_interdits` ait servi à quoi que ce soit, et la première phase qui ajoute une
+    colonne en oubliant de la retirer des listes rouvrirait l'oracle en silence. Ce qui
+    doit fermer la porte est la **dérivation** depuis la projection, pas la vigilance.
+    """
+
+    filter_backends = [ProjectedOrderingFilter, ProjectedFieldFilter]
+    ordering_fields = ["id", "reference", "libelle", "prix_vente", "valeur_protegee"]
+    champs_filtrables = {
+        "id": ["exact"],
+        "reference": ["exact"],
+        "prix_vente": ["exact", "gt", "lt"],
+        "valeur_protegee": ["exact", "gt", "lt"],
+    }
+
+
+def appeler_vue_filtrable(utilisateur, chaine_de_requete=""):
+    """La route de **liste** de `VueRessourceFiltrable`, avec sa chaîne de requête.
+
+    Même idiome que `_appeler` dans `tests/test_projection.py`, `force_authenticate`
+    compris et pour la même raison : sans lui l'appelant devient anonyme, et un test de
+    tri qui attend 400 l'obtiendrait pour la mauvaise raison.
+    """
+    from rest_framework.test import APIRequestFactory, force_authenticate
+
+    from plateforme.comptes.middleware import AccesMiddleware
+
+    vue = VueRessourceFiltrable.as_view({"get": "list"})
+    requete = APIRequestFactory().get(f"/api/ressources-fixture/{chaine_de_requete}")
+    requete.user = utilisateur
+    force_authenticate(requete, user=utilisateur)
+    reponse = AccesMiddleware(vue)(requete)
+    reponse.render()
+    return reponse
 
 
 @application_celery.task(name="tests.exporter_ressources_fixture")

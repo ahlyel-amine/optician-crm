@@ -559,8 +559,9 @@ def test_perm06_le_reglage_global_de_required_reste_a_son_defaut(registre_de_la_
     )
 
 
-@pytest.mark.pending
-def test_perm06_un_champ_protege_ne_peut_ni_trier_ni_filtrer(db_all, deux_magasins):
+def test_perm06_un_champ_protege_ne_peut_ni_trier_ni_filtrer(
+    db_all, deux_magasins, ressource
+):
     """PERM-06 / A-03-07 — le champ n'est dans aucune réponse, et il est entièrement divulgué.
 
     `?ordering=prix_achat` révèle l'ordre total d'un champ caché ; `?prix_achat__gt=1500` en
@@ -572,8 +573,89 @@ def test_perm06_un_champ_protege_ne_peut_ni_trier_ni_filtrer(db_all, deux_magasi
     allowlists de tri et de filtre sont dérivées de la projection, jamais écrites à la main :
     une liste maintenue à part se désynchronise du registre à la première phase qui ajoute
     une colonne.
+
+    **Le contrôle positif est la moitié qui compte.** Un backend qui refuserait tout
+    passerait les deux premières assertions. Le propriétaire, qui détient le droit, doit
+    obtenir **200** sur exactement les mêmes requêtes — et le gérant doit obtenir 200 sur
+    un champ public, sans quoi « 400 » ne voudrait dire que « ce point de terminaison est
+    cassé ».
     """
-    pytest.fail("non implémenté : plan 03-07")
+    from tests.ressources_fixture import appeler_vue_filtrable
+
+    gerant, acces_gerant = acces_sans_le_droit(deux_magasins)
+    assert acces_gerant.peut(CODE_PROTEGE) is False
+
+    trie = appeler_vue_filtrable(gerant, "?ordering=valeur_protegee")
+    assert trie.status_code == 400, (
+        f"`?ordering=valeur_protegee` a répondu {trie.status_code}. Un 200 divulgue "
+        "l'ordre total d'un champ que ce gérant n'a pas le droit de lire — et il le fait "
+        "sans que le champ apparaisse dans une seule réponse."
+    )
+
+    filtre = appeler_vue_filtrable(gerant, "?valeur_protegee__gt=1000")
+    assert filtre.status_code == 400, (
+        f"`?valeur_protegee__gt=1000` a répondu {filtre.status_code}. En une vingtaine de "
+        "requêtes de cette forme, la valeur exacte se retrouve par dichotomie."
+    )
+
+    # Le contrôle positif, côté droit détenu : les **mêmes** requêtes, pour qui peut.
+    proprietaire, acces_proprietaire = acces_avec_le_droit(deux_magasins)
+    assert acces_proprietaire.peut(CODE_PROTEGE) is True
+    for chaine in ("?ordering=valeur_protegee", "?valeur_protegee__gt=1000"):
+        permis = appeler_vue_filtrable(proprietaire, chaine)
+        assert permis.status_code == 200, (
+            f"{chaine} a répondu {permis.status_code} au propriétaire : {permis.data}. "
+            "Un backend qui refuse tout passerait les assertions de refus ci-dessus sans "
+            "rien garantir."
+        )
+
+    # Le contrôle positif, côté champ public : le gérant trie et filtre ce qu'il peut voir.
+    for chaine in ("?ordering=prix_vente", "?prix_vente__gt=1.00"):
+        ouvert = appeler_vue_filtrable(gerant, chaine)
+        assert ouvert.status_code == 200, (
+            f"{chaine} a répondu {ouvert.status_code} : {ouvert.data}. Le champ est "
+            "public et déclaré filtrable ; refuser ici ne protège rien et casse l'API."
+        )
+
+
+def test_perm06_le_400_de_tri_ne_nomme_pas_le_champ_protege(
+    db_all, deux_magasins, ressource
+):
+    """PERM-06 / A-03-13 — un 400 dont les clés nomment le champ est la même fuite, en deux temps.
+
+    Refuser sans dire pourquoi paraît désobligeant, et c'est pourtant la seule réponse
+    correcte : « le champ `valeur_protegee` n'est pas triable » confirme que le champ
+    existe, ce que la projection passe tout son temps à ne pas dire.
+
+    L'assertion forte n'est pas « le nom est absent » — elle est **l'indiscernabilité**.
+    Un champ protégé, un champ public non déclaré filtrable et un nom qui n'existe nulle
+    part doivent produire **exactement** la même réponse. Sinon le code de statut, la
+    forme du corps ou la longueur du message redeviennent l'oracle, et l'attaque coûte une
+    requête de plus au lieu d'être impossible.
+    """
+    import json
+
+    from tests.ressources_fixture import appeler_vue_filtrable
+
+    gerant, _ = acces_sans_le_droit(deux_magasins)
+
+    protege = appeler_vue_filtrable(gerant, "?ordering=valeur_protegee")
+    corps = json.dumps(protege.data, default=str)
+    assert "valeur_protegee" not in corps, (
+        f"Le corps du 400 nomme le champ protégé : {corps}. Le refus confirme alors "
+        "l'existence du champ, ce qui est la fuite avec une étape de plus (A-03-13)."
+    )
+
+    inexistant = appeler_vue_filtrable(gerant, "?ordering=champ_qui_n_existe_pas")
+    public_non_declare = appeler_vue_filtrable(gerant, "?libelle__gt=a")
+
+    assert inexistant.status_code == protege.status_code == 400
+    assert inexistant.data == protege.data, (
+        "Le refus d'un champ protégé se distingue du refus d'un nom inexistant. La "
+        "différence *est* l'oracle : elle répond « ce champ existe » en une requête."
+    )
+    assert public_non_declare.status_code == 400
+    assert public_non_declare.data == protege.data
 
 
 def test_perm06_un_champ_protege_ne_peut_pas_etre_ecrit_par_un_gerant(
