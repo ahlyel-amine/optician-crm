@@ -88,7 +88,7 @@ Plans:
 - [x] 03-07-PLAN.md — Portée magasin : `get_queryset`, champ lié restreint, oracle de tri fermé, gardes d'énumération (PERM-04, PERM-05)
 - [x] 03-08-PLAN.md — Authentification de session : réglages, cinq endpoints, limitation de débit, CSRF, `clearsessions` (PERM-01)
 - [x] 03-09-PLAN.md — API comptes et droits : création, désactivation, octroi par magasin, catalogue pré-intersecté (PERM-02, PERM-03)
-- [ ] 03-10-PLAN.md — Formatage MAD serveur, français de l'API, schéma OpenAPI committé et porte de diff (APP-01, APP-03, PERM-06)
+- [x] 03-10-PLAN.md — Formatage MAD serveur, français de l'API, schéma OpenAPI committé et porte de diff (APP-01, APP-03, PERM-06)
 - [x] 03-11-PLAN.md — Formatage client et registre de colonnes filtré par présence, moitié cliente de PERM-06 (APP-03, PERM-06)
 - [ ] 03-12-PLAN.md — Client API généré, `AuthProvider`, `/connexion`, `/mot-de-passe`, états globaux (PERM-01, APP-01)
 - [ ] 03-13-PLAN.md — App shell : navigation déclarative, sélecteur de magasin, recherche, `print.css` (PERM-04, APP-01, APP-03)

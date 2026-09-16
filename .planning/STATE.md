@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-09-PLAN.md
-last_updated: "2026-09-16T21:48:08.543Z"
+stopped_at: Completed 03-10-PLAN.md
+last_updated: "2026-09-16T22:11:14.300Z"
 last_activity: 2026-09-16
 progress:
   total_phases: 12
   completed_phases: 1
   total_plans: 21
-  completed_plans: 17
-  percent: 81
+  completed_plans: 18
+  percent: 86
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-09-09)
 ## Current Position
 
 Phase: 3 of 12 (Comptes, Permissions & App Shell)
-Plan: 10 of 14 complete in current phase (03-01 à 03-09 et 03-11) ; la surface d'écriture existe — créer et désactiver un compte gérant, accorder et révoquer par magasin avec la cascade des prérequis appliquée côté serveur, et un catalogue déjà intersecté servi à /api/comptes/catalogue/. Les deux usages sanctionnés de peut_quelque_part sont pris. `tests/test_comptes_droits.py` n'a plus aucun `pending`. Le prochain est 03-10 (le schéma OpenAPI commité), qui verra entrer neuf opérations nouvelles
+Plan: 11 of 14 complete in current phase (03-01 à 03-11) ; la moitié serveur d'APP-01 et d'APP-03 est close — `plateforme/projection/formats.py` rend `1 800,00 MAD` et `14/09/2026 à 10:14` sans aucune base de locale, la monnaie traverse le JSON en chaîne et deux balayages récursifs le prouvent, et `web/src/api/schema.yml` est commité, servi identique à chaque appelant et gardé par une porte de diff (`docs/ci-schema.md`). **Il ne reste aucun `pending` dans toute la suite** (179 verts). Les prochains sont 03-12 puis 03-13, qui génèrent le client TypeScript depuis ce schéma et montent le shell
 Status: Executing
 Last activity: 2026-09-16
 
-Progress: [████████░░] 81%
+Progress: [█████████░] 86%
 
 ## Performance Metrics
 
@@ -64,6 +64,7 @@ Progress: [████████░░] 81%
 | Phase 03 P07 | ~75m | 3 tasks | 6 files |
 | Phase 03 P08 | ~75m | 3 tasks | 11 files |
 | Phase 03 P09 | ~85m | 3 tasks | 8 files |
+| Phase 03 P10 | ~30m | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -138,6 +139,13 @@ Recent decisions affecting current work:
 - [Phase 03-09]: 03-09: la cible d'une gestion de compte n'est jamais le proprietaire ni soi-meme (03-UI-SPEC 7.7) — sans cela un gerant-gestionnaire reinitialise le mot de passe du proprietaire et prend son compte
 - [Phase 03-09]: 03-09: le dernier magasin d'un compte n'est PAS refuse cote serveur — un compte neuf en a legitimement zero, donc « au moins un » est un garde-fou d'interface, pas un invariant
 - [Phase 03-09]: 03-09: le catalogue offrable est intersecte AVANT serialisation et « catalogue » rejoint RENDUS — une ligne de CHAMPS_PROTEGES produit desormais quatre assertions, pas trois
+- [Phase 03]: 03-10: les constantes de format sont inscrites dans formats.py et recollees a la fixture par un test — la production ne lit jamais tests/ a l'execution
+- [Phase 03]: 03-10: la fixture partagee gagne 0.125 et -0.125 ; sans eux ROUND_HALF_EVEN laissait la suite verte, et le cas 999.995 ne distingue pas les deux modes
+- [Phase 03]: 03-10: le fuseau se convertit dans le formateur, TIME_ZONE reste UTC ; le glissement des bornes de journee pendant le Ramadan est accepte et reporte a la phase 10 (T-03-72)
+- [Phase 03]: 03-10: pas de middleware de negociation de langue et pas de reglage de localisation retire — les noms vivent dans tests/test_locale.py, jamais dans config/settings/, pour que le grep de presence reste utilisable
+- [Phase 03]: 03-10: tout total affiche est un champ du serveur ; la regle est ecrite dans base.py parce qu'aucun lint ne peut la verifier — le bug a attraper est un serialiseur qui omet un total
+- [Phase 03]: 03-10: web/src/api/schema.yml est commite et garde par un test plus une porte de CI ; toute modification de vue, de serialiseur ou de route le regenere dans le meme changement
+- [Phase 03]: 03-10: /api/schema/ est monte et ferme aux anonymes — SERVE_PERMISSIONS vaut AllowAny par defaut chez drf-spectacular 0.30.0
 
 ### Pending Todos
 
@@ -151,6 +159,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-16T21:47:52.298Z
-Stopped at: Completed 03-09-PLAN.md
+Last session: 2026-09-16T22:11:00.909Z
+Stopped at: Completed 03-10-PLAN.md
 Resume file: None
