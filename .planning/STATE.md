@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-10-PLAN.md
-last_updated: "2026-09-16T22:11:14.300Z"
-last_activity: 2026-09-16
+stopped_at: Completed 03-12-PLAN.md (point de controle repondu ; les sept verifications manuelles au navigateur restent NON EFFECTUEES — voir 03-12-SUMMARY.md)
+last_updated: "2026-09-16T23:03:26.812Z"
+last_activity: 2026-09-17
 progress:
   total_phases: 12
   completed_phases: 1
   total_plans: 21
-  completed_plans: 18
-  percent: 86
+  completed_plans: 19
+  percent: 90
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-09-09)
 ## Current Position
 
 Phase: 3 of 12 (Comptes, Permissions & App Shell)
-Plan: 11 of 14 complete in current phase (03-01 à 03-11) ; la moitié serveur d'APP-01 et d'APP-03 est close — `plateforme/projection/formats.py` rend `1 800,00 MAD` et `14/09/2026 à 10:14` sans aucune base de locale, la monnaie traverse le JSON en chaîne et deux balayages récursifs le prouvent, et `web/src/api/schema.yml` est commité, servi identique à chaque appelant et gardé par une porte de diff (`docs/ci-schema.md`). **Il ne reste aucun `pending` dans toute la suite** (179 verts). Les prochains sont 03-12 puis 03-13, qui génèrent le client TypeScript depuis ce schéma et montent le shell
+Plan: 12 of 14 complete in current phase (03-01 à 03-12) ; la SPA parle désormais à l'API par un client **généré** depuis `web/src/api/schema.yml` (régénération = diff vide), chaque appel mutant porte `X-CSRFToken`, le 401 mémorise le chemin tenté et y revient, les cinq états globaux de `03-UI-SPEC.md` 8.6 vivent une seule fois dans `web/src/etats/`, et `/connexion` + `/mot-de-passe` rendent la copie exacte de la spécification (50 tests frontend, 179 backend, build à 0). Il reste 03-13 (le shell, qui remplace `ContenuProtege`) et 03-14 (l'écran des comptes et des droits)
 Status: Executing
-Last activity: 2026-09-16
+Last activity: 2026-09-17
 
-Progress: [█████████░] 86%
+Progress: [█████████░] 90%
 
 ## Performance Metrics
 
@@ -65,6 +65,7 @@ Progress: [█████████░] 86%
 | Phase 03 P08 | ~75m | 3 tasks | 11 files |
 | Phase 03 P09 | ~85m | 3 tasks | 8 files |
 | Phase 03 P10 | ~30m | 3 tasks | 8 files |
+| Phase 03 P12 | ~45m | 4 tasks | 18 files |
 
 ## Accumulated Context
 
@@ -146,6 +147,12 @@ Recent decisions affecting current work:
 - [Phase 03]: 03-10: tout total affiche est un champ du serveur ; la regle est ecrite dans base.py parce qu'aucun lint ne peut la verifier — le bug a attraper est un serialiseur qui omet un total
 - [Phase 03]: 03-10: web/src/api/schema.yml est commite et garde par un test plus une porte de CI ; toute modification de vue, de serialiseur ou de route le regenere dans le meme changement
 - [Phase 03]: 03-10: /api/schema/ est monte et ferme aux anonymes — SERVE_PERMISSIONS vaut AllowAny par defaut chez drf-spectacular 0.30.0
+- [Phase 03]: 03-12: le client d'API ne prend AUCUN prefixe de chemin — les cles du schema portent deja /api/, donc baseUrl vaut l'origine de la page ; "/api" produirait /api/api/... et un 404 sur chaque appel
+- [Phase 03]: 03-12: openapi-fetch consomme la reponse — le corps d'erreur (detail, reessayer_dans) se lit sur le champ error rendu, jamais en reclonant response, qui rend un corps vide
+- [Phase 03]: 03-12: fetch est resolu a chaque appel (globalThis.fetch(requete)) et non capture a la creation du client — sinon aucune suite ne peut doubler le reseau sans doubler client.ts entier
+- [Phase 03]: 03-12: un 401 sur /api/auth/moi/ au premier chargement anonyme est le cas NORMAL — le drapeau sessionOuverte empeche d'afficher « votre session a expire » a quelqu'un qui n'en a jamais ouvert
+- [Phase 03]: 03-12: 03-UI-SPEC 9.4 AMENDEE au point de controle — /mot-de-passe porte un quatrieme champ, « Mot de passe actuel », parce que le point de terminaison 03-08 l'exige ; decision tranchee, la phase 9 ne la rouvre pas
+- [Phase 03]: 03-12: les cinq etats globaux de 03-UI-SPEC 8.6 vivent dans web/src/etats/ (repertoire non prevu au plan) — neuf phases en heritent, et une copie par page rendrait fausse la regle « la chaine apparait une seule fois » des la phase 4
 
 ### Pending Todos
 
@@ -156,9 +163,10 @@ None yet.
 - [Phase 6] Four open questions block the facturation schema and need a Moroccan comptable, not research: TVA rate on optical goods after the 2026 reform, série per magasin vs per company, TVA treatment of the acompte, and whether the facture is issued at commande or délivrance. Start these during Phase 1.
 - [Phase 1] CNDP prior authorization is reported at 2-4 months and the Moroccan merchant contract at weeks to months. Both must be in flight from day one or they become the launch critical path.
 - [Phase 12] Recurring card-on-file on Moroccan rails is a vendor claim and needs sandbox proof; if false, billing falls back to invoice plus payment link per period.
+- [Phase 3] **Les sept vérifications manuelles au navigateur du point de contrôle 03-12 n'ont pas été effectuées.** Le propriétaire a approuvé sur la preuve automatisée (50 tests frontend, 179 backend, build à 0) et a explicitement dit ne pas les avoir exécutées. Restent ouvertes : connexion sans clignotement, stabilité de la carte à l'erreur, compte à rebours à la onzième tentative, atterrissage forcé sans issue, traversée au clavier seul, lecture en français contre `03-UI-SPEC.md` 9.3 (la vérification manuelle nommée dans `03-VALIDATION.md`), bannière de connexion perdue. À reprendre à la vérification de phase — vitest rend dans jsdom et ne voit ni clignotement, ni saut de mise en page réel, ni anneau de focus, ni si une phrase se lit comme du français. Détail : `.planning/phases/03-comptes-permissions-app-shell/03-12-SUMMARY.md`.
 
 ## Session Continuity
 
-Last session: 2026-09-16T22:11:00.909Z
-Stopped at: Completed 03-10-PLAN.md
+Last session: 2026-09-16T23:03:26.810Z
+Stopped at: Completed 03-12-PLAN.md (point de controle repondu ; les sept verifications manuelles au navigateur restent NON EFFECTUEES — voir 03-12-SUMMARY.md)
 Resume file: None

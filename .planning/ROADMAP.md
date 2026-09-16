@@ -90,7 +90,7 @@ Plans:
 - [x] 03-09-PLAN.md — API comptes et droits : création, désactivation, octroi par magasin, catalogue pré-intersecté (PERM-02, PERM-03)
 - [x] 03-10-PLAN.md — Formatage MAD serveur, français de l'API, schéma OpenAPI committé et porte de diff (APP-01, APP-03, PERM-06)
 - [x] 03-11-PLAN.md — Formatage client et registre de colonnes filtré par présence, moitié cliente de PERM-06 (APP-03, PERM-06)
-- [ ] 03-12-PLAN.md — Client API généré, `AuthProvider`, `/connexion`, `/mot-de-passe`, états globaux (PERM-01, APP-01)
+- [x] 03-12-PLAN.md — Client API généré, `AuthProvider`, `/connexion`, `/mot-de-passe`, états globaux (PERM-01, APP-01)
 - [ ] 03-13-PLAN.md — App shell : navigation déclarative, sélecteur de magasin, recherche, `print.css` (PERM-04, APP-01, APP-03)
 - [ ] 03-14-PLAN.md — Écrans Comptes et droits : liste, détail, checklist 21 droits, surcharge par magasin (PERM-02, PERM-03, PERM-04)
 
@@ -249,7 +249,7 @@ Phase 1 is a parallel calendar track: it starts first and stays open across late
 |-------|----------------|--------|-----------|
 | 1. Legal & Compliance Track | 0/TBD | Not started | - |
 | 2. Tenancy Foundation & Control Plane | 7/7 | Complete | 2026-09-13 |
-| 3. Comptes, Permissions & App Shell | 10/14 | In Progress|  |
+| 3. Comptes, Permissions & App Shell | 12/14 | In Progress|  |
 | 4. Clients & Ordonnances | 0/TBD | Not started | - |
 | 5. Stock & Catalogue | 0/TBD | Not started | - |
 | 6. Vente & Facturation | 0/TBD | Not started | - |
