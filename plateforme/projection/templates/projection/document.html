@@ -1,0 +1,38 @@
+{% comment %}
+Le gabarit générique des documents projetés. PERM-06, consommateur 3.
+
+Il **itère** `colonnes`, une liste de paires (nom, valeur) déjà projetée par
+`contexte_document`, et il ne nomme aucun champ. La raison n'est pas stylistique : une clé
+absente d'un contexte rend `string_if_invalid`, qui vaut la chaîne vide, donc un champ
+retiré par la projection et un champ mal orthographié sont visuellement identiques et
+aucun test n'en distingue. Ce qui n'est pas nommé ne peut pas être mal nommé.
+
+Deux tests le tiennent : `test_perm06_le_gabarit_de_document_itere_une_liste_projetee` lit
+le source de chaque gabarit de ce dossier et refuse toute variable pointée — un nom
+d'objet, un point, un nom de champ — entre doubles accolades ;
+`test_perm06_le_document_rend_exactement_les_colonnes_projetees` compte les cellules
+rendues contre les champs projetés, parce qu'itérer la mauvaise liste passerait le premier.
+
+La phase 9 rend ce même HTML en PDF A4, sans changer la projection. Un
+gabarit ajouté alors — facture, bon de commande, reçu d'acompte — obéit à la même règle et
+rejoint le même test, du seul fait de vivre dans ce dossier.
+{% endcomment %}<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <title>{{ titre }}</title>
+</head>
+<body>
+  <h1>{{ titre }}</h1>
+  <table>
+    <tbody>
+    {% for nom, valeur in colonnes %}
+      <tr>
+        <th scope="row">{{ nom }}</th>
+        <td>{{ valeur }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</body>
+</html>

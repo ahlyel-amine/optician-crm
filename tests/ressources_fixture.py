@@ -42,11 +42,12 @@ from decimal import Decimal
 import pytest
 from django.db import connections, models
 from django.urls import path
-from rest_framework import serializers, viewsets
+from rest_framework import viewsets
 
 from config.celery import app as application_celery
 from plateforme.comptes.permissions_catalogue import Permission
-from plateforme.projection.registre import champs_interdits, cle_de_champ
+from plateforme.projection.registre import cle_de_champ
+from plateforme.projection.serializers import SerializerProjete
 
 #: L'alias sur lequel la ressource vit. Voir la décision 2 de la docstring du module.
 ALIAS = "default"
@@ -123,28 +124,19 @@ CHAMPS_PUBLICS_DE_LA_FIXTURE: frozenset[str] = frozenset(
 )
 
 
-class SerializerRessourceFixture(serializers.ModelSerializer):
+class SerializerRessourceFixture(SerializerProjete):
     """Le sérialiseur de la ressource. **Projeté par le registre, pas par une classe.**
 
-    En tâche 1 la projection est écrite ici, en cinq lignes, exactement celles que la
-    tâche 2 extraira dans `plateforme.projection.serializers.SerializerProjete`. Ce n'est
-    pas un détour : c'est la thèse du plan rendue visible. Ce qui rend PERM-06 vrai est le
-    **registre** et le test qui l'itère, pas l'abstraction — la preuve étant qu'un
-    sérialiseur qui lit le registre sans hériter de quoi que ce soit passe déjà le test.
+    Il héritait, en tâche 1, d'un `ModelSerializer` ordinaire portant un `get_fields()`
+    de cinq lignes — celles-là mêmes que la tâche 2 a extraites dans `SerializerProjete`.
+    Les assertions de la tâche 1 sont passées sans l'abstraction, et c'est le point : ce
+    qui rend PERM-06 vrai est le **registre** et le test qui l'itère. La classe de base est
+    du confort, pas la garantie.
     """
 
     class Meta:
         model = RessourceFixture
         fields = ["id", "reference", "libelle", "prix_vente", "valeur_protegee"]
-
-    def get_fields(self):
-        from plateforme.comptes.acces import Acces
-
-        champs = super().get_fields()
-        acces = getattr(self.context.get("request"), "acces", None) or Acces.ANONYME
-        for nom in champs_interdits(self.Meta.model, acces):
-            champs.pop(nom, None)
-        return champs
 
 
 class VueRessourceFixture(viewsets.ModelViewSet):

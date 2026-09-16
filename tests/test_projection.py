@@ -413,9 +413,8 @@ def test_perm06_un_champ_protege_ne_peut_ni_trier_ni_filtrer(db_all, deux_magasi
     pytest.fail("non implémenté : plan 03-07")
 
 
-@pytest.mark.pending
 def test_perm06_un_champ_protege_ne_peut_pas_etre_ecrit_par_un_gerant(
-    db_all, deux_magasins
+    db_all, deux_magasins, ressource
 ):
     """PERM-06 — affirmer que la valeur est **inchangée**, jamais qu'un 400 survient.
 
@@ -428,8 +427,38 @@ def test_perm06_un_champ_protege_ne_peut_pas_etre_ecrit_par_un_gerant(
     L'assertion est donc : la valeur relue depuis la base est celle d'avant. Rouge, elle dit
     qu'un gérant sans droit sur `prix_achat` peut le réécrire — donc fausser une marge que
     lui-même n'a pas le droit de lire.
+
+    Le **contrôle positif** est le champ public modifié dans la même requête : sans lui, une
+    vue qui ignorerait complètement le corps de la requête passerait ce test.
     """
-    pytest.fail("non implémenté : plan 03-06")
+    gerant, acces_gerant = acces_sans_le_droit(deux_magasins)
+    assert acces_gerant.peut(CODE_PROTEGE) is False
+
+    avant = ressource.valeur_protegee
+
+    reponse = _appeler(
+        gerant,
+        ressource,
+        methode="patch",
+        corps={"libelle": "Monture Maârif", "valeur_protegee": "1.00"},
+    )
+
+    assert reponse.status_code == 200, (
+        f"Le PATCH a répondu {reponse.status_code} : {reponse.data}. DRF ignore une clé "
+        "inconnue, donc la réponse attendue est un succès — un test qui attendrait 400 "
+        "serait rouge au-dessus d'un code correct, et quelqu'un le « réparerait » en "
+        "rendant le champ inscriptible."
+    )
+
+    relu = RessourceFixture.objects.get(pk=ressource.pk)
+    assert relu.valeur_protegee == avant, (
+        "Un gérant sans le droit de **lire** la valeur protégée vient de l'écrire. Il "
+        "peut donc fausser une marge qu'il n'a pas le droit de voir."
+    )
+    assert relu.libelle == "Monture Maârif", (
+        "Le champ public n'a pas été écrit non plus : la requête n'a rien fait du tout, "
+        "et l'assertion d'invariance ci-dessus ne prouve rien."
+    )
 
 
 @pytest.mark.pending
@@ -465,7 +494,42 @@ def test_perm06_le_renderer_html_est_absent_hors_developpement():
     pytest.fail("non implémenté : plan 03-06")
 
 
-@pytest.mark.pending
+#: Les trois portes d'entrée de la projection hors HTTP. Une fonction qui appelle l'une
+#: d'elles **produit un artefact destiné au client**, par définition : c'est ce qui rend la
+#: détection ci-dessous énumérable plutôt que nominative. Une tâche de la phase 9 qui
+#: rendrait un PDF par ces fonctions est attrapée sans qu'on ait à la connaître.
+POINTS_DE_RENDU = ("exporter_csv", "contexte_document", "rendre_html")
+
+
+def _appelle_un_point_de_rendu(fonction) -> bool:
+    """Vrai si le source de `fonction` appelle l'un des `POINTS_DE_RENDU`.
+
+    Lecture de l'AST plutôt qu'exécution, même idiome que
+    `tests/test_migration_conventions.py` : le chemin fautif ne s'exécute jamais dans la
+    suite, puisque personne n'écrit un test pour la tâche qu'il vient d'ajouter sans
+    projection.
+    """
+    import ast
+    import inspect
+    import textwrap
+
+    try:
+        source = textwrap.dedent(inspect.getsource(fonction))
+    except (OSError, TypeError):  # une tâche built-in de Celery, sans source lisible
+        return False
+    try:
+        arbre = ast.parse(source)
+    except SyntaxError:  # pragma: no cover
+        return False
+    for noeud in ast.walk(arbre):
+        if not isinstance(noeud, ast.Call):
+            continue
+        nom = getattr(noeud.func, "id", None) or getattr(noeud.func, "attr", None)
+        if nom in POINTS_DE_RENDU:
+            return True
+    return False
+
+
 def test_perm06_toute_tache_de_rendu_exige_acting_utilisateur_id():
     """PERM-06 / A-03-03 — une tâche Celery sait de quel client, pas de qui.
 
@@ -480,8 +544,172 @@ def test_perm06_toute_tache_de_rendu_exige_acting_utilisateur_id():
     argument — déjà interdit par la docstring de `TenantTask`. Ce test parcourt le registre
     des tâches et affirme sur les signatures : rouge, il nomme la tâche ajoutée sans le
     paramètre, à la phase où elle est ajoutée.
+
+    **« Tâche de rendu » est défini par ce qu'elle appelle, pas par son nom.** Une
+    convention de nommage se contourne sans le vouloir ; « appelle `exporter_csv`,
+    `contexte_document` ou `rendre_html` » est vérifiable et c'est exactement la propriété
+    qui compte. La limite est nommée dans le résumé du plan : une tâche de phase 9 qui
+    appellerait WeasyPrint sans passer par ces trois portes échapperait à ce garde — c'est
+    la liste `RENDUS` du test porteur qui couvre ce cas-là, et les deux règles doivent être
+    tenues ensemble.
     """
-    pytest.fail("non implémenté : plan 03-06")
+    import inspect
+
+    from config.celery import app as application_celery
+
+    def _sans_le_parametre(fonction) -> bool:
+        return "acting_utilisateur_id" not in inspect.signature(fonction).parameters
+
+    # Le contrôle négatif d'abord : une tâche fautive **doit** être détectée, sinon tout
+    # ce qui suit est une boucle qui ne voit rien.
+    def _tache_fautive(*, client_id, **kwargs):
+        from plateforme.projection.export import exporter_csv
+
+        return exporter_csv(None, None, acces=None)
+
+    assert _appelle_un_point_de_rendu(_tache_fautive), (
+        "Le détecteur ne reconnaît pas une tâche qui appelle `exporter_csv`. Il ne "
+        "détecterait donc rien du tout, et ce test serait vert pour toujours."
+    )
+    assert _sans_le_parametre(_tache_fautive)
+
+    taches_de_rendu = {}
+    for nom, tache in application_celery.tasks.items():
+        fonction = getattr(tache, "run", tache)
+        if _appelle_un_point_de_rendu(fonction):
+            taches_de_rendu[nom] = fonction
+
+    assert taches_de_rendu, (
+        "Aucune tâche de rendu n'est enregistrée. Ce test est vacant : il passerait tout "
+        "aussi bien le jour où la phase 9 en ajoute une sans `acting_utilisateur_id`. "
+        "`tests.exporter_ressources_fixture` est là pour l'empêcher — si elle a disparu "
+        "du registre, c'est ce qu'il faut réparer, pas cette assertion."
+    )
+
+    fautives = sorted(nom for nom, f in taches_de_rendu.items() if _sans_le_parametre(f))
+    assert not fautives, (
+        f"Ces tâches produisent un artefact destiné au client sans savoir pour qui : "
+        f"{fautives}. La signature est `(*, client_id, acting_utilisateur_id, ...)` et la "
+        "tâche recalcule `acces_pour(...)` dans le contexte lié — jamais un `Acces` reçu "
+        "en argument."
+    )
+
+
+def test_perm06_len_tete_csv_est_derive_des_champs_deja_projetes(
+    db_all, deux_magasins, ressource
+):
+    """PERM-06 — la colonne n'existe pas, elle n'est pas vide. C'est tout l'export.
+
+    Une liste de colonnes écrite à la main produirait une **colonne vide** : « absent d'un
+    export » échouerait dans l'esprit, et le gérant apprendrait l'existence et la position
+    du champ. Dériver l'en-tête de `serializer.child.fields` — donc des champs **déjà**
+    projetés — est la seule forme où cette erreur n'est pas exprimable.
+
+    Le test le vérifie deux fois : sur la valeur (l'en-tête est exactement la liste des
+    champs projetés) et sur le source (`child.fields` y figure), parce qu'un en-tête
+    correct peut être obtenu par une coïncidence que la phase suivante défera.
+    """
+    import inspect
+
+    from plateforme.comptes.acces import _PorteurAcces
+    from plateforme.projection.export import BOM_UTF8, SEPARATEUR, exporter_csv
+
+    _gerant, acces_gerant = acces_sans_le_droit(deux_magasins)
+    contenu = exporter_csv(
+        SerializerRessourceFixture, RessourceFixture.objects.all(), acces=acces_gerant
+    )
+
+    assert contenu.startswith(BOM_UTF8), (
+        "L'export ne commence pas par un BOM UTF-8. Excel en français ouvre alors les "
+        "accents en mojibake."
+    )
+    lignes = contenu[len(BOM_UTF8) :].splitlines()
+    colonnes = lignes[0].split(SEPARATEUR)
+
+    attendues = list(
+        SerializerRessourceFixture(
+            context={"request": _PorteurAcces(acces=acces_gerant)}
+        ).fields
+    )
+    assert colonnes == attendues, (
+        f"L'en-tête CSV {colonnes} ne correspond pas aux champs projetés {attendues}."
+    )
+    assert len(lignes[1].split(SEPARATEUR)) == len(colonnes), (
+        "La ligne de données n'a pas le même nombre de champs que l'en-tête : une "
+        "colonne a été écrite d'un côté et pas de l'autre."
+    )
+    assert "child.fields" in inspect.getsource(exporter_csv), (
+        "`exporter_csv` ne dérive plus ses colonnes de `serializer.child.fields`. "
+        "Une liste écrite à la main rend une colonne vide au lieu de rien."
+    )
+
+
+def test_perm06_le_gabarit_de_document_itere_une_liste_projetee():
+    """PERM-06 / P10 — un gabarit qui nomme un champ le rend, ou rend le vide, en silence.
+
+    Une clé absente d'un contexte de gabarit rend `string_if_invalid`, qui vaut `""` par
+    défaut : un champ **caché** et un champ **mal orthographié** ont donc exactement la
+    même apparence correcte. Corriger cela en changeant `string_if_invalid` globalement est
+    refusé — la documentation de Django avertit que cela casse `{% if %}` sur les valeurs
+    optionnelles, et le réglage est absent de tous les modules de configuration.
+
+    La correction est structurelle : les gabarits de documents **itèrent** une liste de
+    colonnes déjà projetée et ne nomment aucun champ en ligne. Ce test l'exige sur le
+    source de chaque gabarit de `plateforme/projection/templates/`, parce qu'un gabarit
+    correct aujourd'hui et fautif en phase 9 ne se verrait nulle part ailleurs.
+    """
+    import re
+    from pathlib import Path
+
+    racine = Path("plateforme/projection/templates")
+    gabarits = sorted(racine.rglob("*.html"))
+    assert gabarits, f"Aucun gabarit trouvé sous {racine} — le test est vacant."
+
+    nomme_un_champ = re.compile(r"\{\{\s*[a-z_]+\.[a-z_]+\s*\}\}")
+    fautifs = []
+    for gabarit in gabarits:
+        contenu = gabarit.read_text(encoding="utf-8")
+        for occurrence in nomme_un_champ.findall(contenu):
+            fautifs.append(f"{gabarit}: {occurrence}")
+        assert "{% for" in contenu, (
+            f"{gabarit} n'itère rien. Un gabarit de document rend une liste de colonnes "
+            "projetée ; s'il n'itère pas, c'est qu'il nomme."
+        )
+
+    assert not fautifs, (
+        f"Des gabarits nomment un champ en ligne : {fautifs}. Un champ retiré par la "
+        "projection y rendrait une chaîne vide, indiscernable d'une faute de frappe."
+    )
+
+
+def test_perm06_le_document_rend_exactement_les_colonnes_projetees(
+    db_all, deux_magasins, ressource
+):
+    """La moitié comportementale du test précédent : la liste itérée est bien la projetée.
+
+    Un gabarit peut parfaitement itérer une liste **non** projetée. Le compte des cellules
+    rendues contre le compte des champs du sérialiseur est ce qui distingue les deux, et
+    c'est une assertion que ni l'absence de la valeur ni l'absence du nom ne couvrent.
+    """
+    from plateforme.comptes.acces import _PorteurAcces
+    from plateforme.projection.documents import contexte_document, rendre_html
+
+    _gerant, acces_gerant = acces_sans_le_droit(deux_magasins)
+    contexte = contexte_document(
+        SerializerRessourceFixture, ressource, acces=acces_gerant
+    )
+    html = rendre_html(NOM_TEMPLATE, contexte)
+
+    projetes = list(
+        SerializerRessourceFixture(
+            context={"request": _PorteurAcces(acces=acces_gerant)}
+        ).fields
+    )
+    assert [nom for nom, _valeur in contexte["colonnes"]] == projetes
+    assert html.count("</td>") == len(projetes), (
+        "Le document ne rend pas une cellule par champ projeté. Il itère donc autre "
+        "chose que la liste de colonnes que la projection lui a donnée."
+    )
 
 
 @pytest.mark.pending
