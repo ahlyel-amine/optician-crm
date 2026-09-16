@@ -13,6 +13,7 @@ Two things here are load-bearing rather than conventional, and both are asserted
 from pathlib import Path
 
 import environ
+from celery.schedules import crontab
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
@@ -274,6 +275,23 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 # --------------------------------------------------------------------------------------
 REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    # Sessions, not JWT (PERM-01). `TenantMiddleware` reads `request.user` at middleware
+    # time; DRF authenticates inside `APIView.initial()`, *after* every middleware — so
+    # under a token nothing binds and the first business query of every request raises
+    # `NoTenantBound`. Verified against the installed DRF 3.18.1.
+    #
+    # This is a **list**, and that is the whole answer to "but Phase 11 is Expo, where
+    # cookies are painful": adding a token class there is additive and touches no view,
+    # no serializer, no permission and no projection. What must stay true today is that
+    # the tenant binding is not welded to the middleware — and it is not:
+    # `resolve_client(request)` is a standalone function whose contract is
+    # "server-verified identity in, `Client` out".
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.SessionAuthentication",
+    ],
+    # Closed by default. A Phase 6 endpoint that forgets its permission class is refused
+    # rather than public, and "forgetting" is the failure mode a closed default deletes.
+    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
     # JSON only, on purpose (threat A-03-06). DRF's browsable HTML renderer draws its
     # forms from `get_fields()`, which IS projected — but it also renders related
     # objects' `__str__` inside `<select>` dropdowns, and a dropdown enumerates rows: a
@@ -281,6 +299,28 @@ REST_FRAMEWORK = {
     # `local.py` and nowhere else, and a test asserts its class name appears in exactly
     # one settings module — which is why that name is not written here.
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
+    # DRF's own default (`rest_framework/settings.py:119`), pinned **because** it is a
+    # default: a default is not reread in review and is reversed in one line, usually to
+    # silence a chart component that wanted numbers. The chart component is wrong. This
+    # setting is the only thing between CLAUDE.md #7 and a binary float — a `DecimalField`
+    # rendered as a JSON number becomes an IEEE-754 double in the browser, and the missing
+    # centime surfaces months later in a reconciliation with no trace of its cause.
+    "COERCE_DECIMAL_TO_STRING": True,
+    # One login address serves the whole fleet (CLAUDE.md #11), so it is a single point at
+    # which to try passwords against any account of any business (A-03-11, threat T-03-47).
+    # Argon2 makes each attempt expensive, which is itself a second reason to cap the rate:
+    # uncapped, the expensive attempt becomes a denial of service against our own CPU.
+    "DEFAULT_THROTTLE_CLASSES": ["rest_framework.throttling.ScopedRateThrottle"],
+    "DEFAULT_THROTTLE_RATES": {"connexion": "10/min"},
+    # **Zero, deliberately.** `SimpleRateThrottle.get_ident` reads `X-Forwarded-For` when
+    # this is `None` (the default, verified in the installed DRF 3.18.1), so an attacker
+    # who rotates that header gets a fresh counter per attempt and the throttle stops
+    # throttling — while staying perfectly green in any test that does not send the header.
+    # The hosting jurisdiction is an open Phase 1 decision, so the number of trusted
+    # proxies is not known; zero falls back to `REMOTE_ADDR`, which behind a reverse proxy
+    # makes the limit *global* rather than bypassable. Too strict is the right side to err
+    # on. Revisit this the day a proxy reaches production, with that proxy in hand.
+    "NUM_PROXIES": 0,
 }
 
 SPECTACULAR_SETTINGS = {
@@ -345,9 +385,50 @@ PASSWORD_HASHERS = [
 # --------------------------------------------------------------------------------------
 SESSION_COOKIE_SECURE = True
 SESSION_COOKIE_HTTPONLY = True
+# `Lax`, not `Strict`: `Strict` would break returning to the app from an external link,
+# and the SPA is same-origin, which makes `Lax` sufficient.
 SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_SECURE = True
 CSRF_COOKIE_SAMESITE = "Lax"
+# `CSRF_COOKIE_HTTPONLY` is deliberately left at Django's `False`. The double-submit
+# pattern requires the SPA's JavaScript to read the cookie and echo it in `X-CSRFToken`;
+# making it HttpOnly would break CSRF protection rather than strengthen it.
+
+# Thirty days, explicit, because Django's default is fourteen. **`SESSION_EXPIRE_AT_BROWSER_CLOSE`
+# is literally the PERM-01 requirement** ("stays signed in across sessions"), so it is
+# written and asserted rather than inherited.
+SESSION_COOKIE_AGE = 60 * 60 * 24 * 30
+SESSION_EXPIRE_AT_BROWSER_CLOSE = False
+# Deliberately False (threat T-03-53). Sliding expiry writes one `UPDATE django_session`
+# per request to the **control-plane** database — a single hot table shared by every
+# optician in the fleet. PERM-01 asks for "still signed in when they return", not for a
+# rolling window, and a fixed thirty days delivers that with one write at login.
+#
+# If opticians later complain about being logged out, the upgrade is `cached_db` on the
+# Redis that Celery already uses — and **not** plain `cache`: a Redis restart would log
+# the entire fleet out, and Redis must not sit on the authentication path.
+SESSION_SAVE_EVERY_REQUEST = False
+SESSION_ENGINE = "django.contrib.sessions.backends.db"
+
+# Password strength is checked where a password is *chosen* — the self-service change
+# endpoint and, from plan 03-09, the owner setting a gérant's initial one. Validators are
+# only run by `validate_password()`; they are not invoked by `set_password`, so declaring
+# them changes nothing about existing hashes or fixtures.
+#
+# Ten rather than Django's eight: one login address serves the whole fleet, so the
+# per-account cost of a weak password is borne by a shared brute-force surface.
+AUTH_PASSWORD_VALIDATORS = [
+    {
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
+        "OPTIONS": {"user_attributes": ("email", "nom_complet")},
+    },
+    {
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
+        "OPTIONS": {"min_length": 10},
+    },
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
+]
 
 
 # --------------------------------------------------------------------------------------
@@ -357,6 +438,28 @@ CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="redis://127.0.0.1:6379/0")
 CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", default="redis://127.0.0.1:6379/1")
 CELERY_TIMEZONE = "UTC"
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
+
+# Beat entries. `DatabaseScheduler.setup_schedule()` calls
+# `update_from_dict(self.app.conf.beat_schedule)` (verified in the installed
+# django-celery-beat 2.9.0), so entries declared here are synced into the operator-visible
+# `PeriodicTask` table on beat start rather than competing with it.
+#
+# Tasks are named by string, not imported: a settings module that imports an app module
+# runs it before the app registry is ready, and the failure mode is an import error a long
+# way from its cause.
+CELERY_BEAT_SCHEDULE = {
+    # Without this, `django_session` grows forever on the shared control-plane database
+    # (threat T-03-52, A-03-12): denial of service by growth, and a forensic liability.
+    # The rows themselves carry only a user primary key and a hash — no cross-client
+    # content — but that is worth stating rather than assuming, because the retention
+    # decision depends on it (art. 211 CGI covers *records*, not sessions).
+    "purger-les-sessions-expirees": {
+        "task": "control_plane.clear_expired_sessions",
+        # 03:17 UTC — off the hour, so it does not pile onto every other cron in the
+        # fleet, and outside Moroccan shop hours (UTC+1).
+        "schedule": crontab(hour="3", minute="17"),
+    },
+}
 
 
 # --------------------------------------------------------------------------------------

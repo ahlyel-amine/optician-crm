@@ -69,3 +69,31 @@ def backup_all_active_clients(enqueue: bool = True) -> list[int]:
 
     logger.info("backup fan-out covering %d active client(s)", len(pks))
     return pks
+
+
+@shared_task(name="control_plane.clear_expired_sessions")
+def clear_expired_sessions() -> None:
+    """Delete expired rows from `django_session`. Scheduled nightly by Beat.
+
+    Control-plane, not per-tenant, and that is the point: `django_session` is **one**
+    table on the shared control-plane database, written to by every optician in the
+    fleet (CLAUDE.md #11, A-03-12). Nothing purges it on its own, and `SESSION_COOKIE_AGE`
+    is thirty days, so without this task the table grows without bound — a denial of
+    service by growth, and a forensic liability for rows nobody needs (threat T-03-52).
+
+    **What a session row contains, stated rather than assumed:** a session key, an expiry
+    date, and an encoded payload holding a user primary key, the auth backend path and a
+    password hash fragment. No client business data, no health data — which is why this is
+    a hygiene task and not a law-09-08 obligation. It is also why deleting expired rows
+    destroys no record art. 211 CGI requires keeping: that article covers *écritures*, not
+    sessions.
+
+    `clearsessions` is a management command rather than an ORM call because the session
+    engine owns its own storage: swapping to `cached_db` later must not need this task
+    rewritten. It is the command's own job to know what "expired" means for the configured
+    engine.
+    """
+    from django.core.management import call_command
+
+    call_command("clearsessions")
+    logger.info("expired sessions cleared from the control-plane database")
