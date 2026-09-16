@@ -27,16 +27,18 @@ import { MESSAGE_SERVICE_INDISPONIBLE } from "@/etats/messages";
  *
  * ---
  *
- * ECART ASSUME PAR RAPPORT A LA COPIE DE LA SPECIFICATION, a valider au
- * point de controle humain de ce plan :
+ * `Mot de passe actuel` EST AU CONTRAT — ne pas le retirer.
  *
- * `03-UI-SPEC.md` 9.4 ne liste que `Nouveau mot de passe`, `Confirmer` et
- * `Enregistrer`. Le point de terminaison livre au plan 03-08 exige en plus
- * `mot_de_passe_actuel`, et ce n'est pas un oubli de sa part : sans lui, un
- * poste laisse deverrouille une minute — ou un CSRF reussi — ne donne plus une
- * session mais un compte, definitivement. Sans ce champ l'ecran repondrait 400
- * a chaque tentative. Le titre, le corps et les trois autres libelles sont ceux
- * de la specification, au caractere pres.
+ * `03-UI-SPEC.md` 9.4 ne listait a l'origine que `Nouveau mot de passe`,
+ * `Confirmer` et `Enregistrer`. L'ecart a ete porte au point de controle humain
+ * du plan 03-12 le 2026-09-16, et tranche : la specification a ete amendee,
+ * l'exigence serveur n'a pas ete affaiblie. Le point de terminaison livre au
+ * plan 03-08 exige `mot_de_passe_actuel`, et ce n'est pas un oubli de sa part :
+ * sans lui, un poste laisse deverrouille une minute — ou un CSRF reussi — ne
+ * donne plus une session mais un compte, definitivement.
+ *
+ * Le titre, le corps et les trois autres libelles sont ceux de la
+ * specification, au caractere pres.
  */
 export function MotDePasse() {
   const navigate = useNavigate();

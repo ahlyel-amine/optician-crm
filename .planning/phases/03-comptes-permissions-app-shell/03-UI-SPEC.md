@@ -1015,11 +1015,19 @@ never appear.
 | Screen | Title | Section headings | Key labels |
 |---|---|---|---|
 | `/connexion` | product name | — | `Adresse e-mail`, `Mot de passe`, `Se connecter`, `Mot de passe oublié ? Contactez le propriétaire de votre magasin.` |
-| `/mot-de-passe` | `Choisissez votre mot de passe` | — | `Nouveau mot de passe`, `Confirmer`, `Enregistrer` |
+| `/mot-de-passe` | `Choisissez votre mot de passe` | — | `Mot de passe actuel`, `Nouveau mot de passe`, `Confirmer`, `Enregistrer` |
 | Shell — top bar | — | — | `Tous les magasins`, `Recherche`, `Mon compte`, `Changer mon mot de passe`, `Se déconnecter` |
 | Shell — nav | — | — | `Tableau de bord`, `Clients`, `Stock`, `Ventes`, `Caisse`, `Achats`, `Rappels`, `Paramètres` |
 | `/parametres/comptes` | `Comptes et droits` | — | `Nom`, `Adresse e-mail`, `Magasins`, `Droits`, `Statut`, `Dernière connexion`, `Actif`, `Désactivé`, `Jamais connecté`, `Propriétaire`, `Personnalisé` |
 | `/parametres/comptes/:id` | the person's name | `Identité`, `Magasins`, `Droits`, `Historique des droits` | `Réinitialiser le mot de passe`, `Par magasin`, `Uniformiser`, `Personnalisé : 2 magasins sur 3` |
+
+**`Mot de passe actuel` on `/mot-de-passe` is deliberate and settled — do not remove it.** This row
+originally listed only the three fields below it; the field was added here on 2026-09-16 at the plan
+03-12 checkpoint, after the screen was built. `POST /api/auth/mot-de-passe/` (plan 03-08) requires
+`mot_de_passe_actuel`, and that requirement is the one thing standing between an unlocked workstation
+— or a successful CSRF — yielding a *session* rather than the *account, permanently*. The owner chose
+to amend this spec rather than weaken the endpoint. **Phase 9 must not reopen this**: the extra field
+is not copy drift and not an oversight by whoever built the screen.
 
 ---
 
