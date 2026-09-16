@@ -20,20 +20,27 @@ Presque tous demandent `deux_magasins`. Ce n'est pas du confort : avec un seul m
 une vue qui ignore complètement la portée renvoie la même chose qu'une vue correcte, et
 chaque assertion passe (`03-RESEARCH.md` P16).
 
-**Aucun import du code en construction au niveau du module.**
+**Aucun import du code en construction au niveau du module** — la règle du plan 03-02,
+tenue tant que la couche n'existait pas. Depuis le plan 03-07 il y a une exception, et une
+seule : la **fixture pytest** `table_ressource_magasin`, qui doit être un nom du module de
+test pour que pytest la résolve. Elle est importée pour son effet de bord d'enregistrement,
+pas pour être appelée ; tout le reste est importé dans le corps des tests, comme avant.
 """
 
 from __future__ import annotations
 
 import pytest
 
+from tests.ressources_fixture import (  # noqa: F401 — fixture pytest, importée pour être disponible
+    table_ressource_magasin,
+)
+
 
 # --------------------------------------------------------------------------------------
 # PERM-04 — les lignes
 # --------------------------------------------------------------------------------------
-@pytest.mark.pending
 def test_perm04_un_gerant_ne_voit_que_les_magasins_accordes_en_liste_et_en_detail(
-    db_all, deux_magasins
+    db_all, deux_magasins, table_ressource_magasin
 ):
     """PERM-04 — **et en détail**, ce qui est la moitié qu'on oublie.
 
@@ -44,13 +51,58 @@ def test_perm04_un_gerant_ne_voit_que_les_magasins_accordes_en_liste_et_en_detai
 
     Il porte donc **deux** assertions, pas une : la liste ne contient que Anfa, et le
     détail de Maârif répond 404.
+
+    **Et un contrôle positif, qui est la troisième.** « Maârif répond 404 » est vrai d'une
+    vue en panne. Le détail d'**Anfa** doit répondre 200 dans le même test, sans quoi une
+    portée qui ne rendrait jamais rien passerait pour une portée correcte.
     """
-    pytest.fail("non implémenté : plan 03-07")
+    from tests.ressources_fixture import (
+        acces_sur_un_seul_magasin,
+        appeler_vue_magasin,
+        semer_ressources_magasin,
+    )
+
+    anfa, maarif = deux_magasins
+    lignes_anfa, lignes_maarif = semer_ressources_magasin(anfa, maarif)
+    gerant, acces = acces_sur_un_seul_magasin(anfa)
+    assert acces.magasins_ids == frozenset({anfa.pk})
+
+    liste = appeler_vue_magasin(gerant, "get", "list")
+    assert liste.status_code == 200, liste.data
+    magasins_servis = {ligne["magasin"] for ligne in liste.data}
+    assert magasins_servis == {anfa.pk}, (
+        f"La liste a servi les magasins {magasins_servis}, dont un que le gérant n'a pas. "
+        "La portée n'est pas appliquée, ou elle l'est après la pagination."
+    )
+    assert len(liste.data) == len(lignes_anfa)
+
+    # Le contrôle positif : la route de détail **fonctionne** pour une ligne accordée.
+    permis = appeler_vue_magasin(
+        gerant,
+        "get",
+        "retrieve",
+        chemin=f"/api/ressources-magasin/{lignes_anfa[0].pk}/",
+        pk=lignes_anfa[0].pk,
+    )
+    assert permis.status_code == 200, permis.data
+
+    # Et l'IDOR classique : le même chemin, un identifiant d'un magasin non accordé.
+    interdit = appeler_vue_magasin(
+        gerant,
+        "get",
+        "retrieve",
+        chemin=f"/api/ressources-magasin/{lignes_maarif[0].pk}/",
+        pk=lignes_maarif[0].pk,
+    )
+    assert interdit.status_code == 404, (
+        f"La route de détail a répondu {interdit.status_code} sur une ligne de Maârif. "
+        "C'est l'IDOR que P4 décrit : la portée a été posée dans `list()`, que "
+        "`get_object()` ne traverse pas. Elle appartient à `get_queryset()`."
+    )
 
 
-@pytest.mark.pending
 def test_perm04_un_gerant_ne_peut_pas_ecrire_dans_un_magasin_non_accorde(
-    db_all, deux_magasins
+    db_all, deux_magasins, table_ressource_magasin
 ):
     """PERM-04 — la lecture filtrée ne dit rien de l'écriture.
 
@@ -62,8 +114,48 @@ def test_perm04_un_gerant_ne_peut_pas_ecrire_dans_un_magasin_non_accorde(
 
     La portée en écriture est une contrainte sur le **queryset du champ lié**, pas une
     validation ajoutée après coup.
+
+    **400 et non 403**, et ce n'est pas un détail de forme : DRF valide la clé primaire
+    contre le queryset du champ, donc restreindre ce queryset transforme l'écriture
+    inter-magasins en erreur de validation, sans code de permission à écrire ni à oublier.
     """
-    pytest.fail("non implémenté : plan 03-07")
+    from decimal import Decimal
+
+    from tests.ressources_fixture import (
+        RessourceMagasin,
+        acces_sur_un_seul_magasin,
+        appeler_vue_magasin,
+    )
+
+    anfa, maarif = deux_magasins
+    gerant, _ = acces_sur_un_seul_magasin(anfa)
+
+    refuse = appeler_vue_magasin(
+        gerant,
+        "post",
+        "create",
+        corps={"magasin": maarif.pk, "libelle": "Chez le voisin", "montant": "99.00"},
+    )
+    assert refuse.status_code == 400, (
+        f"Le POST vers Maârif a répondu {refuse.status_code} : {refuse.data}. Un 201 est "
+        "l'IDOR d'écriture de P5 — `PrimaryKeyRelatedField(queryset=Magasin.objects.all())` "
+        "accepte n'importe quelle clé, et la lecture filtrée n'y peut rien."
+    )
+    assert "magasin" in refuse.data, refuse.data
+    assert not RessourceMagasin.objects.filter(magasin=maarif, libelle="Chez le voisin")
+
+    # Le contrôle positif : la même requête vers le magasin **accordé** réussit. Sans
+    # elle, un champ lié dont le queryset serait toujours vide passerait ce test.
+    accepte = appeler_vue_magasin(
+        gerant,
+        "post",
+        "create",
+        corps={"magasin": anfa.pk, "libelle": "Chez moi", "montant": "99.00"},
+    )
+    assert accepte.status_code == 201, accepte.data
+    ecrite = RessourceMagasin.objects.get(libelle="Chez moi")
+    assert ecrite.magasin_id == anfa.pk
+    assert ecrite.montant == Decimal("99.00")
 
 
 def test_perm04_un_droit_obsolete_sur_un_magasin_inactif_n_accorde_rien(
@@ -183,8 +275,9 @@ def test_perm04_lacces_du_proprietaire_est_lensemble_complet_et_non_un_filtre_sa
 # --------------------------------------------------------------------------------------
 # PERM-05 — les agrégats
 # --------------------------------------------------------------------------------------
-@pytest.mark.pending
-def test_perm05_un_agregat_est_calcule_sur_le_queryset_deja_filtre(db_all, deux_magasins):
+def test_perm05_un_agregat_est_calcule_sur_le_queryset_deja_filtre(
+    db_all, deux_magasins, table_ressource_magasin
+):
     """PERM-05 — le total est le trou que la projection de champs ne bouche pas.
 
     `Model.objects.aggregate(Sum(...))` repart du manager par défaut et ignore le queryset
@@ -195,8 +288,101 @@ def test_perm05_un_agregat_est_calcule_sur_le_queryset_deja_filtre(db_all, deux_
 
     Avec un seul magasin ce test est vide de sens : la somme filtrée et la somme globale
     sont le même nombre. D'où `deux_magasins`, avec des montants différents des deux côtés.
+
+    **Il échoue sur un calcul-puis-masquage**, et c'est la seule forme d'échec qui compte :
+    on ne peut pas ne pas voir un scalaire déjà calculé, donc la seule implémentation qui
+    rende ce nombre est celle qui n'a jamais additionné Maârif. Les assertions sont en
+    `Decimal` — CLAUDE.md #7, et `assert total == 1800.0` passerait pendant que l'argent
+    est faux.
     """
-    pytest.fail("non implémenté : plan 03-07")
+    from decimal import Decimal
+
+    from django.db.models import Sum
+
+    from tests.ressources_fixture import (
+        TOTAL_ANFA,
+        TOTAL_ENTREPRISE,
+        RessourceMagasin,
+        acces_sur_un_seul_magasin,
+        appeler_vue_magasin,
+        semer_ressources_magasin,
+    )
+
+    anfa, maarif = deux_magasins
+    semer_ressources_magasin(anfa, maarif)
+    gerant, acces = acces_sur_un_seul_magasin(anfa)
+
+    # Le contrôle qui donne un sens au test : les deux nombres sont différents, et le
+    # global est bien ce que la base contient.
+    assert TOTAL_ANFA != TOTAL_ENTREPRISE
+    assert RessourceMagasin.objects.aggregate(t=Sum("montant"))["t"] == TOTAL_ENTREPRISE
+
+    reponse = appeler_vue_magasin(
+        gerant, "get", "total", chemin="/api/ressources-magasin/total/"
+    )
+    assert reponse.status_code == 200, reponse.data
+    servi = Decimal(reponse.data["total"])
+
+    assert servi == TOTAL_ANFA, (
+        f"L'agrégat servi vaut {servi} ; la somme des seuls magasins accordés vaut "
+        f"{TOTAL_ANFA} et celle de toute l'affaire {TOTAL_ENTREPRISE}. Servir le second "
+        "est le chiffre d'affaires global que PERM-05 interdit, et aucun caviardage ne "
+        "peut le reprendre : le scalaire est déjà calculé."
+    )
+    assert servi != TOTAL_ENTREPRISE
+
+    # Et l'aide elle-même, sans passer par la vue : elle **prend l'accès** et restreint.
+    # Sans cette assertion, une vue qui filtrerait à la main passerait le test tout en
+    # laissant l'aide ouverte pour la phase 10.
+    from plateforme.projection.vues import agreger_dans_la_portee
+
+    direct = agreger_dans_la_portee(
+        RessourceMagasin.objects.all(), acces, total=Sum("montant")
+    )
+    assert direct["total"] == TOTAL_ANFA
+
+
+def test_perm05_la_generation_du_schema_ne_subit_pas_la_portee_magasin(
+    db_all, deux_magasins, table_ressource_magasin
+):
+    """PERM-05 / T-03-32 — le schéma voit tout, parce qu'un contrat ne varie pas par lecteur.
+
+    `Acces.SCHEMA.magasins_ids` est **vide** (plan 03-05, décision assumée) : le générateur
+    OpenAPI n'appartient à aucune affaire et à aucun magasin. Appliquée telle quelle, la
+    portée des lignes lui rendrait zéro ligne — ce qui est sans effet sur un schéma, mais
+    fait du drapeau `pour_le_schema` la seule chose qui distingue « le générateur » de « un
+    gérant sans magasin ». C'est `acces.py` qui le dit en toutes lettres : la portée
+    court-circuite sur `pour_le_schema`, **à l'endroit où elle est écrite**, et `peut()`
+    ne l'apprend pas.
+
+    Rouge, ce test dirait que le schéma servi dépend de l'appelant — et un client
+    TypeScript généré depuis un document qui dépend de l'appelant n'est pas un contrat.
+    """
+    from plateforme.comptes.acces import Acces, _PorteurAcces
+    from tests.ressources_fixture import (
+        RessourceMagasin,
+        VueRessourceMagasin,
+        semer_ressources_magasin,
+    )
+
+    anfa, maarif = deux_magasins
+    semer_ressources_magasin(anfa, maarif)
+    attendu = RessourceMagasin.objects.count()
+    assert attendu > 0  # contrôle positif : la base n'est pas vide
+
+    vue = VueRessourceMagasin()
+    vue.request = _PorteurAcces(acces=Acces.SCHEMA)
+    assert vue.get_queryset().count() == attendu, (
+        "La portée s'est appliquée à la génération du schéma. `Acces.SCHEMA` ne porte "
+        "aucun magasin, donc le document deviendrait celui d'un gérant sans magasin — "
+        "et il cesserait de décrire l'API."
+    )
+
+    # Le contraire, dans le même test : un accès ordinaire **subit** la portée. Sans lui,
+    # un `get_queryset` qui ne filtrerait jamais passerait l'assertion ci-dessus.
+    vue_gerant = VueRessourceMagasin()
+    vue_gerant.request = _PorteurAcces(acces=Acces.ANONYME)
+    assert vue_gerant.get_queryset().count() == 0
 
 
 def test_perm05_le_catalogue_declare_prix_achat_marge_et_ca_global():

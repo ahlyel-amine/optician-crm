@@ -43,11 +43,19 @@ import pytest
 from django.db import connections, models
 from django.urls import path
 from rest_framework import viewsets
+from rest_framework.response import Response
 
 from config.celery import app as application_celery
+from domaine.magasins.models import MagasinScopedModel, MagasinScopedQuerySet
 from plateforme.comptes.permissions_catalogue import Permission
 from plateforme.projection.registre import cle_de_champ
-from plateforme.projection.serializers import SerializerProjete
+from plateforme.projection.serializers import SerializerProjete, acces_du_contexte
+from plateforme.projection.vues import (
+    MagasinAutoriseField,
+    MagasinScopedViewSet,
+    agreger_dans_la_portee,
+)
+from plateforme.tenancy.context import current_alias
 
 #: L'alias sur lequel la ressource vit. Voir la décision 2 de la docstring du module.
 ALIAS = "default"
@@ -118,7 +126,12 @@ CLE_PROTEGEE: str = cle_de_champ(RessourceFixture, "valeur_protegee")
 #: Les champs délibérément visibles de tous. `03-RESEARCH.md` §3 exige que **chaque** champ
 #: de modèle exposé soit dans l'une des deux structures ; ceux-ci sont la moitié publique
 #: pour la ressource de test.
-CHAMPS_PUBLICS_DE_LA_FIXTURE: frozenset[str] = frozenset(
+#:
+#: `CHAMPS_PUBLICS_DE_LA_FIXTURE`, en bas de ce module, est l'union de cet ensemble et de
+#: celui de la ressource magasin-scopée : `test_perm06_tout_champ_de_modele_expose_est_classe`
+#: parcourt **toutes** les sous-classes de `ModelSerializer` chargées, donc les deux
+#: ressources doivent être classées ensemble ou ce test d'un autre plan devient rouge.
+CHAMPS_PUBLICS_DE_LA_RESSOURCE_PLAN_DE_CONTROLE: frozenset[str] = frozenset(
     cle_de_champ(RessourceFixture, nom)
     for nom in ("id", "reference", "libelle", "prix_vente")
 )
@@ -296,3 +309,299 @@ def acces_avec_le_droit(magasins):
 
     proprietaire = ProprietaireFactory()
     return proprietaire, acces_pour(proprietaire)
+
+
+# ======================================================================================
+# La ressource magasin-scopée — le véhicule de PERM-04 et PERM-05 (plan 03-07)
+# ======================================================================================
+#
+# **Pourquoi une seconde ressource plutôt qu'un champ de plus sur la première.**
+# `RessourceFixture` vit sur le plan de contrôle, parce que la projection de champs ne
+# dépend d'aucune base client. La portée des *lignes*, elle, ne peut pas vivre là : elle
+# porte une clé étrangère vers `magasins.Magasin`, qui est une table de la base de
+# l'opticien, et `TenantRouter.allow_relation` refuse toute relation entre les deux. La
+# ressource ci-dessous vit donc dans la base du locataire **lié**, comme le feront la
+# caisse (phase 7) et les ventes (phase 6).
+#
+# Elle dérive de `MagasinScopedModel` pour une raison précise : le garde d'énumération du
+# plan 03-07 parcourt les vues dont le modèle en dérive et exige le mixin de portée. Sans
+# un sujet réel, ce garde passerait en n'examinant rien — la même faiblesse que le test
+# paramétré sur zéro cas, un étage plus haut.
+
+#: Les montants semés par `semer_ressources_magasin`, en `Decimal` parce que CLAUDE.md #7
+#: ne connaît pas d'exception et parce qu'une assertion sur un `float` passe pendant que
+#: l'argent est faux (`.planning/TESTING.md` §4).
+MONTANTS_ANFA = (Decimal("1200.00"), Decimal("600.00"))
+MONTANTS_MAARIF = (Decimal("2500.00"),)
+
+#: La somme sur le seul magasin accordé, et la somme de toute l'affaire. **Elles doivent
+#: différer**, sans quoi le test d'agrégat ne distingue pas un calcul restreint d'un
+#: calcul global — exactement le piège « un seul magasin » de `03-RESEARCH.md` P16.
+TOTAL_ANFA = sum(MONTANTS_ANFA, Decimal("0.00"))
+TOTAL_ENTREPRISE = TOTAL_ANFA + sum(MONTANTS_MAARIF, Decimal("0.00"))
+
+
+class _QuerySetDuLocataireLie(MagasinScopedQuerySet):
+    """Un queryset qui résout son alias **au moment de s'exécuter**, pas d'être construit.
+
+    Même raison que `_GestionnaireSurLePlanDeControle` plus haut, autre côté de la
+    frontière : `tests` n'est pas une application classée, donc `TenantRouter._route`
+    lève plutôt que de deviner, et classer `tests` dans le routeur de production pour le
+    confort d'un modèle fictif serait mettre une étiquette de test dans le fichier le plus
+    sensible du dépôt.
+
+    Pourquoi la propriété `db` plutôt qu'un `.using(current_alias())` dans le
+    gestionnaire : un `VueRessourceMagasin.queryset` écrit au niveau de la classe est
+    construit à l'**import** du module, où aucun locataire n'est lié — `current_alias()`
+    y lèverait `NoTenantBound` et la suite entière refuserait de se collecter. Django
+    interroge `db` à l'exécution de la requête, ce qui est exactement le bon moment.
+
+    Et `current_alias()` plutôt qu'une constante `"tenant_a"` : la portée magasin ne doit
+    **jamais** servir d'isolation inter-clients, ni l'inverse. Lire l'alias lié laisse un
+    test poser la ressource chez le client B aussi bien que chez le client A, donc laisse
+    écrire l'assertion qui sépare les deux couches.
+    """
+
+    @property
+    def db(self):
+        return self._db or current_alias()
+
+
+class _GestionnaireDuLocataireLie(
+    models.Manager.from_queryset(_QuerySetDuLocataireLie)
+):
+    """Le gestionnaire correspondant. Il n'ajoute rien : toute la paresse est au-dessus."""
+
+
+class RessourceMagasin(MagasinScopedModel):
+    """Une ligne qui appartient à **un** magasin et porte un montant.
+
+    La forme qu'auront `caisse.Ecriture` (phase 7) et `ventes.Vente` (phase 6) : une clé
+    étrangère `magasin`, un montant, et rien d'autre. Aucun champ protégé ici — la
+    visibilité des champs est l'affaire du plan 03-06 et de `RessourceFixture`. Ce
+    modèle-ci sert la visibilité des **lignes** et des **agrégats**, qui est une autre
+    garantie et se teste séparément.
+    """
+
+    libelle = models.CharField(max_length=120)
+    montant = models.DecimalField(max_digits=12, decimal_places=2)
+
+    objects = _GestionnaireDuLocataireLie()
+
+    class Meta:
+        app_label = "tests"
+        db_table = "tests_ressource_magasin"
+
+    def __init__(self, *args, **kwargs):
+        """Nommer l'alias **avant** que la clé étrangère ne soit affectée.
+
+        `ForwardManyToOneDescriptor.__set__` appelle `router.db_for_write(Ressource...)`
+        quand `instance._state.db` est encore `None` — et le routeur lève sur
+        l'application `tests`, non classée, délibérément. Le magasin est donc retiré des
+        arguments, l'alias posé, puis la relation affectée : `allow_relation` compare alors
+        deux instances du même alias et accepte.
+
+        Trois lignes de plomberie de test qui achètent de ne pas classer `tests` dans
+        `plateforme/tenancy/router.py`, ce qui mettrait une étiquette de test dans le
+        fichier le plus sensible du dépôt.
+        """
+        magasin = kwargs.pop("magasin", None)
+        super().__init__(*args, **kwargs)
+        if magasin is not None:
+            if self._state.db is None:
+                self._state.db = current_alias()
+            self.magasin = magasin
+
+    def save(self, *args, **kwargs):
+        kwargs.setdefault("using", current_alias())
+        return super().save(*args, **kwargs)
+
+    def __str__(self) -> str:  # pragma: no cover — confort de débogage
+        return f"{self.libelle} ({self.montant})"
+
+
+#: Les champs de la ressource magasin-scopée, tous publics. Aucun champ protégé ici :
+#: cette ressource sert la portée des **lignes**, pas la visibilité des champs.
+CHAMPS_PUBLICS_DE_LA_RESSOURCE_MAGASIN: frozenset[str] = frozenset(
+    cle_de_champ(RessourceMagasin, nom)
+    for nom in ("id", "magasin", "libelle", "montant")
+)
+
+#: L'union des deux ressources — ce que `registre_de_la_fixture` injecte dans
+#: `CHAMPS_PUBLICS`. Une seule constante exportée, parce que
+#: `test_perm06_tout_champ_de_modele_expose_est_classe` examine les deux sérialiseurs dès
+#: que ce module est importé : en classer un et pas l'autre rendrait rouge un test d'un
+#: autre plan, pour une raison qui n'aurait rien à voir avec lui.
+CHAMPS_PUBLICS_DE_LA_FIXTURE: frozenset[str] = (
+    CHAMPS_PUBLICS_DE_LA_RESSOURCE_PLAN_DE_CONTROLE
+    | CHAMPS_PUBLICS_DE_LA_RESSOURCE_MAGASIN
+)
+
+
+class SerializerRessourceMagasin(SerializerProjete):
+    """Le sérialiseur de la ressource magasin-scopée.
+
+    `magasin` est un `MagasinAutoriseField`, **jamais** le `PrimaryKeyRelatedField` que
+    `ModelSerializer` produirait tout seul — celui-là valide la clé contre
+    `Magasin.objects.all()` et accepte donc une écriture vers un magasin non accordé avec
+    un 201 (`03-RESEARCH.md` P5, menace T-03-40). C'est le champ que tout le monde oublie,
+    parce que la vue *a l'air* protégée : sa lecture l'est.
+    """
+
+    magasin = MagasinAutoriseField()
+
+    class Meta:
+        model = RessourceMagasin
+        fields = ["id", "magasin", "libelle", "montant"]
+
+
+class VueRessourceMagasin(MagasinScopedViewSet, viewsets.ModelViewSet):
+    """La vue magasin-scopée : liste, détail, création et agrégat.
+
+    L'ordre des bases n'est pas cosmétique. `MagasinScopedViewSet` doit précéder
+    `ModelViewSet` dans le MRO, sinon `GenericAPIView.get_queryset` gagne et la portée
+    disparaît **sans erreur** — c'est précisément ce que le garde d'énumération du plan
+    03-07 vérifie, et la raison pour laquelle il regarde l'ordre plutôt que l'héritage.
+    """
+
+    queryset = RessourceMagasin.objects.all().order_by("pk")
+    serializer_class = SerializerRessourceMagasin
+    authentication_classes: list = []
+    permission_classes: list = []
+
+    def total(self, requete, *args, **kwargs):
+        """L'agrégat, pris sur le queryset **déjà restreint**. PERM-05.
+
+        Écrit avec l'aide dédiée plutôt qu'avec `RessourceMagasin.objects.aggregate(...)`,
+        et la différence est tout le plan : le manager par défaut repart de zéro et ignore
+        le queryset que la vue vient de construire. Un `SUM` global renvoyé à un gérant
+        d'un seul magasin est le chiffre d'affaires de toute l'affaire, sans qu'aucun champ
+        protégé ni aucune ligne interdite n'ait été servi.
+        """
+        from django.db.models import Sum
+
+        portee = agreger_dans_la_portee(
+            RessourceMagasin.objects.all(),
+            acces_du_contexte({"request": requete}),
+            total=Sum("montant"),
+        )
+        return Response({"total": str(portee["total"] or Decimal("0.00"))})
+
+
+#: Les routes de la ressource magasin-scopée.
+#:
+#: **Volontairement séparées de `urlpatterns`.** Ce module sert de `ROOT_URLCONF` au test
+#: de schéma du plan 03-06 (`override_settings(ROOT_URLCONF="tests.ressources_fixture")`) ;
+#: y verser des routes dont le queryset exige un locataire lié ferait dépendre la
+#: génération du schéma d'un contexte que le générateur n'a pas. Les tests de portée
+#: appellent la vue directement, exactement comme ceux du plan 03-06.
+urlpatterns_magasin = [
+    path(
+        "api/ressources-magasin/",
+        VueRessourceMagasin.as_view({"get": "list", "post": "create"}),
+        name="ressource-magasin-liste",
+    ),
+    path(
+        "api/ressources-magasin/<int:pk>/",
+        VueRessourceMagasin.as_view({"get": "retrieve"}),
+        name="ressource-magasin-detail",
+    ),
+    path(
+        "api/ressources-magasin/total/",
+        VueRessourceMagasin.as_view({"get": "total"}),
+        name="ressource-magasin-total",
+    ),
+]
+
+
+@pytest.fixture(scope="session")
+def table_ressource_magasin(django_db_setup, django_db_blocker):
+    """Crée `tests_ressource_magasin` dans **chaque** base locataire de test.
+
+    Les deux, et pas seulement `tenant_a` : le registre de menaces du plan 03-07 exige que
+    la portée magasin ne serve jamais d'isolation inter-clients, et une table absente chez
+    le client B rendrait cette assertion impossible à écrire — elle échouerait pour la
+    mauvaise raison.
+
+    Portée session pour la même raison que `table_ressource_fixture` : une table créée
+    dans un test disparaîtrait avec la transaction que pytest-django annule.
+    """
+    from conftest import TENANT_DBS
+
+    with django_db_blocker.unblock():
+        for alias in TENANT_DBS:
+            if alias == "default":
+                continue
+            connexion = connections[alias]
+            if (
+                RessourceMagasin._meta.db_table
+                not in connexion.introspection.table_names()
+            ):
+                with connexion.schema_editor() as editeur:
+                    editeur.create_model(RessourceMagasin)
+    yield
+
+
+def semer_ressources_magasin(anfa, maarif):
+    """Sème les lignes des deux magasins et renvoie `(lignes_anfa, lignes_maarif)`.
+
+    Les montants diffèrent d'un magasin à l'autre, et c'est l'essentiel : avec les mêmes
+    montants de part et d'autre, une somme globale et une somme restreinte seraient
+    indiscernables et le test de PERM-05 serait vert contre un `aggregate` non filtré.
+    """
+    lignes_anfa = [
+        RessourceMagasin.objects.create(
+            magasin=anfa, libelle=f"Anfa {indice}", montant=montant
+        )
+        for indice, montant in enumerate(MONTANTS_ANFA)
+    ]
+    lignes_maarif = [
+        RessourceMagasin.objects.create(
+            magasin=maarif, libelle=f"Maârif {indice}", montant=montant
+        )
+        for indice, montant in enumerate(MONTANTS_MAARIF)
+    ]
+    return lignes_anfa, lignes_maarif
+
+
+def acces_sur_un_seul_magasin(magasin):
+    """Un gérant à qui **un seul** des deux magasins a été accordé.
+
+    Il détient un droit dans ce magasin : un gérant sans aucun droit ne prouverait pas que
+    la portée vient de l'octroi de magasin, seulement que la résolution rend du vide.
+    """
+    from plateforme.comptes.acces import acces_pour
+    from tests.factories import AccesMagasinFactory, DroitAccordeFactory, GerantFactory
+
+    gerant = GerantFactory()
+    AccesMagasinFactory(utilisateur=gerant, magasin_code=magasin.code)
+    DroitAccordeFactory(
+        utilisateur=gerant, magasin_code=magasin.code, code=Permission.CAISSE_SAISIR
+    )
+    return gerant, acces_pour(gerant)
+
+
+def appeler_vue_magasin(utilisateur, methode, action, *, chemin="/api/ressources-magasin/", corps=None, **kwargs):
+    """Une vraie requête sur la vue magasin-scopée : principal -> middleware -> vue.
+
+    Même idiome que `_appeler` dans `tests/test_projection.py`, et pour les mêmes deux
+    raisons : passer par `AccesMiddleware` rend le test de bout en bout, et
+    `force_authenticate` est obligatoire parce que le setter `Request.user` de DRF réécrit
+    `_request.user` — sans lui, l'appelant devient anonyme et l'assertion « il ne voit que
+    Anfa » passerait parce qu'il ne voit rien du tout.
+    """
+    from rest_framework.test import APIRequestFactory, force_authenticate
+
+    from plateforme.comptes.middleware import AccesMiddleware
+
+    vue = VueRessourceMagasin.as_view({methode: action})
+    fabrique = APIRequestFactory()
+    if methode == "post":
+        requete = fabrique.post(chemin, corps or {}, format="json")
+    else:
+        requete = fabrique.get(chemin)
+    requete.user = utilisateur
+    force_authenticate(requete, user=utilisateur)
+    reponse = AccesMiddleware(lambda recue: vue(recue, **kwargs))(requete)
+    reponse.render()
+    return reponse
