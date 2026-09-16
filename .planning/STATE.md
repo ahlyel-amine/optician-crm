@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-05-PLAN.md
-last_updated: "2026-09-15T13:23:56.774Z"
+stopped_at: Completed 03-06-PLAN.md
+last_updated: "2026-09-16T18:15:02.570Z"
 last_activity: 2026-09-14
 progress:
   total_phases: 12
   completed_phases: 1
   total_plans: 21
-  completed_plans: 13
-  percent: 62
+  completed_plans: 14
+  percent: 67
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-09-09)
 ## Current Position
 
 Phase: 3 of 12 (Comptes, Permissions & App Shell)
-Plan: 4 of 14 complete in current phase; 14 plans in 11 waves are written and uncommitted, next is 03-01
-Status: Ready to execute
-Last activity: 2026-09-14
+Plan: 7 of 14 complete in current phase (03-01 à 03-06 et 03-11) ; la couche de projection PERM-06 existe, les prochains sont 03-07 (portée des lignes et des agrégats) et 03-08
+Status: Executing
+Last activity: 2026-09-16
 
-Progress: [██░░░░░░░░] 17%
+Progress: [███████░░░] 67%
 
 ## Performance Metrics
 
@@ -60,6 +60,7 @@ Progress: [██░░░░░░░░] 17%
 | Phase 03 P11 | 20m | 3 tasks | 11 files |
 | Phase 03 P04 | ~45m | 2 tasks | 6 files |
 | Phase 03 P05 | 50m | 2 tasks | 5 files |
+| Phase 03 P06 | ~70m | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -103,6 +104,14 @@ Recent decisions affecting current work:
 - [Phase 03-04]: La regle « un droit ne vise qu'un magasin accorde » est une regle Python assumee (DroitAccorde.save + service d'octroi 03-09) : une CHECK ne porte pas sur une autre table, et queryset.update la contourne
 - [Phase 03]: peut(code) sans magasin est une conjonction sur tous les magasins accordes, jamais une union (fail-closed, 03-05)
 - [Phase 03]: l'acces du proprietaire et Acces.SCHEMA sont materialises, donc peut() n'a aucune branche de privilege (03-05)
+- [Phase 03]: 03-06: le registre de projection est cle par champ de modele (app.Model.field), jamais par classe de serializer — un champ protege le reste imbrique dans la ressource d'un autre (A-03-08)
+- [Phase 03]: 03-06: CHAMPS_PROTEGES reste vide en phase 3 ; la machinerie est prouvee contre une ressource test-only de tests/, injectee au registre par monkeypatch — la phase 8 ecrira la meme ligne a demeure
+- [Phase 03]: 03-06: tout nouveau rendu doit rejoindre la liste RENDUS du test de conformite DANS LE PLAN QUI LE CREE — c'est la seule chose qui empeche la derive, et elle n'est pas mecanique
+- [Phase 03]: 03-06: l'en-tete CSV est derive de serializer.child.fields ; separateur ';' et BOM UTF-8, revisables et non verifies contre un vrai Excel
+- [Phase 03]: 03-06: le schema OpenAPI est epingle sur Acces.SCHEMA par GET_MOCK_REQUEST — sans cela build_mock_request recopie request.user et le document servi varie par utilisateur (plumbing.py:1288)
+- [Phase 03]: 03-06: COMPONENT_NO_READ_ONLY_REQUIRED n'est pas seulement laisse a False, son nom est absent de config/settings/ et un test l'exige — le basculer rendrait id optionnel partout
+- [Phase 03]: 03-06: DEFAULT_RENDERER_CLASSES est JSON seul en base ; le renderer HTML navigable de DRF n'existe que dans local.py (A-03-06)
+- [Phase 03]: 03-06: le setter Request.user de DRF reecrit _request.user, donc request.acces paresseux voit le verdict de DRF — fail-closed en production, mais les tests doivent employer force_authenticate
 
 ### Pending Todos
 
@@ -116,6 +125,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-15T13:23:56.769Z
-Stopped at: Completed 03-05-PLAN.md
+Last session: 2026-09-16T18:15:02.568Z
+Stopped at: Completed 03-06-PLAN.md
 Resume file: None
