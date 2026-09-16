@@ -429,7 +429,7 @@ def revoquer(cible, code, magasins=None, *, par) -> Resultat:
 
 
 def _retirer(cible, code: str, magasins: list[str], *, par) -> list[str]:
-    """Supprimer les lignes de `code` sur `magasins`, et journaliser la révocation.
+    """Retirer les lignes de `code` sur `magasins`, et journaliser la révocation.
 
     La révocation **supprime** la ligne plutôt que de la marquer inactive : c'est ce qui
     rend `acces.peut()` trivialement juste — il n'y a pas de ligne « désactivée » à
