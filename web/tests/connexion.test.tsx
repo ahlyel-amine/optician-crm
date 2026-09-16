@@ -1,10 +1,11 @@
 import { useContext } from "react";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import App from "@/App";
 import { reinitialiserLeClient } from "@/api/client";
 import { AuthProvider, ContexteAuth } from "@/auth/AuthProvider";
 import { RequirePermission } from "@/auth/RequirePermission";
@@ -227,5 +228,362 @@ describe("RequirePermission", () => {
     await screen.findByText("connecte");
 
     expect(screen.getByText("Consulter la caisse")).toBeTruthy();
+  });
+});
+
+/* =========================================================================
+ * Surface A — /connexion (03-UI-SPEC.md section 6)
+ * ======================================================================= */
+
+function rendreApplication(chemin = "/connexion") {
+  const requetes = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  return render(
+    <MemoryRouter initialEntries={[chemin]}>
+      <QueryClientProvider client={requetes}>
+        <App />
+      </QueryClientProvider>
+    </MemoryRouter>,
+  );
+}
+
+function champEmail(): HTMLInputElement {
+  return screen.getByLabelText("Adresse e-mail") as HTMLInputElement;
+}
+
+function champMotDePasse(): HTMLInputElement {
+  return screen.getByLabelText("Mot de passe") as HTMLInputElement;
+}
+
+async function saisirEtSoumettre(email: string, motDePasse: string) {
+  fireEvent.change(champEmail(), { target: { value: email } });
+  fireEvent.change(champMotDePasse(), { target: { value: motDePasse } });
+  fireEvent.click(screen.getByRole("button", { name: "Se connecter" }));
+}
+
+describe("/connexion", () => {
+  it("un echec affiche exactement la phrase unique, vide le mot de passe et y ramene le focus", async () => {
+    poserLesReponses({
+      "/api/auth/csrf/": () => vide(204),
+      "/api/auth/moi/": () => vide(401),
+      "/api/auth/connexion/": () =>
+        json({ detail: "Identifiant ou mot de passe incorrect." }, 400),
+    });
+
+    rendreApplication();
+    await screen.findByLabelText("Adresse e-mail");
+    await saisirEtSoumettre("karim.benali@optiqueanfa.ma", "mauvais");
+
+    const alerte = await screen.findByRole("alert");
+    expect(alerte.textContent).toBe("Identifiant ou mot de passe incorrect.");
+    // L'e-mail survit : le refaire taper apres une faute de frappe sur le mot
+    // de passe est la petite cruaute qui fait detester un outil de comptoir.
+    expect(champEmail().value).toBe("karim.benali@optiqueanfa.ma");
+    expect(champMotDePasse().value).toBe("");
+    expect(document.activeElement).toBe(champMotDePasse());
+    expect(champMotDePasse().getAttribute("aria-invalid")).toBe("true");
+  });
+
+  it("un compte desactive et un mot de passe faux donnent LA MEME phrase (T-03-80)", async () => {
+    // Le serveur renvoie deja un corps unique (plan 03-08). Ce test verifie la
+    // seconde moitie de la garantie : meme si un corps distinctif arrivait un
+    // jour — nouvelle branche, nouveau middleware, proxy bavard — l'ecran
+    // afficherait toujours la meme phrase, parce qu'il n'affiche jamais le
+    // `detail` du serveur sur cette route.
+    const phrases: string[] = [];
+    for (const corps of [
+      { detail: "Identifiant ou mot de passe incorrect." },
+      { detail: "Ce compte a été désactivé le 14/09/2026." },
+    ]) {
+      poserLesReponses({
+        "/api/auth/csrf/": () => vide(204),
+        "/api/auth/moi/": () => vide(401),
+        "/api/auth/connexion/": () => json(corps, 400),
+      });
+      const { unmount } = rendreApplication();
+      await screen.findByLabelText("Adresse e-mail");
+      await saisirEtSoumettre("karim.benali@optiqueanfa.ma", "x");
+      phrases.push((await screen.findByRole("alert")).textContent ?? "");
+      unmount();
+    }
+    expect(phrases[0]).toBe(phrases[1]);
+    expect(phrases[0]).toBe("Identifiant ou mot de passe incorrect.");
+  });
+
+  it("la carte est decalee du haut, et l'apparition de l'erreur ne la deplace pas", async () => {
+    poserLesReponses({
+      "/api/auth/csrf/": () => vide(204),
+      "/api/auth/moi/": () => vide(401),
+      "/api/auth/connexion/": () => json({ detail: "x" }, 400),
+    });
+
+    rendreApplication();
+    await screen.findByLabelText("Adresse e-mail");
+
+    // jsdom ne fait aucune mise en page, donc `getBoundingClientRect()` rend
+    // zero partout et ne prouverait rien. Ce qui est verifiable — et ce qui est
+    // la VRAIE cause du saut — c'est le mecanisme de positionnement : un
+    // decalage fixe depuis le haut, et aucun centrage vertical. Un centrage
+    // vertical deplace la carte des que son contenu grandit.
+    const scene = screen.getByTestId("scene-connexion");
+    const avant = {
+      paddingTop: scene.style.paddingTop,
+      alignItems: getComputedStyle(scene).alignItems,
+    };
+    expect(avant.paddingTop).toBe("64px");
+    expect(avant.alignItems).not.toBe("center");
+
+    await saisirEtSoumettre("karim.benali@optiqueanfa.ma", "x");
+    await screen.findByRole("alert");
+
+    expect(scene.style.paddingTop).toBe(avant.paddingTop);
+    expect(getComputedStyle(scene).alignItems).toBe(avant.alignItems);
+  });
+
+  it("le libelle du bouton ne change pas pendant l'attente", async () => {
+    let debloquer: (() => void) | null = null;
+    const attente = new Promise<void>((resoudre) => {
+      debloquer = resoudre;
+    });
+    poserLesReponses({
+      "/api/auth/csrf/": () => vide(204),
+      "/api/auth/moi/": () => vide(401),
+      "/api/auth/connexion/": async () => {
+        await attente;
+        return json(AMORCAGE);
+      },
+    });
+
+    rendreApplication();
+    await screen.findByLabelText("Adresse e-mail");
+    const bouton = screen.getByRole("button", { name: "Se connecter" });
+    const libelleAuRepos = bouton.textContent;
+
+    await saisirEtSoumettre("karim.benali@optiqueanfa.ma", "bon");
+
+    await waitFor(() => expect(bouton.hasAttribute("disabled")).toBe(true));
+    // Le libelle ne change pas, donc le bouton ne se redimensionne pas. Un
+    // bouton qui passe de « Se connecter » a « Connexion... » saute de largeur
+    // au moment ou l'utilisateur regarde exactement cet endroit.
+    expect(bouton.textContent).toBe(libelleAuRepos);
+    debloquer?.();
+  });
+
+  it("il n'y a ni lien de mot de passe oublie, ni case de session persistante", async () => {
+    poserLesReponses({
+      "/api/auth/csrf/": () => vide(204),
+      "/api/auth/moi/": () => vide(401),
+    });
+
+    rendreApplication();
+    await screen.findByLabelText("Adresse e-mail");
+
+    // Aucun lien : il n'y a pas de fournisseur d'e-mail transactionnel, donc
+    // une reinitialisation en libre service serait un lien mort. La ligne
+    // d'aide dit qui contacter, en une phrase.
+    expect(screen.queryAllByRole("link")).toHaveLength(0);
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    expect(
+      screen.getByText("Mot de passe oublié ? Contactez le propriétaire de votre magasin."),
+    ).toBeTruthy();
+  });
+
+  it("une limite de debit affiche sa phrase et un compte a rebours dans la ligne d'aide", async () => {
+    poserLesReponses({
+      "/api/auth/csrf/": () => vide(204),
+      "/api/auth/moi/": () => vide(401),
+      "/api/auth/connexion/": () =>
+        json({ detail: "Trop de tentatives. Réessayez dans une minute.", reessayer_dans: 42 }, 429),
+    });
+
+    rendreApplication();
+    await screen.findByLabelText("Adresse e-mail");
+    await saisirEtSoumettre("karim.benali@optiqueanfa.ma", "x");
+
+    const alerte = await screen.findByRole("alert");
+    expect(alerte.textContent).toBe("Trop de tentatives. Réessayez dans une minute.");
+    expect(screen.getByTestId("ligne-daide").textContent).toContain("42");
+    expect(
+      screen.getByRole("button", { name: "Se connecter" }).hasAttribute("disabled"),
+    ).toBe(true);
+  });
+
+  it("une panne du service affiche sa phrase, sans code ni anglais", async () => {
+    poserLesReponses({
+      "/api/auth/csrf/": () => vide(204),
+      "/api/auth/moi/": () => vide(401),
+      "/api/auth/connexion/": () => json({ detail: "boom" }, 503),
+    });
+
+    rendreApplication();
+    await screen.findByLabelText("Adresse e-mail");
+    await saisirEtSoumettre("karim.benali@optiqueanfa.ma", "x");
+
+    const alerte = await screen.findByRole("alert");
+    expect(alerte.textContent).toBe(
+      "Le service est momentanément indisponible. Réessayez dans quelques instants.",
+    );
+    expect(alerte.textContent).not.toMatch(/[0-9]{3}/);
+  });
+
+  it("un echec du cookie CSRF se presente comme l'etat reseau, pas comme un envoi casse", async () => {
+    document.cookie = "csrftoken=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+    poserLesReponses({
+      "/api/auth/csrf/": () => vide(503),
+      "/api/auth/moi/": () => vide(401),
+    });
+
+    rendreApplication();
+    const alerte = await screen.findByRole("alert");
+    expect(alerte.textContent).toBe(
+      "Le service est momentanément indisponible. Réessayez dans quelques instants.",
+    );
+  });
+
+  it("le formulaire est un vrai form avec bouton de soumission, donc Entree soumet", async () => {
+    poserLesReponses({
+      "/api/auth/csrf/": () => vide(204),
+      "/api/auth/moi/": () => vide(401),
+      "/api/auth/connexion/": () => json(AMORCAGE),
+    });
+
+    rendreApplication();
+    await screen.findByLabelText("Adresse e-mail");
+
+    // jsdom n'implemente pas la soumission implicite du navigateur : on verifie
+    // donc le MECANISME dont elle depend — un `form` reel contenant un bouton
+    // de type `submit` — puis la soumission elle-meme.
+    const formulaire = screen.getByTestId("formulaire-connexion") as HTMLFormElement;
+    expect(formulaire.tagName).toBe("FORM");
+    const soumettre = screen.getByRole("button", { name: "Se connecter" });
+    expect(soumettre.getAttribute("type")).toBe("submit");
+    expect(formulaire.contains(soumettre)).toBe(true);
+
+    fireEvent.change(champEmail(), { target: { value: "karim.benali@optiqueanfa.ma" } });
+    fireEvent.change(champMotDePasse(), { target: { value: "bon" } });
+    fireEvent.submit(formulaire);
+    await waitFor(() =>
+      expect(appels.some((appel) => appel.url === "/api/auth/connexion/")).toBe(true),
+    );
+  });
+
+  it("les champs portent aria-describedby et la bascule d'affichage porte aria-pressed", async () => {
+    poserLesReponses({
+      "/api/auth/csrf/": () => vide(204),
+      "/api/auth/moi/": () => vide(401),
+    });
+
+    rendreApplication();
+    await screen.findByLabelText("Adresse e-mail");
+
+    expect(champEmail().getAttribute("autocomplete")).toBe("username");
+    expect(champMotDePasse().getAttribute("autocomplete")).toBe("current-password");
+
+    const bascule = screen.getByRole("button", { name: "Afficher le mot de passe" });
+    expect(bascule.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(bascule);
+    expect(champMotDePasse().getAttribute("type")).toBe("text");
+    expect(
+      screen.getByRole("button", { name: "Masquer le mot de passe" }).getAttribute("aria-pressed"),
+    ).toBe("true");
+  });
+
+  it("une connexion reussie mene dans l'application et y revient par le chemin memorise", async () => {
+    poserLesReponses({
+      "/api/auth/csrf/": () => vide(204),
+      "/api/auth/moi/": () => vide(401),
+      "/api/auth/connexion/": () => json(AMORCAGE),
+    });
+
+    // Une route protegee visitee sans session : la garde memorise le chemin.
+    rendreApplication("/parametres/comptes");
+    await screen.findByLabelText("Adresse e-mail");
+    await saisirEtSoumettre("karim.benali@optiqueanfa.ma", "bon");
+
+    await screen.findByTestId("destination");
+    expect(screen.getByTestId("destination").textContent).toBe("/parametres/comptes");
+  });
+});
+
+/* =========================================================================
+ * /mot-de-passe — le changement force
+ * ======================================================================= */
+
+describe("/mot-de-passe", () => {
+  const AVEC_DRAPEAU = {
+    ...AMORCAGE,
+    utilisateur: { ...AMORCAGE.utilisateur, doit_changer_mot_de_passe: true },
+  };
+
+  it("doit_changer_mot_de_passe mene a une page pleine, sans navigation de shell", async () => {
+    poserLesReponses({
+      "/api/auth/csrf/": () => vide(204),
+      "/api/auth/moi/": () => json(AVEC_DRAPEAU),
+    });
+
+    rendreApplication("/parametres/comptes");
+
+    expect(await screen.findByText("Choisissez votre mot de passe")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Ce mot de passe vous a été communiqué par le propriétaire. Choisissez-en un que vous êtes seul à connaître.",
+      ),
+    ).toBeTruthy();
+    // Non refermable : aucune navigation de shell, aucune issue.
+    expect(document.querySelector("nav")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Fermer" })).toBeNull();
+    expect(screen.queryAllByRole("link")).toHaveLength(0);
+    expect(screen.getByRole("button", { name: "Enregistrer" })).toBeTruthy();
+  });
+
+  it("deux saisies differentes sont refusees avant tout appel reseau", async () => {
+    poserLesReponses({
+      "/api/auth/csrf/": () => vide(204),
+      "/api/auth/moi/": () => json(AVEC_DRAPEAU),
+    });
+
+    rendreApplication("/");
+    await screen.findByText("Choisissez votre mot de passe");
+
+    fireEvent.change(screen.getByLabelText("Mot de passe actuel"), {
+      target: { value: "provisoire-1234" },
+    });
+    fireEvent.change(screen.getByLabelText("Nouveau mot de passe"), {
+      target: { value: "un-mot-de-passe-long" },
+    });
+    fireEvent.change(screen.getByLabelText("Confirmer"), {
+      target: { value: "un-mot-de-passe-lung" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
+
+    const alerte = await screen.findByRole("alert");
+    expect(alerte.textContent).toBe("Les deux mots de passe ne sont pas identiques.");
+    expect(appels.some((appel) => appel.url === "/api/auth/mot-de-passe/")).toBe(false);
+  });
+
+  it("un changement accepte libere l'application", async () => {
+    poserLesReponses({
+      "/api/auth/csrf/": () => vide(204),
+      "/api/auth/moi/": () => json(AVEC_DRAPEAU),
+      "/api/auth/mot-de-passe/": () => json(AMORCAGE),
+    });
+
+    rendreApplication("/");
+    await screen.findByText("Choisissez votre mot de passe");
+
+    fireEvent.change(screen.getByLabelText("Mot de passe actuel"), {
+      target: { value: "provisoire-1234" },
+    });
+    fireEvent.change(screen.getByLabelText("Nouveau mot de passe"), {
+      target: { value: "un-mot-de-passe-long" },
+    });
+    fireEvent.change(screen.getByLabelText("Confirmer"), {
+      target: { value: "un-mot-de-passe-long" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
+
+    await screen.findByTestId("destination");
+    expect(screen.getByTestId("destination").textContent).toBe("/");
   });
 });
