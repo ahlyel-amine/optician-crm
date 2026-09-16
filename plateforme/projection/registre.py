@@ -92,6 +92,17 @@ CHAMPS_PUBLICS: frozenset[str] = frozenset(
         "comptes.Utilisateur.nom_complet",
         "comptes.Utilisateur.est_proprietaire",
         "comptes.Utilisateur.doit_changer_mot_de_passe",
+        # La liste des comptes (plan 03-09, `03-UI-SPEC.md` 7.2). Deux décisions plutôt
+        # qu'un défaut : le **statut** est visible de quiconque gère les comptes, parce
+        # que c'est la colonne que l'écran existe pour montrer ; la **dernière
+        # connexion** l'est aussi, et c'est la moins évidente des deux — c'est une donnée
+        # de présence sur un collègue, et elle est publiée ici parce qu'un propriétaire
+        # qui se demande si un compte sert encore n'a pas d'autre réponse. Elle n'est
+        # servie qu'à un détenteur de `compte.gerer`, par la portée de la vue.
+        # `derniere_connexion_ip` reste **non classé**, donc refusé : l'adresse d'un
+        # collègue n'est une réponse à aucune question de cet écran.
+        "comptes.Utilisateur.is_active",
+        "comptes.Utilisateur.last_login",
         # L'affaire, telle qu'elle s'affiche dans la barre supérieure.
         "control_plane.Client.code",
         "control_plane.Client.raison_sociale",

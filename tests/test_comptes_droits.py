@@ -33,11 +33,79 @@ import re
 import pytest
 
 
+#: Les chemins de la surface d'écriture, écrits une fois. Un test qui recopie une URL
+#: passe le jour où la route change de place, parce qu'il teste alors une 404 bien formée.
+COMPTES = "/api/comptes/"
+CATALOGUE = "/api/comptes/catalogue/"
+
+
+def _detail(compte) -> str:
+    return f"{COMPTES}{compte.pk}/"
+
+
+def _droits(compte) -> str:
+    return f"{COMPTES}{compte.pk}/droits/"
+
+
+def _uniformiser(compte) -> str:
+    return f"{COMPTES}{compte.pk}/droits/uniformiser/"
+
+
+def _magasins(compte) -> str:
+    return f"{COMPTES}{compte.pk}/magasins/"
+
+
+def _client_api(csrf=False):
+    from rest_framework.test import APIClient
+
+    return APIClient(enforce_csrf_checks=csrf)
+
+
+def _connecter(api, utilisateur):
+    """Ouvre une vraie session par le point de terminaison de connexion du plan 03-08.
+
+    Par l'API et non par `force_login`, délibérément : ce que ces tests vérifient est le
+    comportement d'un appelant réel, lié à son locataire par le même chemin qu'en
+    production. `force_login` sauterait `_amorcage`, donc la liaison.
+    """
+    from tests.factories import MOT_DE_PASSE_DE_TEST
+
+    reponse = api.post(
+        "/api/auth/connexion/",
+        {"email": utilisateur.email, "mot_de_passe": MOT_DE_PASSE_DE_TEST},
+        format="json",
+    )
+    assert reponse.status_code == 200, reponse.data
+    return api
+
+
+def _gerant_gestionnaire(affaire, magasins_codes, codes_supplementaires=()):
+    """Un gérant détenant `compte.gerer` dans chacun de ses magasins, et rien de plus.
+
+    `peut()` sans magasin est une **conjonction** (plan 03-05), donc un gérant qui ne
+    détiendrait `compte.gerer` que dans l'un de ses deux magasins n'atteint pas cette
+    surface. C'est voulu et c'est fail-closed : administrer des comptes n'est pas une
+    action de magasin, et l'union — `peut_quelque_part` — n'autorise jamais rien.
+    """
+    from plateforme.comptes.permissions_catalogue import Permission
+    from tests.factories import AccesMagasinFactory, DroitAccordeFactory, GerantFactory
+
+    gerant = GerantFactory(client=affaire.client)
+    for code_magasin in magasins_codes:
+        AccesMagasinFactory(utilisateur=gerant, magasin_code=code_magasin)
+        for code in (Permission.COMPTE_GERER, *codes_supplementaires):
+            DroitAccordeFactory(
+                utilisateur=gerant, magasin_code=code_magasin, code=code
+            )
+    return gerant
+
+
 # --------------------------------------------------------------------------------------
 # PERM-02 — le compte
 # --------------------------------------------------------------------------------------
-@pytest.mark.pending
-def test_perm02_un_proprietaire_ne_cree_un_compte_que_dans_son_propre_client(db_all):
+def test_perm02_un_proprietaire_ne_cree_un_compte_que_dans_son_propre_client(
+    affaire_reelle,
+):
     """PERM-02 — le `client` du nouveau compte est imposé par le serveur, jamais reçu.
 
     Rouge, ce test dirait que `client` est un champ acceptable en entrée : le propriétaire
@@ -49,8 +117,178 @@ def test_perm02_un_proprietaire_ne_cree_un_compte_que_dans_son_propre_client(db_
     Le test crée deux clients, précisément parce qu'un test à un seul client ne peut pas
     distinguer « le serveur impose le bon » de « le serveur accepte ce qu'on lui donne,
     qui se trouve être le bon ».
+
+    Les cinq champs d'élévation sont soumis **ensemble**, dans une seule requête : c'est
+    la forme que prend l'attaque, et vérifier chaque champ dans son propre test laisserait
+    passer une implémentation qui en refuse quatre. Le filet de la base (plan 03-01)
+    n'aurait de toute façon attrapé que `is_staff` et `is_superuser` ; `client` et
+    `est_proprietaire` n'ont que le sérialiseur devant eux.
     """
-    pytest.fail("non implémenté : plan 03-09")
+    from plateforme.comptes.models import Utilisateur
+    from tests.factories import ClientFactory, ProprietaireFactory
+
+    proprietaire = ProprietaireFactory(client=affaire_reelle.client)
+    concurrent = ClientFactory()  # une autre affaire, une clé étrangère parfaitement valide
+    assert concurrent.pk != affaire_reelle.client.pk
+
+    api = _connecter(_client_api(), proprietaire)
+    reponse = api.post(
+        COMPTES,
+        {
+            "nom_complet": "Karim Benali",
+            "email": "karim.benali@optiqueanfa.ma",
+            "client": concurrent.pk,
+            "est_proprietaire": True,
+            "is_staff": True,
+            "is_superuser": True,
+            "derniere_connexion_ip": "10.0.0.1",
+        },
+        format="json",
+    )
+    assert reponse.status_code == 201, reponse.data
+
+    cree = Utilisateur.objects.using("default").get(email="karim.benali@optiqueanfa.ma")
+    assert cree.client_id == affaire_reelle.client.pk, (
+        "Le compte a été créé dans l'affaire soumise par l'appelant. `client` est une "
+        "entrée de sérialiseur, donc un propriétaire peut poser une adresse de connexion "
+        "qu'il contrôle chez un concurrent."
+    )
+    assert cree.est_proprietaire is False
+    assert cree.is_staff is False
+    assert cree.is_superuser is False
+    assert cree.derniere_connexion_ip is None
+
+    # Et le contrôle positif : l'affaire du concurrent n'a rien gagné. Sans lui, une
+    # implémentation qui créerait *deux* comptes passerait les assertions ci-dessus.
+    assert not Utilisateur.objects.using("default").filter(client=concurrent).exists()
+
+
+def test_perm02_la_suppression_dun_compte_nexiste_nulle_part(affaire_reelle):
+    """PERM-02 / `03-UI-SPEC.md` 7.8 — il n'y a pas de route de suppression, et il n'y en aura pas.
+
+    Un compte est référencé par des ventes, par `JournalDroit` et par dix ans de
+    conservation (art. 211 CGI). Une suppression réussie n'est donc pas une perte de
+    confort : c'est une violation fiscale et un journal des droits amputé de son sujet.
+    La désactivation est le seul chemin, et elle est réversible.
+
+    Trois assertions, parce qu'une seule ne tient pas. Le 405 constate la route absente
+    aujourd'hui ; l'absence de `destroy` et de `DestroyModelMixin` dans le MRO constate
+    qu'elle ne peut pas revenir par héritage — passer le jeu de vues à un `ModelViewSet`
+    complet la rendrait d'un coup, sans qu'une ligne de route change.
+    """
+    from rest_framework import mixins
+
+    from plateforme.comptes import views
+    from tests.factories import GerantFactory, ProprietaireFactory
+
+    proprietaire = ProprietaireFactory(client=affaire_reelle.client)
+    karim = GerantFactory(client=affaire_reelle.client)
+    api = _connecter(_client_api(), proprietaire)
+
+    # Le contrôle positif d'abord : la fiche existe et se lit. Sans lui, un 405 sur une
+    # route inexistante prouverait la même chose qu'un 405 sur une route protégée.
+    assert api.get(_detail(karim)).status_code == 200
+
+    assert api.delete(_detail(karim)).status_code == 405, (
+        "Une route de suppression de compte répond. `03-UI-SPEC.md` 7.8 : la suppression "
+        "n'existe nulle part, et le mot n'apparaît jamais."
+    )
+
+    assert not hasattr(views.VueComptes, "destroy")
+    assert mixins.DestroyModelMixin not in views.VueComptes.__mro__
+
+
+def test_perm02_seul_un_appelant_habilite_atteint_la_gestion_des_comptes(affaire_reelle):
+    """PERM-02 — `compte.gerer`, ou propriétaire. Sinon 403, sur chaque route.
+
+    Rouge, ce test dirait que la surface d'écriture de la phase est ouverte à tout compte
+    authentifié — c'est-à-dire qu'un gérant sans aucun droit peut créer un collègue et
+    s'accorder ce qu'il veut par son intermédiaire.
+
+    Le refus est un **403** et non un 401 : la session est valide, c'est le droit qui
+    manque, et `03-UI-SPEC.md` 8.6 branche des écrans opposés sur les deux codes (plan
+    03-08). Le contrôle positif est le gérant-gestionnaire : sans lui, une permission qui
+    refuserait tout le monde passerait.
+    """
+    from tests.factories import GerantFactory
+
+    simple = GerantFactory(client=affaire_reelle.client)
+    api = _connecter(_client_api(), simple)
+
+    for chemin in (COMPTES, CATALOGUE, _detail(simple)):
+        assert api.get(chemin).status_code == 403, (
+            f"{chemin} a répondu à un gérant sans `compte.gerer`."
+        )
+    assert api.post(COMPTES, {"nom_complet": "X", "email": "x@y.ma"}, format="json").status_code == 403
+
+    gestionnaire = _gerant_gestionnaire(affaire_reelle, ["AUTHANFA"])
+    autre = _connecter(_client_api(), gestionnaire)
+    assert autre.get(COMPTES).status_code == 200, (
+        "Un gérant détenant `compte.gerer` est refusé : la permission refuse tout le "
+        "monde, et les trois 403 ci-dessus ne prouvent rien."
+    )
+
+
+def test_perm02_le_mot_de_passe_provisoire_nest_montre_quune_seule_fois(affaire_reelle):
+    """PERM-02 — il n'y a pas de chemin par courriel, donc le secret transite une fois.
+
+    Le plan 03-08 a fermé la réinitialisation par courriel faute de fournisseur d'e-mail
+    dans la pile. Le chemin livré est donc : le propriétaire pose le mot de passe, le lit
+    **une fois**, le transmet de vive voix, et `doit_changer_mot_de_passe` force le
+    changement à la première connexion.
+
+    Rouge, ce test dirait que le secret est relisible — dans la fiche, dans la liste, ou
+    dans un champ oublié d'un sérialiseur. Un mot de passe provisoire relisible par tout
+    détenteur de `compte.gerer` est une prise de contrôle silencieuse du compte d'un
+    collègue (menace T-03-65).
+    """
+    from plateforme.comptes.models import Utilisateur
+    from tests.factories import ProprietaireFactory
+
+    proprietaire = ProprietaireFactory(client=affaire_reelle.client)
+    api = _connecter(_client_api(), proprietaire)
+
+    creation = api.post(
+        COMPTES,
+        {"nom_complet": "Karim Benali", "email": "karim@optiqueanfa.ma"},
+        format="json",
+    )
+    assert creation.status_code == 201, creation.data
+    provisoire = creation.data["mot_de_passe_provisoire"]
+    assert provisoire, "Aucun mot de passe provisoire n'est renvoyé à la création."
+
+    karim = Utilisateur.objects.using("default").get(email="karim@optiqueanfa.ma")
+    # Le contrôle positif : le secret rendu est bien celui du compte. Sans lui, un point
+    # de terminaison qui renverrait une chaîne aléatoire sans la poser passerait.
+    assert karim.check_password(provisoire)
+    assert karim.doit_changer_mot_de_passe is True
+
+    interdits = re.compile(r"password|mot_de_passe_provisoire")
+    for chemin in (COMPTES, _detail(karim)):
+        reponse = api.get(chemin)
+        corps = reponse.content.decode()
+        assert provisoire not in corps, f"{chemin} relit le mot de passe provisoire."
+        lignes = reponse.data if isinstance(reponse.data, list) else [reponse.data]
+        for ligne in lignes:
+            fautifs = sorted(cle for cle in ligne if interdits.search(cle))
+            assert not fautifs, (
+                f"{chemin} expose {fautifs}. Le hash lui-même n'a rien à faire dans une "
+                "charge utile : il se soumet à une attaque hors ligne. "
+                "(`doit_changer_mot_de_passe` est un drapeau, pas un secret.)"
+            )
+
+    reinitialisation = api.post(f"{_detail(karim)}mot-de-passe/", {}, format="json")
+    assert reinitialisation.status_code == 200, reinitialisation.data
+    nouveau = reinitialisation.data["mot_de_passe_provisoire"]
+    assert nouveau and nouveau != provisoire
+
+    karim.refresh_from_db()
+    assert karim.check_password(nouveau)
+    assert not karim.check_password(provisoire), (
+        "L'ancien mot de passe fonctionne encore après une réinitialisation."
+    )
+    assert karim.doit_changer_mot_de_passe is True
+    assert nouveau not in api.get(_detail(karim)).content.decode()
 
 
 def test_perm02_un_compte_desactive_est_refuse_des_la_requete_suivante(affaire_reelle):

@@ -36,24 +36,39 @@ from __future__ import annotations
 
 import logging
 import math
+from contextlib import contextmanager
 
 from django.contrib.auth import authenticate, login, logout
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
-from drf_spectacular.utils import extend_schema
-from rest_framework import exceptions, status
+from drf_spectacular.utils import extend_schema, extend_schema_view
+from rest_framework import exceptions, mixins, permissions, status, viewsets
+from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView, exception_handler
 
 from plateforme.comptes.acces import Acces, acces_pour
+from plateforme.comptes.models import Utilisateur
+from plateforme.comptes.permissions_catalogue import Permission
 from plateforme.comptes.serializers import (
     AmorcageSerializer,
     ChangementMotDePasseSerializer,
+    CompteCreeSerializer,
+    CompteSerializer,
     ConnexionSerializer,
+    CreationCompteSerializer,
+    ModificationIdentiteSerializer,
+    StatutSerializer,
     charge_utile_moi,
 )
+from plateforme.comptes.services import (
+    magasins_actifs_par_id,
+    mot_de_passe_provisoire,
+)
+from plateforme.projection.vues import acces_de_la_requete
 
 logger = logging.getLogger("plateforme.comptes")
 
@@ -346,3 +361,264 @@ class VueMotDePasse(APIView):
         update_session_auth_hash(request, utilisateur)
 
         return Response(_amorcage(utilisateur, request))
+
+
+# ======================================================================================
+# PERM-02 — la gestion des comptes (plan 03-09)
+# ======================================================================================
+#
+# **Il n'existe aucune route de retrait d'un compte, et il n'y en aura pas.** Un compte
+# est référencé par des ventes, par `JournalDroit` et par dix ans de conservation
+# (art. 211 CGI) ; la désactivation est le seul chemin, et elle est réversible
+# (`03-UI-SPEC.md` 7.8). Le jeu de vues ci-dessous n'hérite donc **d'aucun mixin de
+# retrait de DRF**, et un test vérifie les deux — le 405 d'aujourd'hui et l'absence du
+# mixin dans le MRO, qui est ce qui empêche la route de revenir par héritage le jour où
+# quelqu'un passe à un `ModelViewSet` complet. Le test nomme la classe ; ce fichier ne
+# la nomme pas, parce qu'un critère d'acceptation du plan compte ses occurrences ici
+# pour prouver qu'aucun chemin de retrait n'a été câblé — la même précaution que le
+# plan 03-08 a prise pour la réinitialisation par courriel.
+
+
+class PeutGererLesComptes(permissions.BasePermission):
+    """`compte.gerer`, résolu par `Acces`. Aucune branche de privilège.
+
+    Le propriétaire passe sans être nommé : son accès est **matérialisé** au plan 03-05 —
+    le catalogue complet, pour chacun de ses magasins actifs — donc `peut()` répond vrai
+    pour lui par le même chemin que pour un gérant. Écrire `or acces.est_proprietaire`
+    ici rouvrirait précisément la branche de privilège que ce plan-là a supprimée, et une
+    branche qui saute la vérification pour un propriétaire est une branche qu'un bug peut
+    atteindre pour un non-propriétaire (`03-RESEARCH.md` P3).
+
+    **`peut()` sans magasin est une conjonction** (plan 03-05) : un gérant doit détenir
+    `compte.gerer` dans *tous* ses magasins pour atteindre cette surface. C'est
+    fail-closed et c'est le bon sens de l'erreur — administrer des comptes n'est pas une
+    action de magasin, et l'union `peut_quelque_part` n'autorise jamais rien.
+
+    Conséquence assumée : un propriétaire dont l'affaire n'a aucun magasin actif est
+    refusé ici. Il l'est déjà partout ailleurs, puisque `Acces` ne lui résout alors aucun
+    droit ; un cas particulier ici masquerait une affaire à moitié provisionnée au lieu
+    de la signaler.
+    """
+
+    message = "Vous n'avez pas accès à cette page."
+
+    def has_permission(self, request, view):
+        return acces_de_la_requete(request).peut(Permission.COMPTE_GERER)
+
+
+def _refuser_si_non_gerable(acces, cible):
+    """Les deux comptes que cette surface ne gère pas : le propriétaire, et soi-même.
+
+    `03-UI-SPEC.md` 7.7, ligne par ligne. Les droits du propriétaire ne se modifient pas
+    — ils sont matérialisés à la résolution, pas stockés — et personne n'administre son
+    propre compte ici, ce qui ferme l'auto-promotion d'un gérant-gestionnaire et la
+    prise de contrôle du compte du propriétaire par une réinitialisation de son mot de
+    passe.
+
+    Le propriétaire change son propre mot de passe par `/api/auth/mot-de-passe/`, et un
+    propriétaire qui l'oublie est réinitialisé par l'opérateur via l'admin (plan 03-08).
+    """
+    if cible.est_proprietaire:
+        raise exceptions.PermissionDenied(
+            "Le compte du propriétaire ne se gère pas ici : il a accès à toute l'affaire."
+        )
+    if cible.pk == acces.utilisateur_id:
+        raise exceptions.PermissionDenied(
+            "Un compte ne se gère pas lui-même. Demandez au propriétaire."
+        )
+
+
+@contextmanager
+def _erreurs_de_service():
+    """Traduire les exceptions du service en réponses, et nulle part ailleurs.
+
+    Le service lève les exceptions de **Django** — `ValidationError` et
+    `PermissionDenied` — parce qu'il doit rester appelable depuis une commande de gestion
+    et depuis l'inscription en libre service de la phase 12, qui n'ont pas de requête
+    HTTP. DRF ne convertit pas `django.core.exceptions.ValidationError` : sans cette
+    traduction, un magasin non accordé produirait un **500** avec sa trace.
+    """
+    try:
+        yield
+    except DjangoValidationError as erreur:
+        detail = (
+            erreur.message_dict
+            if hasattr(erreur, "message_dict")
+            else list(erreur.messages)
+        )
+        raise exceptions.ValidationError(detail) from erreur
+
+
+@extend_schema_view(
+    list=extend_schema(
+        responses={200: CompteSerializer(many=True)},
+        summary="Les comptes de l'affaire",
+    ),
+    retrieve=extend_schema(
+        responses={200: CompteSerializer}, summary="La fiche d'un compte"
+    ),
+)
+class VueComptes(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+    """`/api/comptes/` — créer un gérant, corriger son identité, le désactiver.
+
+    La liste porte ce que `03-UI-SPEC.md` 7.2 affiche, propriétaire compris : sa ligne
+    est première et marquée, et elle n'ouvre pas d'éditeur de droits (7.7).
+    """
+
+    serializer_class = CompteSerializer
+    permission_classes = [permissions.IsAuthenticated, PeutGererLesComptes]
+    #: `delete` et `put` sont absents. Le premier n'existe pas (7.8) ; le second n'existe
+    #: pas non plus, parce qu'un remplacement complet d'une fiche de compte n'a aucun
+    #: usage et offrirait une seconde porte d'écriture à tenir en cohérence avec la
+    #: première.
+    http_method_names = ["get", "post", "patch", "head", "options"]
+
+    def get_queryset(self):
+        """**La portée est ici**, donc `get_object()` en hérite et la fiche est couverte.
+
+        Même règle qu'au plan 03-07 : filtrer dans `list()` laisserait la route de détail
+        grande ouverte sur un petit entier deviné, et la vue *aurait l'air* protégée.
+
+        `client_id` vide — un opérateur de plateforme, ou une requête sans accès résolu —
+        rend l'ensemble vide et non l'ensemble total : `filter(client_id=None)`
+        ramènerait tous les opérateurs de la flotte.
+        """
+        acces = acces_de_la_requete(self.request)
+        if acces.client_id is None:
+            return Utilisateur.objects.none()
+        return Utilisateur.objects.filter(client_id=acces.client_id).order_by(
+            "-est_proprietaire", "nom_complet"
+        )
+
+    def get_serializer_context(self):
+        contexte = super().get_serializer_context()
+        acces = acces_de_la_requete(self.request)
+        # Le générateur de schéma n'a aucun locataire lié : lire `Magasin` ici lèverait
+        # `NoTenantBound` pendant `manage.py spectacular`. Même court-circuit qu'au
+        # plan 03-07, à l'endroit où la lecture est écrite.
+        contexte["magasins_par_id"] = (
+            {} if acces.pour_le_schema else magasins_actifs_par_id()
+        )
+        return contexte
+
+    @extend_schema(
+        request=CreationCompteSerializer,
+        responses={201: CompteCreeSerializer},
+        summary="Créer un compte gérant",
+    )
+    def create(self, request, *args, **kwargs):
+        """Le `client` est posé **par le serveur**, et n'est jamais lu dans le corps.
+
+        C'est la ligne que la menace T-03-57 vise. Elle est écrite ici, en clair, plutôt
+        que déduite d'une absence dans un sérialiseur : un lecteur qui cherche « d'où
+        vient le client de ce compte ? » trouve la réponse au premier endroit où il
+        regarde.
+        """
+        acces = acces_de_la_requete(request)
+        formulaire = CreationCompteSerializer(data=request.data)
+        formulaire.is_valid(raise_exception=True)
+
+        secret = formulaire.validated_data.get(
+            "mot_de_passe_provisoire"
+        ) or mot_de_passe_provisoire()
+
+        compte = Utilisateur(
+            nom_complet=formulaire.validated_data["nom_complet"],
+            email=formulaire.validated_data["email"],
+            client_id=acces.client_id,
+            doit_changer_mot_de_passe=True,
+        )
+        compte.set_password(secret)
+        compte.save(using="default")
+
+        return Response(
+            self._charge_utile(compte, secret), status=status.HTTP_201_CREATED
+        )
+
+    @extend_schema(
+        request=ModificationIdentiteSerializer,
+        responses={200: CompteSerializer},
+        summary="Corriger le nom ou l'adresse d'un compte",
+    )
+    def partial_update(self, request, *args, **kwargs):
+        """Le nom et l'adresse. Le propriétaire corrige les siens, personne d'autre.
+
+        `03-UI-SPEC.md` 7.7 : un gérant-gestionnaire ne modifie pas sa propre fiche — il
+        ne peut changer que son mot de passe, par `/api/auth/mot-de-passe/`.
+        """
+        cible = self.get_object()
+        acces = acces_de_la_requete(request)
+        if cible.est_proprietaire:
+            if cible.pk != acces.utilisateur_id:
+                raise exceptions.PermissionDenied(
+                    "La fiche du propriétaire ne se modifie que par lui-même."
+                )
+        elif cible.pk == acces.utilisateur_id:
+            raise exceptions.PermissionDenied(
+                "Un compte ne modifie pas sa propre fiche. Demandez au propriétaire."
+            )
+
+        formulaire = ModificationIdentiteSerializer(
+            instance=cible, data=request.data, partial=True
+        )
+        formulaire.is_valid(raise_exception=True)
+        modifies = []
+        for champ, valeur in formulaire.validated_data.items():
+            setattr(cible, champ, valeur)
+            modifies.append(champ)
+        if modifies:
+            cible.save(using="default", update_fields=modifies)
+        return Response(self.get_serializer(cible).data)
+
+    @extend_schema(
+        request=StatutSerializer,
+        responses={200: CompteSerializer},
+        summary="Activer ou désactiver un compte",
+    )
+    @action(detail=True, methods=["post"], url_path="statut")
+    def statut(self, request, pk=None):
+        """PERM-02 — la désactivation mord dès la requête suivante, sans machinerie.
+
+        `ModelBackend.get_user()` appelle `user_can_authenticate()` à **chaque** requête,
+        donc il n'y a ni liste de révocation ni fenêtre d'expiration à attendre. C'est la
+        moitié « révocation » de l'argument session-contre-jeton, et le plan 03-08 la
+        vérifie de bout en bout.
+        """
+        cible = self.get_object()
+        _refuser_si_non_gerable(acces_de_la_requete(request), cible)
+
+        formulaire = StatutSerializer(data=request.data)
+        formulaire.is_valid(raise_exception=True)
+        cible.is_active = formulaire.validated_data["actif"]
+        cible.save(using="default", update_fields=["is_active"])
+        return Response(self.get_serializer(cible).data)
+
+    @extend_schema(
+        request=None,
+        responses={200: CompteCreeSerializer},
+        summary="Réinitialiser le mot de passe d'un compte",
+    )
+    @action(detail=True, methods=["post"], url_path="mot-de-passe")
+    def mot_de_passe(self, request, pk=None):
+        """Un nouveau secret, montré **une seule fois**, et le drapeau reposé.
+
+        Changer le mot de passe déconnecte la cible partout : le hachage de session est
+        dérivé du hachage du mot de passe, donc toute session ouverte devient invalide à
+        la requête suivante. C'est le comportement voulu pour une réinitialisation, et
+        c'est pourquoi rien n'est appelé pour purger les sessions à la main.
+        """
+        cible = self.get_object()
+        _refuser_si_non_gerable(acces_de_la_requete(request), cible)
+
+        secret = mot_de_passe_provisoire()
+        cible.set_password(secret)
+        cible.doit_changer_mot_de_passe = True
+        cible.save(using="default", update_fields=["password", "doit_changer_mot_de_passe"])
+        return Response(self._charge_utile(cible, secret))
+
+    def _charge_utile(self, compte, secret: str) -> dict:
+        """Le compte, **et** le secret — la seule forme de réponse qui le porte."""
+        return {
+            "compte": self.get_serializer(compte).data,
+            "mot_de_passe_provisoire": secret,
+        }

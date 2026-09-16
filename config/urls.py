@@ -26,9 +26,16 @@ registered in the admin (PERM-06).
 from django.contrib import admin
 from django.urls import include, path
 
+from plateforme.comptes.urls import urlpatterns_gestion
+
 urlpatterns = [
     path("admin/", admin.site.urls),
     # PERM-01. Same-origin with the SPA, which is what makes session cookies work with
     # no CORS configuration on either side: `web/` proxies `/api` to this application.
     path("api/auth/", include("plateforme.comptes.urls")),
+    # PERM-02 / PERM-03. The write surface: accounts, grants and the offerable
+    # catalogue. Mounted from the same module as the auth routes, under a second
+    # prefix, because both are the accounts app — `include()` would take that module's
+    # `urlpatterns`, so the second list is named and imported explicitly.
+    path("api/comptes/", include(urlpatterns_gestion)),
 ]
