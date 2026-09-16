@@ -73,9 +73,34 @@ CHAMPS_PROTEGES: dict[str, str] = {}
 #: une colonne et que personne n'a décidé qui peut la voir. « Public » est ici une décision
 #: écrite, datée et relisible.
 #:
-#: Vide en phase 3 parce qu'aucun sérialiseur métier n'existe encore. Les phases 4 à 10 la
-#: remplissent au fur et à mesure, dans le même commit que leurs sérialiseurs.
-CHAMPS_PUBLICS: frozenset[str] = frozenset()
+#: Les phases 4 à 10 la remplissent au fur et à mesure, dans le même commit que leurs
+#: sérialiseurs. Les huit premières entrées viennent du plan 03-08 : ce sont les champs
+#: de l'amorçage de la SPA (`/api/auth/moi/`).
+#:
+#: **`control_plane.Client` est la raison pour laquelle cette structure vaut son coût.**
+#: La table porte aussi `db_name`, `db_host`, `db_user` et `db_password_encrypted`. Deux
+#: champs y sont déclarés publics ; les autres ne sont pas « privés par oubli », ils sont
+#: **non classés**, et `test_perm06_tout_champ_de_modele_expose_est_classe` rougit en les
+#: nommant si quelqu'un les ajoute au sérialiseur. Le garde vaut ici plus que partout
+#: ailleurs, parce que la charge utile concernée est servie à chaque connexion.
+CHAMPS_PUBLICS: frozenset[str] = frozenset(
+    {
+        # L'identité du compte connecté (plan 03-08). `password` est absent, donc non
+        # classé, donc refusé.
+        "comptes.Utilisateur.id",
+        "comptes.Utilisateur.email",
+        "comptes.Utilisateur.nom_complet",
+        "comptes.Utilisateur.est_proprietaire",
+        "comptes.Utilisateur.doit_changer_mot_de_passe",
+        # L'affaire, telle qu'elle s'affiche dans la barre supérieure.
+        "control_plane.Client.code",
+        "control_plane.Client.raison_sociale",
+        # Le sélecteur de magasin (`03-UI-SPEC.md` 5.4).
+        "magasins.Magasin.id",
+        "magasins.Magasin.code",
+        "magasins.Magasin.nom",
+    }
+)
 
 
 def cle_de_champ(modele, nom_du_champ: str) -> str:

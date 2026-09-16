@@ -63,3 +63,22 @@ TENANCY_STRICT = True
 #    something that looks like a production client database.
 TENANT_DB_NAME_PREFIX = "test_client_c"
 TENANT_DB_USER_PREFIX = "test_client_u"
+
+# The rate-limit counter lives in the cache, so the cache is pinned here rather than
+# inherited. Two reasons, and the second is the one that bites:
+#
+# 1. a suite that shared a Redis with a developer's running application would count their
+#    login attempts against its own limit, and vice versa;
+# 2. `base.py` declares no CACHES today, so the suite falls back to Django's in-process
+#    LocMemCache by accident. The day someone adds a Redis there for a legitimate reason,
+#    the throttling tests would start leaking counters between runs and between xdist
+#    workers — and they would fail *intermittently*, which is the worst way to learn it.
+#
+# `conftest.py`'s autouse `cache_vide` fixture clears this between tests; a per-test
+# LOCATION would not, because DRF's throttle holds `caches["default"]` at import.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "suite-de-tests",
+    }
+}

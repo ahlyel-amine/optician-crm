@@ -27,8 +27,32 @@ from __future__ import annotations
 import pytest
 
 
-@pytest.mark.pending
-def test_perm01_la_connexion_etablit_une_session_et_lie_le_client(db_all):
+#: Les chemins, écrits une fois. Un test qui recopie une URL passe le jour où la route
+#: change de place, parce qu'il teste alors une 404 bien formée.
+CSRF = "/api/auth/csrf/"
+CONNEXION = "/api/auth/connexion/"
+DECONNEXION = "/api/auth/deconnexion/"
+MOI = "/api/auth/moi/"
+MOT_DE_PASSE = "/api/auth/mot-de-passe/"
+
+
+def _client_api(csrf=False):
+    from rest_framework.test import APIClient
+
+    return APIClient(enforce_csrf_checks=csrf)
+
+
+def _connecter(api, utilisateur, mot_de_passe=None):
+    from tests.factories import MOT_DE_PASSE_DE_TEST
+
+    return api.post(
+        CONNEXION,
+        {"email": utilisateur.email, "mot_de_passe": mot_de_passe or MOT_DE_PASSE_DE_TEST},
+        format="json",
+    )
+
+
+def test_perm01_la_connexion_etablit_une_session_et_lie_le_client(affaire_reelle):
     """PERM-01 — se connecter doit produire une session *et* lier le locataire.
 
     Rouge, ce test prouverait que l'identité et la tenancy sont deux choses distinctes
@@ -36,8 +60,105 @@ def test_perm01_la_connexion_etablit_une_session_et_lie_le_client(db_all):
     pas jusqu'au routeur obtient une session parfaitement valide au-dessus d'une couche
     métier qui refuse de tourner — ou pire, qui tombe sur `default`. C'est la couture
     exacte que la phase 2 a laissée ouverte et que la phase 3 referme.
+
+    **La preuve de liaison est la donnée, pas l'alias.** Les deux magasins n'existent que
+    dans la base de cet opticien ; aucun ne peut être lu depuis le plan de contrôle. Les
+    voir dans la réponse signifie que `TenantMiddleware` a enregistré `tenant_<pk>`, que
+    le routeur l'a choisi, et que la requête a traversé les deux. Asserter le nom de
+    l'alias aurait passé au-dessus d'un routeur qui lie correctement et lit ailleurs.
+
+    La charge utile de **la réponse de connexion elle-même** est vérifiée, et pas
+    seulement celle de la requête suivante : au moment où la vue de connexion s'exécute,
+    `TenantMiddleware` a **déjà** tourné avec un utilisateur anonyme, donc rien n'est lié.
+    Une vue qui se contenterait d'appeler `login()` et de sérialiser `moi` lèverait
+    `NoTenantBound`. C'est la seule subtilité réelle de ce point de terminaison.
     """
-    pytest.fail("non implémenté : plan 03-08")
+    from tests.factories import ProprietaireFactory
+
+    proprietaire = ProprietaireFactory(client=affaire_reelle.client)
+    api = _client_api()
+
+    reponse = _connecter(api, proprietaire)
+    assert reponse.status_code == 200, reponse.data
+    assert "sessionid" in api.cookies, (
+        "Aucun cookie de session n'a été posé : la réponse est peut-être correcte, mais "
+        "rien n'a été établi."
+    )
+    assert reponse.data["client"]["raison_sociale"] == "Optique Bennani SARL"
+    assert {m["code"] for m in reponse.data["magasins"]} == {"AUTHANFA", "AUTHMAARIF"}, (
+        "La réponse de connexion ne porte pas les magasins de l'affaire. La vue doit lier "
+        "le locataire elle-même : `TenantMiddleware` a tourné avant `login()`, donc avec "
+        "un utilisateur anonyme."
+    )
+
+    suivante = api.get(MOI)
+    assert suivante.status_code == 200, suivante.data
+    assert {m["code"] for m in suivante.data["magasins"]} == {"AUTHANFA", "AUTHMAARIF"}, (
+        "La requête suivante ne lit pas la base du client. La session est valide et la "
+        "couche métier ne l'est pas — exactement la moitié de couture que PERM-01 ferme."
+    )
+
+
+def test_perm01_la_reponse_de_connexion_pose_un_cookie_de_trente_jours(affaire_reelle):
+    """PERM-01 — la moitié bout en bout de « reste connecté ».
+
+    Le réglage et l'en-tête peuvent diverger : `SESSION_EXPIRE_AT_BROWSER_CLOSE = True`
+    produit un cookie **sans** `Max-Age` alors que `SESSION_COOKIE_AGE` reste parfaitement
+    à trente jours, et un test qui ne lit que les réglages resterait vert. Ce test lit
+    l'en-tête réellement émis.
+    """
+    from tests.factories import ProprietaireFactory
+
+    proprietaire = ProprietaireFactory(client=affaire_reelle.client)
+    reponse = _connecter(_client_api(), proprietaire)
+
+    cookie = reponse.cookies["sessionid"]
+    assert cookie["max-age"], (
+        "Le cookie de session ne porte aucun `Max-Age` : c'est un cookie de session au "
+        "sens du navigateur, qui meurt à la fermeture de l'onglet."
+    )
+    assert int(cookie["max-age"]) >= TRENTE_JOURS_EN_SECONDES
+
+
+def test_perm01_lechec_de_connexion_ne_distingue_jamais_les_motifs(affaire_reelle):
+    """T-03-48 — trois causes, une seule réponse, au caractère près.
+
+    Un compte inconnu, un mot de passe faux et un compte **désactivé** doivent produire
+    exactement la même réponse. La troisième est celle qu'on oublie, et c'est la plus
+    coûteuse : un gérant congédié ne doit pas l'apprendre de l'écran de connexion, c'est
+    le propriétaire qui le lui dit. Une réponse distincte transforme aussi l'écran en
+    oracle d'énumération de comptes pour toute la flotte, puisqu'il n'y a qu'une adresse
+    de connexion (CLAUDE.md #11).
+
+    L'assertion porte sur le **corps entier** et pas seulement sur le code de statut :
+    c'est un champ, un mot ou une clé en plus qui fait la différence, et un test qui ne
+    compare que `status_code` laisserait passer `{"detail": ..., "compte_desactive": true}`.
+    """
+    from tests.factories import MOT_DE_PASSE_DE_TEST, GerantFactory
+
+    gerant = GerantFactory(client=affaire_reelle.client)
+    desactive = GerantFactory(client=affaire_reelle.client, is_active=False)
+
+    inconnu = _client_api().post(
+        CONNEXION,
+        {"email": "personne@nulle-part.test", "mot_de_passe": MOT_DE_PASSE_DE_TEST},
+        format="json",
+    )
+    faux = _connecter(_client_api(), gerant, mot_de_passe="ce-n-est-pas-le-bon")
+    ferme = _connecter(_client_api(), desactive)
+
+    reponses = [inconnu, faux, ferme]
+    assert {r.status_code for r in reponses} == {400}, (
+        f"Les statuts sont {[r.status_code for r in reponses]}. Ils doivent être "
+        "identiques, et 400 plutôt que 401 : l'interface réserve 401 à la session expirée "
+        "et y branche une redirection globale vers `/connexion` (UI 8.6)."
+    )
+    corps = [r.json() for r in reponses]
+    assert corps[0] == corps[1] == corps[2], (
+        f"Les corps diffèrent : {corps}. Compte inconnu, mot de passe faux et compte "
+        "désactivé doivent être indiscernables."
+    )
+    assert corps[0] == {"detail": "Identifiant ou mot de passe incorrect."}
 
 
 #: Trente jours, en secondes. La valeur que PERM-01 exige, écrite une fois ici et
@@ -283,15 +404,40 @@ def test_perm01_clearsessions_est_planifie_et_purge_reellement(db):
     )
 
 
-@pytest.mark.pending
-def test_perm01_la_deconnexion_invalide_la_session_immediatement(db_all):
+def test_perm01_la_deconnexion_invalide_la_session_immediatement(affaire_reelle):
     """PERM-01 — se déconnecter doit détruire la session côté serveur, pas le cookie.
 
     Rouge, ce test signalerait une déconnexion qui se contente de supprimer le cookie du
     navigateur : la clé de session reste valide côté serveur, donc quiconque l'a captée
-    reste authentifié. Le test rejoue la clé après la déconnexion et exige un refus.
+    reste authentifié. Le test **rejoue la clé** après la déconnexion et exige un refus —
+    sans cela il ne vérifierait que le comportement du bocal à cookies du client de test,
+    qui n'est la garantie de personne.
+
+    C'est aussi la moitié « révocation » de l'argument session-contre-jeton : il n'y a
+    aucune fenêtre d'expiration à attendre, parce qu'il n'y a rien à expirer. La ligne
+    n'existe plus.
     """
-    pytest.fail("non implémenté : plan 03-08")
+    from django.contrib.sessions.models import Session
+
+    from tests.factories import ProprietaireFactory
+
+    proprietaire = ProprietaireFactory(client=affaire_reelle.client)
+    api = _client_api()
+    _connecter(api, proprietaire)
+    cle = api.cookies["sessionid"].value
+    assert Session.objects.filter(pk=cle).exists()
+
+    assert api.post(DECONNEXION).status_code == 204
+
+    assert not Session.objects.filter(pk=cle).exists(), (
+        "La ligne de session existe encore : la déconnexion a vidé le cookie et laissé "
+        "la session valide côté serveur."
+    )
+    api.cookies["sessionid"] = cle
+    assert api.get(MOI).status_code == 401, (
+        "La clé rejouée est encore acceptée. Une déconnexion qui ne révoque pas n'est pas "
+        "une déconnexion."
+    )
 
 
 @pytest.mark.pending
@@ -307,8 +453,7 @@ def test_perm01_la_connexion_est_limitee_en_debit(db_all):
     pytest.fail("non implémenté : plan 03-08")
 
 
-@pytest.mark.pending
-def test_perm01_une_requete_api_sans_jeton_csrf_est_refusee(db_all):
+def test_perm01_une_requete_api_sans_jeton_csrf_est_refusee(affaire_reelle):
     """PERM-01 — le prix du cookie de session est le CSRF, et il se paie explicitement.
 
     L'authentification par cookie signifie que le navigateur joint la preuve
@@ -317,5 +462,190 @@ def test_perm01_une_requete_api_sans_jeton_csrf_est_refusee(db_all):
     page tierce peut créer un compte gérant ou accorder un droit au nom d'un propriétaire
     connecté. `SessionAuthentication` de DRF impose le CSRF ; ce test constate qu'on ne
     l'a pas contourné avec un `csrf_exempt` posé pour débloquer un test.
+
+    **Le contrôle positif est la moitié qui compte.** Un point de terminaison cassé refuse
+    aussi sans jeton, et un test qui n'assert que le refus serait vert au-dessus d'une
+    route morte. La même requête, avec le jeton, doit réussir.
+
+    Le jeton est relu **après** la connexion, délibérément : `django.contrib.auth.login`
+    appelle `rotate_token`, donc le jeton obtenu avant vaut pour la connexion et plus rien
+    après. Une SPA qui le mettrait en cache à l'amorçage casserait à la première écriture,
+    et ce test l'aurait dit.
     """
-    pytest.fail("non implémenté : plan 03-08")
+    from tests.factories import MOT_DE_PASSE_DE_TEST, ProprietaireFactory
+
+    proprietaire = ProprietaireFactory(client=affaire_reelle.client)
+    api = _client_api(csrf=True)
+
+    amorce = api.get(CSRF)
+    assert amorce.status_code == 204
+    assert "csrftoken" in api.cookies, (
+        "`/api/auth/csrf/` n'a posé aucun cookie. La SPA n'a alors aucun jeton à renvoyer "
+        "et la première écriture est refusée sans qu'on sache pourquoi."
+    )
+
+    connexion = api.post(
+        CONNEXION,
+        {"email": proprietaire.email, "mot_de_passe": MOT_DE_PASSE_DE_TEST},
+        format="json",
+        headers={"x-csrftoken": api.cookies["csrftoken"].value},
+    )
+    assert connexion.status_code == 200, connexion.data
+
+    jeton = api.cookies["csrftoken"].value
+    corps = {
+        "mot_de_passe_actuel": MOT_DE_PASSE_DE_TEST,
+        "nouveau_mot_de_passe": "correct-cheval-batterie-agrafe",
+    }
+
+    sans = api.post(MOT_DE_PASSE, corps, format="json")
+    assert sans.status_code == 403, (
+        f"Une écriture authentifiée sans jeton CSRF a reçu {sans.status_code}. Une page "
+        "tierce peut alors agir au nom d'un opticien connecté."
+    )
+
+    avec = api.post(MOT_DE_PASSE, corps, format="json", headers={"x-csrftoken": jeton})
+    assert avec.status_code == 200, (
+        f"La même écriture *avec* jeton a reçu {avec.status_code} : le refus ci-dessus ne "
+        "prouvait donc rien sur le CSRF."
+    )
+
+
+def test_perm01_moi_ne_rend_que_les_magasins_accordes_et_le_catalogue(affaire_reelle):
+    """PERM-01 / PERM-04 — l'amorçage de la SPA en une requête, et sa portée.
+
+    Trois propriétés, et chacune a son mode de défaillance :
+
+    * **les magasins sont ceux de `acces.magasins_ids`**, jamais tous ceux du client. Le
+      sélecteur de la barre supérieure est construit depuis cette liste (UI 5.4) : la
+      renvoyer entière donnerait à un gérant d'Anfa un menu déroulant contenant Maârif,
+      c'est-à-dire une énumération des magasins qu'il n'a pas ;
+    * **`permissions` est calculé avec `peut_quelque_part`** — l'union — parce qu'une
+      entrée de navigation doit apparaître dès que le droit est détenu *quelque part* :
+      un gérant qui gère le stock du seul magasin de Casablanca perdrait l'entrée Stock
+      sous la conjonction. Ce champ ne décide donc **rien** d'autre que l'affichage d'un
+      menu, et la projection serveur reste seule juge des données (UI 8.3) ;
+    * **le catalogue vient du serveur**, libellés et explications compris, pour que la SPA
+      n'ait jamais à coder un libellé de droit en dur (UI 7.4) et qu'un code ajouté en
+      phase 8 apparaisse sans changement côté client.
+    """
+    from plateforme.comptes.permissions_catalogue import PREREQUIS, SECTIONS, Permission
+    from tests.factories import (
+        AccesMagasinFactory,
+        DroitAccordeFactory,
+        GerantFactory,
+    )
+
+    gerant = GerantFactory(client=affaire_reelle.client)
+    AccesMagasinFactory(utilisateur=gerant, magasin_code="AUTHANFA")
+    DroitAccordeFactory(
+        utilisateur=gerant, magasin_code="AUTHANFA", code=Permission.STOCK_VOIR
+    )
+
+    api = _client_api()
+    _connecter(api, gerant)
+    charge = api.get(MOI).json()
+
+    assert [m["code"] for m in charge["magasins"]] == ["AUTHANFA"], (
+        f"`moi` renvoie {charge['magasins']}. Il doit renvoyer les magasins accordés, pas "
+        "ceux de l'affaire : la liste alimente le sélecteur de magasin."
+    )
+    assert charge["permissions"] == [Permission.STOCK_VOIR.value], (
+        f"`permissions` vaut {charge['permissions']}. C'est l'union des droits détenus "
+        "quelque part, et rien de plus."
+    )
+    assert charge["utilisateur"]["email"] == gerant.email
+    assert charge["utilisateur"]["est_proprietaire"] is False
+    assert "password" not in charge["utilisateur"]
+
+    titres = [section["titre"] for section in charge["catalogue"]["sections"]]
+    assert titres == [section.titre for section in SECTIONS]
+    codes_servis = {
+        droit["code"]
+        for section in charge["catalogue"]["sections"]
+        for droit in section["droits"]
+    }
+    assert codes_servis == set(Permission.values), (
+        "Le catalogue servi ne couvre pas les 21 codes. Un code absent est un droit que "
+        "le propriétaire ne peut pas accorder et que personne ne remarque."
+    )
+    assert charge["catalogue"]["prerequis"] == {
+        code: list(requis) for code, requis in PREREQUIS.items()
+    }
+
+
+def test_perm01_le_changement_de_mot_de_passe_efface_le_drapeau(affaire_reelle):
+    """PERM-01 — le chemin sans courriel, et la seule chose qui le rende acceptable.
+
+    Il n'existe aucun fournisseur d'e-mail transactionnel dans la pile, donc
+    `PasswordResetView` ne peut pas fonctionner : le propriétaire pose le mot de passe
+    initial d'un gérant, `doit_changer_mot_de_passe` force le changement à la première
+    connexion, et un propriétaire qui oublie le sien est réinitialisé par l'opérateur.
+    Ce test tient la seule moitié automatisable : le drapeau tombe **parce que le mot de
+    passe a changé**, et l'ancien ne vaut plus rien.
+
+    Le mot de passe actuel est exigé. Sans lui, un poste laissé déverrouillé une minute —
+    ou un CSRF réussi — donne un compte, définitivement, plutôt qu'une session.
+    """
+    from tests.factories import MOT_DE_PASSE_DE_TEST, GerantFactory
+
+    gerant = GerantFactory(client=affaire_reelle.client, doit_changer_mot_de_passe=True)
+    api = _client_api()
+    assert _connecter(api, gerant).data["utilisateur"]["doit_changer_mot_de_passe"] is True
+
+    refuse = api.post(
+        MOT_DE_PASSE,
+        {"mot_de_passe_actuel": "pas-le-bon", "nouveau_mot_de_passe": "orage-pluie-soleil-42"},
+        format="json",
+    )
+    assert refuse.status_code == 400, (
+        "Le changement a été accepté sans le mot de passe actuel : une session volée "
+        "devient un compte volé."
+    )
+
+    accepte = api.post(
+        MOT_DE_PASSE,
+        {
+            "mot_de_passe_actuel": MOT_DE_PASSE_DE_TEST,
+            "nouveau_mot_de_passe": "orage-pluie-soleil-42",
+        },
+        format="json",
+    )
+    assert accepte.status_code == 200, accepte.data
+
+    gerant.refresh_from_db()
+    assert gerant.doit_changer_mot_de_passe is False
+    assert gerant.check_password("orage-pluie-soleil-42")
+    assert not gerant.check_password(MOT_DE_PASSE_DE_TEST)
+
+
+def test_perm01_un_mot_de_passe_trivial_est_refuse_en_francais(affaire_reelle):
+    """PERM-01 — `validate_password` sans validateurs déclarés est un no-op silencieux.
+
+    Django ne pose aucun `AUTH_PASSWORD_VALIDATORS` par défaut dans un projet écrit à la
+    main : appeler `validate_password` sans les déclarer valide alors `1234`. Le réglage
+    et l'appel doivent exister ensemble, sinon le point de terminaison a l'air protégé et
+    ne l'est pas.
+
+    Le message est français parce que tout le produit l'est (APP-01) — et il vient des
+    traductions de Django, pas d'une chaîne recopiée.
+    """
+    from tests.factories import MOT_DE_PASSE_DE_TEST, GerantFactory
+
+    gerant = GerantFactory(client=affaire_reelle.client)
+    api = _client_api()
+    _connecter(api, gerant)
+
+    reponse = api.post(
+        MOT_DE_PASSE,
+        {"mot_de_passe_actuel": MOT_DE_PASSE_DE_TEST, "nouveau_mot_de_passe": "1234"},
+        format="json",
+    )
+    assert reponse.status_code == 400, (
+        "« 1234 » a été accepté comme mot de passe. `AUTH_PASSWORD_VALIDATORS` est vide, "
+        "ou `validate_password` n'est pas appelé."
+    )
+    corps = str(reponse.json())
+    assert "mot de passe" in corps.lower(), (
+        f"Le message d'erreur n'est pas en français : {corps}"
+    )

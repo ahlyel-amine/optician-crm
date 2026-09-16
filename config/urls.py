@@ -24,8 +24,11 @@ registered in the admin (PERM-06).
 """
 
 from django.contrib import admin
-from django.urls import path
+from django.urls import include, path
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    # PERM-01. Same-origin with the SPA, which is what makes session cookies work with
+    # no CORS configuration on either side: `web/` proxies `/api` to this application.
+    path("api/auth/", include("plateforme.comptes.urls")),
 ]

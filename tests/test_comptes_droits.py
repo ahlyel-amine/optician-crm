@@ -53,8 +53,7 @@ def test_perm02_un_proprietaire_ne_cree_un_compte_que_dans_son_propre_client(db_
     pytest.fail("non implémenté : plan 03-09")
 
 
-@pytest.mark.pending
-def test_perm02_un_compte_desactive_est_refuse_des_la_requete_suivante(db_all):
+def test_perm02_un_compte_desactive_est_refuse_des_la_requete_suivante(affaire_reelle):
     """PERM-02 — désactiver doit mordre tout de suite, sans machinerie de révocation.
 
     `ModelBackend.get_user()` appelle `user_can_authenticate()` à **chaque** requête, donc
@@ -64,9 +63,44 @@ def test_perm02_un_compte_desactive_est_refuse_des_la_requete_suivante(db_all):
     ce matin travaille encore cet après-midi.
 
     Le test agit sur une session **déjà ouverte** : désactiver avant la connexion ne
-    prouverait que le refus au login, qui n'est pas ce que PERM-02 demande.
+    prouverait que le refus au login, qui n'est pas ce que PERM-02 demande. C'est aussi
+    précisément le test qui échouerait sous un jeton porteur de quinze minutes (menace
+    T-03-51), et c'est pour cela qu'il interroge l'API plutôt que `ModelBackend` : on ne
+    teste pas Django, on teste que **notre** chemin d'authentification n'a rien mis en
+    cache devant lui.
+
+    Le refus est un **401** et non un 403 : `03-UI-SPEC.md` 8.6 branche sur 401 la
+    reconnexion globale, et un gérant désactivé doit atterrir sur l'écran de connexion,
+    pas sur « Vous n'avez pas accès à cette page ».
+
+    Implémenté au plan 03-08 plutôt qu'au 03-09 comme l'annonçait le stub : il lui faut
+    une session ouverte par le vrai point de terminaison de connexion, qui naît là.
     """
-    pytest.fail("non implémenté : plan 03-09")
+    from rest_framework.test import APIClient
+
+    from tests.factories import MOT_DE_PASSE_DE_TEST, GerantFactory
+
+    gerant = GerantFactory(client=affaire_reelle.client)
+    api = APIClient()
+    connexion = api.post(
+        "/api/auth/connexion/",
+        {"email": gerant.email, "mot_de_passe": MOT_DE_PASSE_DE_TEST},
+        format="json",
+    )
+    assert connexion.status_code == 200, connexion.data
+    assert api.get("/api/auth/moi/").status_code == 200, (
+        "La session ne fonctionne pas avant la désactivation : le refus qui suit ne "
+        "prouverait rien."
+    )
+
+    gerant.is_active = False
+    gerant.save(using="default", update_fields=["is_active"])
+
+    assert api.get("/api/auth/moi/").status_code == 401, (
+        "Le compte désactivé est encore servi. Quelque chose met le principal en cache "
+        "entre la base et `request.user` — c'est la fenêtre de révocation que la phase 3 "
+        "existe pour ne pas avoir."
+    )
 
 
 # --------------------------------------------------------------------------------------

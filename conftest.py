@@ -323,3 +323,96 @@ def magasins_du_client_b(tenant_b):
     bug derrière une collision qui n'arrive jamais en test.
     """
     return _creer_magasins()
+
+
+@pytest.fixture
+def affaire_reelle(db_all, allow_runtime_tenant_aliases):
+    """Une affaire dont l'**alias runtime** `tenant_<pk>` est réellement joignable.
+
+    Ce que cette fixture existe pour rendre testable : une requête HTTP complète, qui
+    traverse `TenantMiddleware`, se lie au client de l'utilisateur authentifié et lit des
+    lignes dans la base de cet opticien. C'est la couture que la phase 2 a laissée ouverte
+    et que PERM-01 referme, donc elle mérite un test de bout en bout plutôt qu'un test qui
+    pose `request.acces` à la main.
+
+    **Pourquoi `deux_magasins` ne suffit pas.** Les fixtures de locataire lient l'alias
+    *statique* `tenant_a`. `TenantMiddleware` ne connaît pas cet alias : il enregistre
+    `tenant_<pk>` depuis la ligne `Client`, donc une **autre connexion**. Le contournement
+    est de faire pointer la ligne `Client` sur la base de test de `tenant_a` — même base,
+    connexion distincte.
+
+    **Conséquence, et c'est la contrainte à connaître avant de réutiliser ceci :** une
+    connexion distincte ne voit pas la transaction de l'autre. Les magasins sont donc
+    créés *à travers l'alias runtime* et **committés**, puis supprimés dans un `finally`.
+    C'est le seul endroit de la suite qui écrive hors de la transaction de test, et c'est
+    assumé : sans cela, le test de bout en bout de la connexion n'existe pas et PERM-01
+    n'est vérifié que par morceaux.
+
+    Les codes de magasin sont préfixés `AUTH` pour qu'ils ne puissent jamais entrer en
+    collision avec les `ANFA` / `MAARIF` non committés de `deux_magasins` — deux
+    transactions qui insèrent le même code unique se bloqueraient l'une l'autre, et un
+    test qui *pend* est pire qu'un test qui échoue.
+    """
+    from types import SimpleNamespace
+
+    from django.db import connections
+
+    from domaine.magasins.models import Magasin
+    from plateforme.control_plane.models import Client
+    from plateforme.tenancy.context import tenant_context
+    from plateforme.tenancy.registry import (
+        alias_for,
+        evict_alias,
+        register_client_database,
+    )
+    from tests.factories import ClientFactory
+
+    reglages = connections["tenant_a"].settings_dict
+    client = ClientFactory(
+        status=Client.ACTIVE,
+        raison_sociale="Optique Bennani SARL",
+        db_name=reglages["NAME"],
+        db_host=reglages["HOST"],
+        db_port=int(reglages["PORT"]),
+        db_user=reglages["USER"],
+    )
+    client.set_db_password(reglages["PASSWORD"] or "")
+    client.save(using="default")
+
+    alias = alias_for(client.pk)
+    register_client_database(**client.connection_params())
+
+    with tenant_context(alias):
+        magasins = [
+            Magasin.objects.create(code=code, nom=nom, actif=True)
+            for code, nom in (("AUTHANFA", "Optique Anfa"), ("AUTHMAARIF", "Optique Maârif"))
+        ]
+
+    try:
+        yield SimpleNamespace(client=client, alias=alias, magasins=magasins)
+    finally:
+        with tenant_context(alias):
+            Magasin.objects.filter(pk__in=[m.pk for m in magasins]).delete()
+        evict_alias(alias)
+
+
+@pytest.fixture(autouse=True)
+def cache_vide():
+    """Vider le cache avant chaque test. Autouse, parce que l'oubli est invisible.
+
+    Le compteur de `ScopedRateThrottle` vit dans le cache (`config/settings/test.py` le
+    fixe à un LocMemCache de processus). Sans ce nettoyage, les onze tentatives du test de
+    limitation de débit restent comptées pour l'adresse `127.0.0.1`, et le **test
+    suivant** qui se connecte reçoit un 429 — donc un échec dans un fichier qui n'a rien
+    demandé, dont la cause est dans un autre. Observé, pas supposé : c'est exactement
+    ainsi que `tests/test_comptes_droits.py` a d'abord rougi.
+
+    Autouse plutôt que demandé explicitement, parce qu'un test qui oublie de demander
+    l'isolation ne le découvre pas — il le fait découvrir au test d'après, et l'ordre de
+    collecte décide lequel.
+    """
+    from django.core.cache import caches
+
+    for cache in caches.all(initialized_only=False):
+        cache.clear()
+    yield

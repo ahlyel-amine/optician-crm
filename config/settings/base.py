@@ -321,6 +321,11 @@ REST_FRAMEWORK = {
     # makes the limit *global* rather than bypassable. Too strict is the right side to err
     # on. Revisit this the day a proxy reaches production, with that proxy in hand.
     "NUM_PROXIES": 0,
+    # Two corrections, both about what a response body is allowed to say: 401 must mean
+    # "not authenticated" (DRF downgrades it to 403 whenever the authentication class
+    # supplies no `WWW-Authenticate` header, which `SessionAuthentication` does not), and
+    # `NoTenantBound` must never reach a body. See the handler's docstring.
+    "EXCEPTION_HANDLER": "plateforme.comptes.views.gestionnaire_dexceptions",
 }
 
 SPECTACULAR_SETTINGS = {
