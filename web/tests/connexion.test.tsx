@@ -342,7 +342,7 @@ describe("/connexion", () => {
   });
 
   it("le libelle du bouton ne change pas pendant l'attente", async () => {
-    let debloquer: (() => void) | null = null;
+    let debloquer!: () => void;
     const attente = new Promise<void>((resoudre) => {
       debloquer = resoudre;
     });
@@ -367,7 +367,7 @@ describe("/connexion", () => {
     // bouton qui passe de « Se connecter » a « Connexion... » saute de largeur
     // au moment ou l'utilisateur regarde exactement cet endroit.
     expect(bouton.textContent).toBe(libelleAuRepos);
-    debloquer?.();
+    debloquer();
   });
 
   it("il n'y a ni lien de mot de passe oublie, ni case de session persistante", async () => {

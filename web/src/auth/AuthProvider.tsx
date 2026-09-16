@@ -94,7 +94,7 @@ export function useAuth(): ValeurContexteAuth {
 /** `TOUS` n'est pas un code de magasin : aucun magasin ne peut s'appeler ainsi. */
 const TOUS_LES_MAGASINS = "TOUS";
 
-function cleDeStockage(identifiant: number): string {
+function cleDuMagasin(identifiant: number): string {
   return `optique.magasin.${identifiant}`;
 }
 
@@ -120,7 +120,7 @@ export function magasinInitial(amorcage: Amorcage): SelectionMagasin {
   const premier = accordes[0].code;
   let memorise: string | null = null;
   try {
-    memorise = localStorage.getItem(cleDeStockage(amorcage.utilisateur.id));
+    memorise = localStorage.getItem(cleDuMagasin(amorcage.utilisateur.id));
   } catch {
     memorise = null;
   }
@@ -199,10 +199,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
       try {
-        localStorage.setItem(
-          cleDeStockage(amorcage.utilisateur.id),
-          code ?? TOUS_LES_MAGASINS,
-        );
+        localStorage.setItem(cleDuMagasin(amorcage.utilisateur.id), code ?? TOUS_LES_MAGASINS);
       } catch {
         // Un navigateur en navigation privee peut refuser d'ecrire. Une
         // preference d'affichage perdue n'est pas une panne : on continue.
@@ -238,7 +235,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    *
    * Vider le contexte, **memoriser le chemin tente**, router vers `/connexion`
    * avec le message d'expiration, et y revenir apres reconnexion. Le chemin
-   * voyage dans l'etat de navigation plutot que dans `localStorage` : il
+   * voyage dans l'etat de navigation plutot que dans le stockage local — qui
+   * ne porte qu'une preference de magasin et rien d'autre : le chemin
    * appartient a cette tentative-ci, pas au navigateur, et un chemin oublie
    * dans un stockage persistant renverrait un jour quelqu'un sur un ecran qu'il
    * n'a pas demande.
