@@ -440,8 +440,7 @@ def test_perm01_la_deconnexion_invalide_la_session_immediatement(affaire_reelle)
     )
 
 
-@pytest.mark.pending
-def test_perm01_la_connexion_est_limitee_en_debit(db_all):
+def test_perm01_la_connexion_est_limitee_en_debit(affaire_reelle):
     """PERM-01 — une adresse de connexion unique pour toute la flotte se brute-force.
 
     CLAUDE.md #11 : il y a **une** adresse de connexion partagée par tous les opticiens.
@@ -449,8 +448,166 @@ def test_perm01_la_connexion_est_limitee_en_debit(db_all):
     de n'importe quelle affaire. Rouge, ce test dirait que ce point est ouvert sans
     limite. Argon2 rend chaque essai coûteux, ce qui est aussi une raison de limiter :
     sans plafond, l'essai coûteux devient un déni de service contre notre propre CPU.
+
+    Le compteur vit dans le cache, que `conftest.py` vide avant chaque test — sans quoi
+    les onze tentatives d'ici feraient échouer le **test suivant** qui se connecte, dans
+    un autre fichier, pour une cause invisible depuis lui. Observé, pas supposé.
+
+    Le onzième essai est fait avec les **bons** identifiants, délibérément : la limitation
+    doit s'appliquer avant l'authentification, sinon un attaquant qui trouve le mot de
+    passe à la onzième tentative entre quand même.
     """
-    pytest.fail("non implémenté : plan 03-08")
+    from tests.factories import MOT_DE_PASSE_DE_TEST, ProprietaireFactory
+
+    proprietaire = ProprietaireFactory(client=affaire_reelle.client)
+    api = _client_api()
+
+    for essai in range(10):
+        reponse = _connecter(api, proprietaire, mot_de_passe="faux")
+        assert reponse.status_code == 400, (
+            f"L'essai {essai + 1} a reçu {reponse.status_code} au lieu de 400 : la "
+            "fenêtre est plus étroite que dix, ou le compteur a fuité d'un autre test."
+        )
+
+    onzieme = _connecter(api, proprietaire, mot_de_passe=MOT_DE_PASSE_DE_TEST)
+    assert onzieme.status_code == 429, (
+        f"La onzième tentative a reçu {onzieme.status_code}. Avec les bons identifiants, "
+        "cela signifie que la limitation s'applique après l'authentification — donc pas "
+        "du tout, pour qui cherche un mot de passe."
+    )
+
+
+def test_perm01_le_429_porte_la_copie_francaise_et_un_delai_exploitable(affaire_reelle):
+    """`03-UI-SPEC.md` 6 — l'écran affiche un compte à rebours vivant, il lui faut un nombre.
+
+    Deux exigences distinctes, et la seconde est celle qu'on oublie. La copie doit être
+    **exactement** celle de la spécification — `Throttled` de DRF y concatène sinon
+    « Disponible dans N secondes. », une phrase que l'interface devrait analyser pour en
+    extraire sa durée. Et le délai doit arriver dans un **champ**, pas dans la phrase :
+    la ligne d'aide décompte et le bouton reste désactivé pendant la fenêtre.
+
+    `Retry-After` est vérifié en plus, parce que c'est ce que lit un client HTTP qui n'est
+    pas notre SPA — la phase 11 en aura un autre.
+    """
+    from tests.factories import ProprietaireFactory
+
+    proprietaire = ProprietaireFactory(client=affaire_reelle.client)
+    api = _client_api()
+    for _ in range(11):
+        reponse = _connecter(api, proprietaire, mot_de_passe="faux")
+
+    assert reponse.status_code == 429
+    corps = reponse.json()
+    assert corps["detail"] == "Trop de tentatives. Réessayez dans une minute.", (
+        f"La copie servie est {corps['detail']!r}. `03-UI-SPEC.md` 6 en fixe le texte au "
+        "caractère près."
+    )
+    assert isinstance(corps["reessayer_dans"], int) and 0 < corps["reessayer_dans"] <= 60, (
+        f"`reessayer_dans` vaut {corps.get('reessayer_dans')!r}. L'interface en fait un "
+        "compte à rebours : il lui faut un entier de secondes, pas une phrase."
+    )
+    assert reponse.headers["Retry-After"] == str(corps["reessayer_dans"])
+
+
+def test_perm01_un_en_tete_x_forwarded_for_ne_contourne_pas_la_limitation(affaire_reelle):
+    """T-03-47 — la moitié comportementale du réglage `NUM_PROXIES`.
+
+    `SimpleRateThrottle.get_ident` lit `X-Forwarded-For` quand `NUM_PROXIES` vaut `None`,
+    qui est le **défaut** de DRF. Un attaquant qui change l'en-tête à chaque requête
+    obtient alors une clé de cache neuve à chaque tentative, et la limitation ne limite
+    plus rien — tout en restant parfaitement verte dans un test qui n'envoie pas
+    l'en-tête, c'est-à-dire dans le test précédent.
+
+    Ce test envoie une adresse différente à chaque essai. Le compteur doit malgré tout
+    atteindre son plafond.
+    """
+    from tests.factories import ProprietaireFactory
+
+    proprietaire = ProprietaireFactory(client=affaire_reelle.client)
+    api = _client_api()
+
+    for essai in range(11):
+        reponse = api.post(
+            CONNEXION,
+            {"email": proprietaire.email, "mot_de_passe": "faux"},
+            format="json",
+            headers={"x-forwarded-for": f"203.0.113.{essai}"},
+        )
+
+    assert reponse.status_code == 429, (
+        f"Onze tentatives depuis onze `X-Forwarded-For` différents ont reçu "
+        f"{reponse.status_code}. La limitation se contourne avec un en-tête que "
+        "l'appelant choisit, donc elle n'existe pas."
+    )
+
+
+def test_perm01_aucun_corps_derreur_ne_renvoie_lidentifiant_soumis(affaire_reelle):
+    """A-03-13 / T-03-55 — un corps d'erreur ne renvoie ni l'identifiant, ni la mécanique.
+
+    Deux fuites différentes, vérifiées ensemble parce qu'elles sortent par la même porte.
+
+    **L'identifiant soumis**, d'abord : un corps qui le reprend transforme la page de
+    connexion en miroir. Cela paraît inoffensif — l'appelant connaît déjà ce qu'il a
+    envoyé — jusqu'à ce que la valeur atterrisse dans un journal, dans un rapport Sentry
+    ou dans une capture d'écran de support, et une adresse e-mail est une donnée
+    personnelle au sens de la loi 09-08.
+
+    **La mécanique interne**, ensuite : `NoTenantBound` nomme des alias et la façon dont
+    la liaison de locataire fonctionne. C'est déjà la règle ASVS V7 de la phase 2, étendue
+    ici à la résolution d'accès. Le cas est réel : un compte rattaché à une affaire non
+    `ACTIVE` traverse l'authentification et ne peut pas lire sa base — il doit recevoir un
+    503 sans cause, pas un 500 avec une trace.
+
+    Le balayage couvre les quatre formes d'échec qu'un attaquant peut provoquer depuis
+    l'écran de connexion, parce que celle qui fuit est toujours celle qu'on n'a pas
+    listée.
+    """
+    from plateforme.control_plane.models import Client
+    from tests.factories import MOT_DE_PASSE_DE_TEST, GerantFactory
+
+    desactive = GerantFactory(client=affaire_reelle.client, is_active=False)
+    adresse = "karim.bennani@optique-anfa.test"
+
+    corps_a_examiner = []
+    for donnees in (
+        {"email": adresse, "mot_de_passe": "faux"},
+        {"email": adresse},
+        {"email": "pas-une-adresse", "mot_de_passe": "faux"},
+        {"email": desactive.email, "mot_de_passe": MOT_DE_PASSE_DE_TEST},
+    ):
+        reponse = _client_api().post(CONNEXION, donnees, format="json")
+        assert reponse.status_code in (400, 429), reponse.status_code
+        corps_a_examiner.append(reponse.content.decode())
+
+    for corps in corps_a_examiner:
+        assert adresse not in corps and desactive.email not in corps, (
+            f"Un corps d'erreur renvoie l'identifiant soumis : {corps}"
+        )
+
+    # La seconde moitié : une affaire authentifiable mais non joignable. Un gérant et
+    # non un propriétaire, parce que `un_seul_proprietaire_par_client` est une contrainte
+    # d'unicité partielle et que la fixture n'en crée pas — mais un test qui en demande
+    # deux l'apprend par une `IntegrityError` à mi-parcours, ce qui est le bon refus au
+    # mauvais moment.
+    orpheline = GerantFactory(
+        client=affaire_reelle.client, email="orphelin@optique.test"
+    )
+    Client.objects.using("default").filter(pk=affaire_reelle.client.pk).update(
+        status=Client.SUSPENDED
+    )
+    api = _client_api()
+    reponse = _connecter(api, orpheline)
+
+    assert reponse.status_code == 503, (
+        f"Un compte dont l'affaire n'est pas joignable a reçu {reponse.status_code}. "
+        "Sans traitement, `NoTenantBound` remonte en 500 — et en développement, avec sa "
+        "trace."
+    )
+    corps = reponse.content.decode()
+    for fuite in ("NoTenantBound", "tenant_", "alias", orpheline.email):
+        assert fuite not in corps, (
+            f"Le corps du 503 contient {fuite!r} : {corps}"
+        )
 
 
 def test_perm01_une_requete_api_sans_jeton_csrf_est_refusee(affaire_reelle):
