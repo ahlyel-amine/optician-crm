@@ -43,7 +43,7 @@ Calendar-driven work. Starts day one and runs in parallel with build — no amou
 
 ### Accounts & Permissions (PERM)
 
-- [ ] **PERM-01**: An optician (owner) can sign in and stays signed in across sessions
+- [x] **PERM-01**: An optician (owner) can sign in and stays signed in across sessions
 - [ ] **PERM-02**: An owner can create a gérant account for their business and deactivate it later
 - [ ] **PERM-03**: An owner can grant or revoke individual permissions for a specific gérant, without those permissions being fixed to a role tier
 - [ ] **PERM-04**: A gérant sees only the magasins and data the owner has granted them

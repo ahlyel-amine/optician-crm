@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-07-PLAN.md
-last_updated: "2026-09-16T19:35:25.787Z"
+stopped_at: Completed 03-08-PLAN.md
+last_updated: "2026-09-16T21:15:18.936Z"
 last_activity: 2026-09-16
 progress:
   total_phases: 12
   completed_phases: 1
   total_plans: 21
-  completed_plans: 15
-  percent: 71
+  completed_plans: 16
+  percent: 76
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-09-09)
 ## Current Position
 
 Phase: 3 of 12 (Comptes, Permissions & App Shell)
-Plan: 8 of 14 complete in current phase (03-01 à 03-07 et 03-11) ; la projection de champs (03-06) et la portée des lignes et des agrégats (03-07) existent toutes deux, le prochain est 03-08 (authentification de session, même vague) puis 03-09
+Plan: 9 of 14 complete in current phase (03-01 à 03-08 et 03-11) ; l'authentification par session existe et la vague 6 est close — les cinq points de terminaison /api/auth/ sont servis, PERM-01 est vert. Le prochain est 03-09 (surface d'octroi), qui consomme le catalogue et le second usage sanctionné de peut_quelque_part
 Status: Executing
 Last activity: 2026-09-16
 
-Progress: [███████░░░] 71%
+Progress: [████████░░] 76%
 
 ## Performance Metrics
 
@@ -62,6 +62,7 @@ Progress: [███████░░░] 71%
 | Phase 03 P05 | 50m | 2 tasks | 5 files |
 | Phase 03 P06 | ~70m | 3 tasks | 10 files |
 | Phase 03 P07 | ~75m | 3 tasks | 6 files |
+| Phase 03 P08 | ~75m | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -120,6 +121,15 @@ Recent decisions affecting current work:
 - [Phase 03]: 03-07: django-filter n'est pas ajoute ; une dependance qui entre dans la pile est une decision de PROJECT.md
 - [Phase 03]: 03-07: les gardes d'enumeration restent des tests et non des system checks ; la condition de promotion en projection.E001 est ecrite dans la docstring de checks.py
 - [Phase 03]: 03-07: regle des phases 5 a 10 — tout modele magasin-scope herite de MagasinScopedViewSet EN PREMIERE BASE, tout agregat passe par le queryset deja restreint, et toute annotate() produisant de la monnaie est une question de registre
+- [Phase 03-08]: 03-08: la vue de connexion lie le locataire elle-meme — TenantMiddleware a deja tourne avec un utilisateur anonyme, donc login() puis serialiser leverait NoTenantBound
+- [Phase 03-08]: 03-08: contrat de statuts — 400 pour un echec de connexion (jamais 401, que la SPA reserve a la session morte), 401 session morte, 403 CSRF ou droit manquant, 429 limite, 503 affaire injoignable
+- [Phase 03-08]: 03-08: NUM_PROXIES = 0 — le defaut None de DRF derive l'identite du client de X-Forwarded-For, donc la limitation de debit se contourne par un en-tete
+- [Phase 03-08]: 03-08: DRF rétrograde NotAuthenticated en 403 quand la classe d'auth ne rend pas de WWW-Authenticate ; corrige dans un gestionnaire d'exceptions et non dans une sous-classe, pour que la phase 11 ajoute la sienne sans heriter
+- [Phase 03-08]: 03-08: NoTenantBound devient un 503 sans cause, general a toute l'API — un compte rattache a une affaire non ACTIVE passe l'authentification et ne peut pas lire sa base
+- [Phase 03-08]: 03-08: les serialiseurs de l'amorcage sont des ModelSerializer et leurs champs entrent dans CHAMPS_PUBLICS — sur control_plane.Client c'est ce qui rend rouge l'ajout de db_name a la charge utile
+- [Phase 03-08]: 03-08: toute nouvelle APIView porte un extend_schema dans le plan qui la cree — AutoSchema ignore une APIView nue, donc la route est absente du contrat TypeScript en silence
+- [Phase 03-08]: 03-08: pas de reinitialisation par courriel — aucun fournisseur d'e-mail dans la pile ; approvisionnement des phases 1 et 12, dont l'inscription libre service aura besoin
+- [Phase 03-08]: 03-08: django-axes non adopte (T-03-56 acceptee) — classifiers arretes a Django 6.0, modeles a classer dans CONTROL_PLANE_APPS, seconde table chaude sur le plan de controle
 
 ### Pending Todos
 
@@ -133,6 +143,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-16T19:35:25.785Z
-Stopped at: Completed 03-07-PLAN.md
+Last session: 2026-09-16T21:15:18.934Z
+Stopped at: Completed 03-08-PLAN.md
 Resume file: None

@@ -86,7 +86,7 @@ Plans:
 - [x] 03-05-PLAN.md — `Acces`, `acces_pour`, `AccesMiddleware` : résolution fail-closed, sans branche propriétaire (PERM-03, PERM-04)
 - [x] 03-06-PLAN.md — Registre de projection, quatre consommateurs, test de conformité paramétré (PERM-05, PERM-06)
 - [x] 03-07-PLAN.md — Portée magasin : `get_queryset`, champ lié restreint, oracle de tri fermé, gardes d'énumération (PERM-04, PERM-05)
-- [ ] 03-08-PLAN.md — Authentification de session : réglages, cinq endpoints, limitation de débit, CSRF, `clearsessions` (PERM-01)
+- [x] 03-08-PLAN.md — Authentification de session : réglages, cinq endpoints, limitation de débit, CSRF, `clearsessions` (PERM-01)
 - [ ] 03-09-PLAN.md — API comptes et droits : création, désactivation, octroi par magasin, catalogue pré-intersecté (PERM-02, PERM-03)
 - [ ] 03-10-PLAN.md — Formatage MAD serveur, français de l'API, schéma OpenAPI committé et porte de diff (APP-01, APP-03, PERM-06)
 - [x] 03-11-PLAN.md — Formatage client et registre de colonnes filtré par présence, moitié cliente de PERM-06 (APP-03, PERM-06)
@@ -249,7 +249,7 @@ Phase 1 is a parallel calendar track: it starts first and stays open across late
 |-------|----------------|--------|-----------|
 | 1. Legal & Compliance Track | 0/TBD | Not started | - |
 | 2. Tenancy Foundation & Control Plane | 7/7 | Complete | 2026-09-13 |
-| 3. Comptes, Permissions & App Shell | 8/14 | In Progress|  |
+| 3. Comptes, Permissions & App Shell | 9/14 | In Progress|  |
 | 4. Clients & Ordonnances | 0/TBD | Not started | - |
 | 5. Stock & Catalogue | 0/TBD | Not started | - |
 | 6. Vente & Facturation | 0/TBD | Not started | - |
