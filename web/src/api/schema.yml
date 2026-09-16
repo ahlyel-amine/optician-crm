@@ -1,0 +1,1058 @@
+openapi: 3.0.3
+info:
+  title: API Optique
+  version: 1.0.0
+paths:
+  /api/auth/connexion/:
+    post:
+      operationId: auth_connexion_create
+      description: |-
+        `POST /api/auth/connexion/` — établit la session et renvoie l'amorçage complet.
+
+        **Protégée par CSRF bien qu'anonyme.** Les vues DRF sont `csrf_exempt` au niveau du
+        middleware et `SessionAuthentication` n'impose le CSRF qu'aux utilisateurs déjà
+        authentifiés : sans ce décorateur, la connexion serait la seule écriture non protégée
+        du produit. Le login CSRF est une vraie attaque — on force une victime dans la session
+        de l'attaquant, qui relit ensuite ce qu'elle y a saisi. La SPA appelle déjà
+        `/api/auth/csrf/` au montage (`03-UI-SPEC.md` 6), donc cela ne lui coûte rien.
+
+        `login()` fait tourner la clé de session : la fixation de session est traitée par
+        Django et **ne doit pas** être réimplémentée (menace T-03-50).
+      summary: Ouvrir une session
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Connexion'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Connexion'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Connexion'
+        required: true
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Amorcage'
+          description: ''
+  /api/auth/csrf/:
+    get:
+      operationId: auth_csrf_retrieve
+      description: Appelé par la SPA au montage de l'écran de connexion, avant le
+        premier POST.
+      summary: Poser le cookie CSRF
+      tags:
+      - auth
+      security:
+      - {}
+      responses:
+        '204':
+          description: No response body
+  /api/auth/deconnexion/:
+    post:
+      operationId: auth_deconnexion_create
+      description: |-
+        `POST /api/auth/deconnexion/` — `logout()` vide la ligne de session.
+
+        Révocation réelle et immédiate : il n'y a aucune fenêtre d'expiration à attendre
+        parce qu'il n'y a plus rien à expirer. C'est la moitié « révocation » de l'argument
+        session-contre-jeton, et le test rejoue la clé après coup pour le prouver.
+      summary: Fermer la session
+      tags:
+      - auth
+      security:
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/auth/moi/:
+    get:
+      operationId: auth_moi_retrieve
+      description: |-
+        `GET /api/auth/moi/` — tout l'amorçage de la SPA, en une requête.
+
+        Le compte, l'affaire, les entrées de navigation autorisées, les magasins accordés et
+        le catalogue des droits. Une requête plutôt que cinq : c'est la première chose qui se
+        passe après la connexion, et chaque aller-retour supplémentaire est une fraction de
+        seconde d'écran vide au comptoir.
+      summary: L'amorçage de la SPA
+      tags:
+      - auth
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Amorcage'
+          description: ''
+  /api/auth/mot-de-passe/:
+    post:
+      operationId: auth_mot_de_passe_create
+      description: |-
+        `POST /api/auth/mot-de-passe/` — le changement par l'intéressé.
+
+        Efface `doit_changer_mot_de_passe`, ce qui libère la SPA de la route
+        `/mot-de-passe` sur laquelle elle atterrit tant que le drapeau est vrai. Renvoie
+        l'amorçage à jour, pour que l'interface n'ait pas à deviner l'état d'après un 200.
+      summary: Changer son mot de passe
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangementMotDePasse'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ChangementMotDePasse'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ChangementMotDePasse'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Amorcage'
+          description: ''
+  /api/comptes/:
+    get:
+      operationId: comptes_list
+      description: |-
+        `/api/comptes/` — créer un gérant, corriger son identité, le désactiver.
+
+        La liste porte ce que `03-UI-SPEC.md` 7.2 affiche, propriétaire compris : sa ligne
+        est première et marquée, et elle n'ouvre pas d'éditeur de droits (7.7).
+      summary: Les comptes de l'affaire
+      tags:
+      - comptes
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Compte'
+          description: ''
+    post:
+      operationId: comptes_create
+      description: |-
+        Le `client` est posé **par le serveur**, et n'est jamais lu dans le corps.
+
+        C'est la ligne que la menace T-03-57 vise. Elle est écrite ici, en clair, plutôt
+        que déduite d'une absence dans un sérialiseur : un lecteur qui cherche « d'où
+        vient le client de ce compte ? » trouve la réponse au premier endroit où il
+        regarde.
+      summary: Créer un compte gérant
+      tags:
+      - comptes
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreationCompte'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CreationCompte'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CreationCompte'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompteCree'
+          description: ''
+  /api/comptes/{id}/:
+    get:
+      operationId: comptes_retrieve
+      description: |-
+        `/api/comptes/` — créer un gérant, corriger son identité, le désactiver.
+
+        La liste porte ce que `03-UI-SPEC.md` 7.2 affiche, propriétaire compris : sa ligne
+        est première et marquée, et elle n'ouvre pas d'éditeur de droits (7.7).
+      summary: La fiche d'un compte
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Un(une) valeur entière unique identifiant ce(cette) utilisateur.
+        required: true
+      tags:
+      - comptes
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Compte'
+          description: ''
+    patch:
+      operationId: comptes_partial_update
+      description: |-
+        Le nom et l'adresse. Le propriétaire corrige les siens, personne d'autre.
+
+        `03-UI-SPEC.md` 7.7 : un gérant-gestionnaire ne modifie pas sa propre fiche — il
+        ne peut changer que son mot de passe, par `/api/auth/mot-de-passe/`.
+      summary: Corriger le nom ou l'adresse d'un compte
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Un(une) valeur entière unique identifiant ce(cette) utilisateur.
+        required: true
+      tags:
+      - comptes
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedModificationIdentite'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedModificationIdentite'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedModificationIdentite'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Compte'
+          description: ''
+  /api/comptes/{id}/droits/:
+    post:
+      operationId: comptes_droits_create
+      description: |-
+        Un interrupteur : `accorde` décide du sens, `magasins` de la portée.
+
+        `magasins` absent vaut **tous les magasins accordés**, ce qui est le
+        comportement uniforme par défaut de 7.5 et l'état que la quasi-totalité des
+        affaires verra.
+      summary: Accorder ou retirer un droit
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Un(une) valeur entière unique identifiant ce(cette) utilisateur.
+        required: true
+      tags:
+      - comptes
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BasculeDroit'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BasculeDroit'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BasculeDroit'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultatOctroi'
+          description: ''
+  /api/comptes/{id}/droits/uniformiser/:
+    post:
+      operationId: comptes_droits_uniformiser_create
+      description: |-
+        Le bouton `Uniformiser` de 7.5, qui replie une ligne personnalisée.
+
+        Une route distincte pour une raison d'interface : l'action demande une
+        confirmation quand les sous-interrupteurs divergent, et le journal doit pouvoir
+        se relire comme « il a tout aligné » plutôt que comme une bascule de plus.
+      summary: Uniformiser un droit sur tous les magasins
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Un(une) valeur entière unique identifiant ce(cette) utilisateur.
+        required: true
+      tags:
+      - comptes
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Uniformisation'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Uniformisation'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Uniformisation'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultatOctroi'
+          description: ''
+  /api/comptes/{id}/magasins/:
+    post:
+      operationId: comptes_magasins_create
+      description: |-
+        L'accès à un magasin — le rayon d'action le plus large de cet écran.
+
+        Accorder étend les lignes **uniformes** au nouveau magasin et laisse les
+        personnalisées où elles sont ; retirer emporte les droits qui visaient ce
+        magasin. Les deux effets sont annoncés par l'interface avant d'être appliqués
+        (7.5 et 7.9), et appliqués ici que l'interface les ait annoncés ou non.
+      summary: Accorder ou retirer l'accès à un magasin
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Un(une) valeur entière unique identifiant ce(cette) utilisateur.
+        required: true
+      tags:
+      - comptes
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BasculeMagasin'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BasculeMagasin'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BasculeMagasin'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultatOctroi'
+          description: ''
+  /api/comptes/{id}/mot-de-passe/:
+    post:
+      operationId: comptes_mot_de_passe_create
+      description: |-
+        Un nouveau secret, montré **une seule fois**, et le drapeau reposé.
+
+        Changer le mot de passe déconnecte la cible partout : le hachage de session est
+        dérivé du hachage du mot de passe, donc toute session ouverte devient invalide à
+        la requête suivante. C'est le comportement voulu pour une réinitialisation, et
+        c'est pourquoi rien n'est appelé pour purger les sessions à la main.
+      summary: Réinitialiser le mot de passe d'un compte
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Un(une) valeur entière unique identifiant ce(cette) utilisateur.
+        required: true
+      tags:
+      - comptes
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompteCree'
+          description: ''
+  /api/comptes/{id}/statut/:
+    post:
+      operationId: comptes_statut_create
+      description: |-
+        PERM-02 — la désactivation mord dès la requête suivante, sans machinerie.
+
+        `ModelBackend.get_user()` appelle `user_can_authenticate()` à **chaque** requête,
+        donc il n'y a ni liste de révocation ni fenêtre d'expiration à attendre. C'est la
+        moitié « révocation » de l'argument session-contre-jeton, et le plan 03-08 la
+        vérifie de bout en bout.
+      summary: Activer ou désactiver un compte
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Un(une) valeur entière unique identifiant ce(cette) utilisateur.
+        required: true
+      tags:
+      - comptes
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Statut'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Statut'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Statut'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Compte'
+          description: ''
+  /api/comptes/catalogue/:
+    get:
+      operationId: comptes_catalogue_retrieve
+      description: |-
+        `GET /api/comptes/catalogue/` — ce que **cet** appelant peut accorder.
+
+        Deux catalogues coexistent et répondent à deux questions différentes ; les confondre
+        serait une régression silencieuse.
+
+        | Route | Question | Réponse |
+        |---|---|---|
+        | `/api/auth/moi/` | quels droits **existent** ? | les 21, pour tout le monde |
+        | `/api/comptes/catalogue/` | lesquels **puis-je accorder** ? | l'intersection |
+
+        Le premier est identique pour chaque affaire du produit, donc il ne divulgue rien.
+        Le second dépend de l'appelant, et c'est tout son intérêt : un gérant-gestionnaire
+        qui ne détient pas `article.voir_prix_achat` n'en voit pas la ligne en éditant un
+        collègue, **parce qu'elle n'est pas dans la réponse** (`03-UI-SPEC.md` 7.7).
+
+        L'intersection est faite **avant** la sérialisation, dans `catalogue_offrable`. Après
+        serait un filtrage de rendu, et un filtrage de rendu laisse la donnée dans l'objet
+        qu'il filtre.
+      summary: Les droits et les magasins que l'appelant peut accorder
+      tags:
+      - comptes
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogueOffrable'
+          description: ''
+components:
+  schemas:
+    Amorcage:
+      type: object
+      description: |-
+        La forme de `/api/auth/moi/`. **Déclarée pour le schéma, pas pour sérialiser.**
+
+        La charge utile est construite par `charge_utile_moi`, qui interroge deux bases et
+        l'accès résolu ; ce sérialiseur existe pour que `drf-spectacular` produise un
+        composant et donc un type TypeScript. Sans lui, `AutoSchema` ne devine rien d'une
+        `APIView` et **ignore la vue entièrement** — les cinq routes d'authentification
+        seraient absentes du contrat dont le client est généré, ce qui est la pire forme
+        d'absence : silencieuse et invisible en revue.
+
+        `client` est nullable parce qu'un opérateur de plateforme n'appartient à aucune
+        affaire, et le type généré doit le dire plutôt que promettre un objet.
+      properties:
+        utilisateur:
+          allOf:
+          - $ref: '#/components/schemas/Utilisateur'
+          readOnly: true
+        client:
+          allOf:
+          - $ref: '#/components/schemas/Client'
+          readOnly: true
+          nullable: true
+        permissions:
+          type: array
+          items:
+            type: string
+          readOnly: true
+        magasins:
+          type: array
+          items:
+            $ref: '#/components/schemas/Magasin'
+          readOnly: true
+        catalogue:
+          allOf:
+          - $ref: '#/components/schemas/Catalogue'
+          readOnly: true
+      required:
+      - catalogue
+      - client
+      - magasins
+      - permissions
+      - utilisateur
+    BasculeDroit:
+      type: object
+      description: |-
+        `{code, accorde, magasins?}` — un interrupteur, et rien d'autre.
+
+        Un seul point de terminaison pour les deux sens, parce que c'est **un seul contrôle**
+        à l'écran : un `accorde: false` sur une route d'octroi se lit mieux que deux routes
+        dont l'interface devrait choisir à chaque clic.
+
+        `magasins` absent signifie **tous les magasins accordés**, ce qui produit le
+        comportement uniforme par défaut de 7.5. Le fournir est le chemin « Par magasin »,
+        celui qui n'apparaît qu'à la demande et seulement au-dessus de deux magasins.
+      properties:
+        code:
+          $ref: '#/components/schemas/CodeEnum'
+        accorde:
+          type: boolean
+        magasins:
+          type: array
+          items:
+            type: string
+            maxLength: 20
+      required:
+      - accorde
+      - code
+    BasculeMagasin:
+      type: object
+      description: |-
+        `{magasin_code, accorde}` — l'accès à un magasin (`03-UI-SPEC.md` 7.3 B).
+
+        Le code métier, jamais l'identifiant : c'est ce que stocke `AccesMagasin`, et c'est
+        ce qui survit à une restauration là où un `id` est réattribué (TENANT-09).
+      properties:
+        magasin_code:
+          type: string
+          maxLength: 20
+        accorde:
+          type: boolean
+      required:
+      - accorde
+      - magasin_code
+    Catalogue:
+      type: object
+      description: 'Le catalogue servi à la SPA : les sections, et la carte des prérequis
+        (7.6).'
+      properties:
+        sections:
+          type: array
+          items:
+            $ref: '#/components/schemas/SectionCatalogue'
+          readOnly: true
+        prerequis:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+          readOnly: true
+      required:
+      - prerequis
+      - sections
+    CatalogueOffrable:
+      type: object
+      description: |-
+        La forme de `GET /api/comptes/catalogue/`. Déclarée pour le schéma, pas pour sérialiser.
+
+        Le catalogue **complet** est servi par `/api/auth/moi/` via `catalogue_des_droits()` :
+        il est identique pour chaque affaire du produit, donc il ne divulgue rien, et l'écran
+        403 de `03-UI-SPEC.md` 8.6 nomme le droit manquant précisément pour cette raison.
+
+        Celui-ci répond à une autre question — **ce que l'appelant peut accorder** — et sa
+        réponse dépend donc de l'appelant. Elle porte en plus les magasins qu'il détient,
+        parce que l'écran de droits a besoin des deux axes pour dessiner une ligne.
+      properties:
+        sections:
+          type: array
+          items:
+            $ref: '#/components/schemas/SectionCatalogue'
+          readOnly: true
+        prerequis:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+          readOnly: true
+        magasins:
+          type: array
+          items:
+            $ref: '#/components/schemas/Magasin'
+          readOnly: true
+      required:
+      - magasins
+      - prerequis
+      - sections
+    ChangementMotDePasse:
+      type: object
+      description: |-
+        Le changement par l'intéressé. L'ancien mot de passe est exigé.
+
+        Sans lui, un poste laissé déverrouillé une minute — ou un CSRF réussi — ne donne plus
+        une session mais un compte, définitivement. C'est la différence entre un incident et
+        une perte de contrôle.
+
+        `validate_password` applique `AUTH_PASSWORD_VALIDATORS`, qui est **posé** dans
+        `config/settings/base.py` : sans validateurs déclarés, cet appel valide `1234` en
+        silence, et le point de terminaison aurait l'air protégé sans l'être.
+      properties:
+        mot_de_passe_actuel:
+          type: string
+          writeOnly: true
+        nouveau_mot_de_passe:
+          type: string
+          writeOnly: true
+      required:
+      - mot_de_passe_actuel
+      - nouveau_mot_de_passe
+    Client:
+      type: object
+      description: |-
+        L'affaire, réduite à ce qui s'affiche.
+
+        Deux champs, et la liste est courte pour une raison : la table porte aussi le nom, le
+        port, l'utilisateur et le mot de passe chiffré de la base de cet opticien. Ajouter
+        l'un d'eux ici rendrait la suite rouge (voir la docstring du module), ce qui est
+        exactement l'effet recherché.
+      properties:
+        code:
+          type: string
+          readOnly: true
+          pattern: ^[-a-zA-Z0-9_]+$
+        raison_sociale:
+          type: string
+          readOnly: true
+      required:
+      - code
+      - raison_sociale
+    CodeEnum:
+      enum:
+      - client.voir
+      - client.modifier
+      - ordonnance.voir
+      - ordonnance.saisir
+      - stock.voir
+      - stock.ajuster
+      - article.voir_prix_achat
+      - vente.voir
+      - vente.creer
+      - vente.remise
+      - vente.voir_marge
+      - facture.avoir
+      - caisse.voir
+      - caisse.saisir
+      - caisse.comptage
+      - fournisseur.voir
+      - achat.commander
+      - achat.voir_soldes
+      - rappel.voir
+      - dashboard.voir_ca_global
+      - compte.gerer
+      type: string
+      description: |-
+        * `client.voir` - Consulter les clients
+        * `client.modifier` - Créer et modifier des clients
+        * `ordonnance.voir` - Consulter les ordonnances
+        * `ordonnance.saisir` - Saisir une ordonnance
+        * `stock.voir` - Consulter le stock
+        * `stock.ajuster` - Ajuster le stock / inventaire
+        * `article.voir_prix_achat` - Voir le prix d'achat
+        * `vente.voir` - Consulter les ventes et les factures
+        * `vente.creer` - Enregistrer une vente
+        * `vente.remise` - Accorder une remise
+        * `vente.voir_marge` - Voir la marge
+        * `facture.avoir` - Émettre un avoir
+        * `caisse.voir` - Consulter la caisse
+        * `caisse.saisir` - Saisir en caisse
+        * `caisse.comptage` - Faire le comptage
+        * `fournisseur.voir` - Consulter les fournisseurs
+        * `achat.commander` - Passer un bon de commande
+        * `achat.voir_soldes` - Voir les soldes fournisseurs
+        * `rappel.voir` - Consulter les rappels
+        * `dashboard.voir_ca_global` - Voir le CA de toute l'entreprise
+        * `compte.gerer` - Gérer les comptes et les droits
+    Compte:
+      type: object
+      description: |-
+        Une ligne de la liste des comptes et la fiche de détail (`03-UI-SPEC.md` 7.2, 7.3).
+
+        Purement sortant : l'écriture passe par `CreationCompteSerializer` et par
+        `ModificationIdentiteSerializer`, qui ne partagent aucun champ avec celui-ci par
+        accident.
+
+        `nombre_de_droits` et `personnalise` sont calculés **côté serveur**. L'interface ne
+        doit pas avoir à recomposer l'uniformité d'une ligne depuis N requêtes : à trois
+        magasins et vingt-et-un codes, le badge « Personnalisé par magasin » coûterait
+        soixante-trois lectures par ligne de tableau (7.2).
+
+        Les noms sont français et les sources sont les colonnes de Django — `actif` pour
+        `is_active`, `derniere_connexion` pour `last_login`. `test_perm06_tout_champ_de_modele_expose_est_classe`
+        lit la **source**, pas le nom, donc les deux clés correspondantes sont inscrites dans
+        `CHAMPS_PUBLICS` et non le nom d'affichage.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        nom_complet:
+          type: string
+          readOnly: true
+        email:
+          type: string
+          format: email
+          readOnly: true
+          title: Adresse e-mail
+          description: 'L''identifiant de connexion. Unique sur toute la flotte, donc
+            une adresse e-mail plutôt qu''un nom d''utilisateur : une collision sur
+            « karim » révélerait l''existence du compte d''une autre affaire.'
+        est_proprietaire:
+          type: boolean
+          readOnly: true
+          title: Est propriétaire
+          description: L'opticien qui détient l'affaire. Un seul par client.
+        actif:
+          type: boolean
+          readOnly: true
+        doit_changer_mot_de_passe:
+          type: boolean
+          readOnly: true
+          title: Doit changer son mot de passe
+        derniere_connexion:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        magasins:
+          type: array
+          items:
+            $ref: '#/components/schemas/Magasin'
+          readOnly: true
+        nombre_de_droits:
+          type: integer
+          readOnly: true
+        personnalise:
+          type: boolean
+          description: Vrai dès qu'un octroi n'est pas uniforme sur les magasins accordés
+            (7.5).
+          readOnly: true
+      required:
+      - actif
+      - derniere_connexion
+      - doit_changer_mot_de_passe
+      - email
+      - est_proprietaire
+      - id
+      - magasins
+      - nom_complet
+      - nombre_de_droits
+      - personnalise
+    CompteCree:
+      type: object
+      description: |-
+        La réponse de création et de réinitialisation : le compte, **et le secret, une fois**.
+
+        Le mot de passe provisoire ne réapparaît dans aucune autre charge utile. Il n'existe
+        pas de chemin par courriel (plan 03-08 : aucun fournisseur d'e-mail dans la pile),
+        donc l'interface l'affiche avec « Notez-le maintenant : il ne sera plus affiché. » et
+        le propriétaire le transmet de vive voix.
+      properties:
+        compte:
+          allOf:
+          - $ref: '#/components/schemas/Compte'
+          readOnly: true
+        mot_de_passe_provisoire:
+          type: string
+          readOnly: true
+      required:
+      - compte
+      - mot_de_passe_provisoire
+    Connexion:
+      type: object
+      description: |-
+        Les identifiants soumis. **Aucune validation métier ici, et c'est délibéré.**
+
+        Un `validate()` qui appellerait `authenticate()` produirait une `ValidationError`
+        structurée par champ — `{"email": [...]}` contre `{"mot_de_passe": [...]}` — c'est-à-dire
+        exactement l'oracle que T-03-48 interdit : la forme du corps dirait lequel des deux
+        est faux. Le sérialiseur ne vérifie donc que la présence, et la vue rend une réponse
+        unique.
+
+        `trim_whitespace=False` sur le mot de passe : un espace final est un caractère du
+        secret, et le rogner rendrait indéchiffrable un compte dont le mot de passe en
+        contient un.
+      properties:
+        email:
+          type: string
+          format: email
+          writeOnly: true
+        mot_de_passe:
+          type: string
+          writeOnly: true
+      required:
+      - email
+      - mot_de_passe
+    CreationCompte:
+      type: object
+      description: |-
+        Le dialogue de création (`03-UI-SPEC.md` 7.2) : trois champs, et pas un de plus.
+
+        `client` est posé par la vue depuis `request.acces.client_id` et n'apparaît donc
+        nulle part ici. Un `ModelSerializer` aurait été plus court et aurait ouvert la porte
+        à un champ de modèle ajouté plus tard qui deviendrait inscriptible sans que personne
+        ne le décide : c'est exactement le mode de défaillance de A-03-05.
+
+        Le mot de passe provisoire est **facultatif**. Le bouton `Générer un mot de passe` du
+        dialogue existe précisément pour que le propriétaire n'en invente pas un ; quand il
+        est absent, le serveur en tire un et le renvoie une seule fois.
+      properties:
+        nom_complet:
+          type: string
+          maxLength: 150
+        email:
+          type: string
+          format: email
+        mot_de_passe_provisoire:
+          type: string
+          writeOnly: true
+      required:
+      - email
+      - nom_complet
+    DroitCatalogue:
+      type: object
+      description: 'Une ligne de l''écran de droits : le code, son libellé et sa phrase
+        d''explication.'
+      properties:
+        code:
+          type: string
+          readOnly: true
+        libelle:
+          type: string
+          readOnly: true
+        explication:
+          type: string
+          readOnly: true
+      required:
+      - code
+      - explication
+      - libelle
+    LigneDeDroit:
+      type: object
+      description: |-
+        L'état d'un code pour un compte : sa valeur, et les magasins où elle vaut.
+
+        `etat` vaut `actif`, `inactif` ou `mixte`. Les deux premiers sont **uniformes** au
+        sens de 7.5 — tous les magasins accordés sont d'accord — et `mixte` est l'unique
+        état personnalisé, celui que l'interrupteur parent rend en tri-état avec
+        `aria-checked="mixed"`.
+      properties:
+        code:
+          type: string
+          readOnly: true
+        etat:
+          type: string
+          readOnly: true
+        magasins:
+          type: array
+          items:
+            type: string
+          readOnly: true
+      required:
+      - code
+      - etat
+      - magasins
+    Magasin:
+      type: object
+      description: Un magasin, tel qu'il apparaît dans le sélecteur de la barre supérieure
+        (UI 5.4).
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        code:
+          type: string
+          readOnly: true
+        nom:
+          type: string
+          readOnly: true
+      required:
+      - code
+      - id
+      - nom
+    PatchedModificationIdentite:
+      type: object
+      description: |-
+        `PATCH` sur la fiche : le nom et l'adresse, rien d'autre (`03-UI-SPEC.md` 7.3 A).
+
+        Le statut n'est pas ici, et c'est la spécification : `Statut` est une liste
+        déroulante suivie d'une confirmation, pas un interrupteur, parce que la
+        désactivation mérite d'être confirmée. Elle a donc son propre point de terminaison,
+        ce qui la rend aussi identifiable côté serveur.
+      properties:
+        nom_complet:
+          type: string
+          maxLength: 150
+        email:
+          type: string
+          format: email
+    ResultatOctroi:
+      type: object
+      description: |-
+        Ce qu'une bascule renvoie, et ce que l'écran de droits en fait.
+
+        | Champ | Ce que l'interface en fait |
+        |---|---|
+        | `lignes` | redessine chaque interrupteur touché, **sans recharger** (7.8) |
+        | `cascade` | la note en ligne « … a été activé automatiquement » (7.6) |
+        | `cascade` | et le **toast d'annulation unique** qui couvre tout l'ensemble |
+        | `magasins_accordes` | le dénominateur de « Personnalisé : 2 magasins sur 3 » |
+        | `magasins_etendus` | la note « Californie a été ajouté. Vérifiez les 2 droits… » |
+
+        `lignes` porte le code demandé **en tête**, puis les codes emportés par la cascade.
+      properties:
+        code:
+          type: string
+          readOnly: true
+        action:
+          type: string
+          readOnly: true
+        lignes:
+          type: array
+          items:
+            $ref: '#/components/schemas/LigneDeDroit'
+          readOnly: true
+        cascade:
+          type: array
+          items:
+            type: string
+          readOnly: true
+        magasins_accordes:
+          type: array
+          items:
+            type: string
+          readOnly: true
+        magasins_etendus:
+          type: array
+          items:
+            type: string
+          readOnly: true
+      required:
+      - action
+      - cascade
+      - code
+      - lignes
+      - magasins_accordes
+      - magasins_etendus
+    SectionCatalogue:
+      type: object
+      description: Un bloc de l'écran de droits, dans l'ordre d'affichage (`03-UI-SPEC.md`
+        7.4).
+      properties:
+        titre:
+          type: string
+          readOnly: true
+        droits:
+          type: array
+          items:
+            $ref: '#/components/schemas/DroitCatalogue'
+          readOnly: true
+      required:
+      - droits
+      - titre
+    Statut:
+      type: object
+      description: |-
+        `{"actif": false}` — la désactivation, et son inverse (`03-UI-SPEC.md` 7.9).
+
+        Une action explicite plutôt qu'un `PATCH` sur `is_active` : côté interface elle
+        mérite une confirmation, et côté serveur elle mérite d'être un événement
+        identifiable plutôt qu'une colonne parmi d'autres dans un corps partiel.
+      properties:
+        actif:
+          type: boolean
+      required:
+      - actif
+    Uniformisation:
+      type: object
+      description: '`{code, accorde}` — le bouton `Uniformiser` de 7.5, qui replie
+        une ligne mixte.'
+      properties:
+        code:
+          $ref: '#/components/schemas/CodeEnum'
+        accorde:
+          type: boolean
+      required:
+      - accorde
+      - code
+    Utilisateur:
+      type: object
+      description: |-
+        Le compte connecté, tel que la SPA le lit.
+
+        `doit_changer_mot_de_passe` est dans la charge utile parce que la SPA en a besoin
+        pour router vers `/mot-de-passe` avant d'afficher quoi que ce soit d'autre
+        (`03-UI-SPEC.md` 6). `est_proprietaire` y est parce que c'est lui qui décide quelles
+        surfaces d'administration sont proposées (7.7) — proposées, jamais autorisées : le
+        serveur reste seul juge, et `Acces` est déjà matérialisé sans branche de privilège.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        email:
+          type: string
+          format: email
+          readOnly: true
+          title: Adresse e-mail
+          description: 'L''identifiant de connexion. Unique sur toute la flotte, donc
+            une adresse e-mail plutôt qu''un nom d''utilisateur : une collision sur
+            « karim » révélerait l''existence du compte d''une autre affaire.'
+        nom_complet:
+          type: string
+          readOnly: true
+        est_proprietaire:
+          type: boolean
+          readOnly: true
+          title: Est propriétaire
+          description: L'opticien qui détient l'affaire. Un seul par client.
+        doit_changer_mot_de_passe:
+          type: boolean
+          readOnly: true
+          title: Doit changer son mot de passe
+      required:
+      - doit_changer_mot_de_passe
+      - email
+      - est_proprietaire
+      - id
+      - nom_complet
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: sessionid

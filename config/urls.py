@@ -25,6 +25,7 @@ registered in the admin (PERM-06).
 
 from django.contrib import admin
 from django.urls import include, path
+from drf_spectacular.views import SpectacularAPIView
 
 from plateforme.comptes.urls import urlpatterns_gestion
 
@@ -38,4 +39,12 @@ urlpatterns = [
     # prefix, because both are the accounts app — `include()` would take that module's
     # `urlpatterns`, so the second list is named and imported explicitly.
     path("api/comptes/", include(urlpatterns_gestion)),
+    # PERM-06 applique aux types. Le client TypeScript est genere depuis le document
+    # **commite** (`web/src/api/schema.yml`), jamais depuis cette route : commite, un
+    # changement de contrat apparait en diff, dans la revue, a cote du code qui l'a cause.
+    # Ce que la route ajoute est la verification qu'un tel ecart n'existe pas — un test
+    # nomme compare le document servi, pour deux appelants differents, au fichier commite
+    # (menace T-03-70). Elle est fermee aux anonymes par `SERVE_PERMISSIONS`, dont le
+    # defaut de la bibliotheque est `AllowAny`.
+    path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
 ]

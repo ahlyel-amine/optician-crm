@@ -361,6 +361,15 @@ SPECTACULAR_SETTINGS = {
     "VERSION": "1.0.0",
     # The schema endpoint does not describe itself. It is infrastructure, not API surface.
     "SERVE_INCLUDE_SCHEMA": False,
+    # **Pose explicitement, parce que le defaut de drf-spectacular est `AllowAny`**
+    # (verifie sur la 0.30.0 epinglee). Sans cette ligne, `/api/schema/` serait le seul
+    # point de terminaison anonyme du produit — et celui qui enumere toutes les routes,
+    # tous les champs, toutes les enumerations et le texte de chaque message d'erreur.
+    # Le document ne contient aucune donnee d'opticien, donc ce n'est pas une fuite de
+    # donnees ; c'est de la reconnaissance offerte a qui cherche par ou entrer, sur un
+    # produit dont l'adresse de connexion est unique pour toute la flotte. Un test nomme
+    # verifie qu'un appelant anonyme obtient 401.
+    "SERVE_PERMISSIONS": ["rest_framework.permissions.IsAuthenticated"],
     # Pin the projection during schema generation, so the served document is identical
     # for every caller and matches the committed schema.yml.
     # `generators.py:231` assigns `view.request = GET_MOCK_REQUEST(...)`, and the stock
