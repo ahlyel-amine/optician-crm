@@ -706,7 +706,6 @@ def test_perm06_un_champ_protege_ne_peut_pas_etre_ecrit_par_un_gerant(
     )
 
 
-@pytest.mark.pending
 def test_perm06_aucune_vue_ne_renvoie_un_values_queryset():
     """PERM-06 / A-03-04 — la faiblesse structurelle d'une projection par sérialiseur, énoncée.
 
@@ -719,8 +718,107 @@ def test_perm06_aucune_vue_ne_renvoie_un_values_queryset():
     Un test au niveau du source est le bon outil ici précisément parce que le chemin fautif
     ne s'exécute jamais dans la suite : personne n'écrit un test pour la vue qu'il vient
     d'ajouter sans projection.
+
+    **Le contrôle négatif est obligatoire ici**, et plus qu'ailleurs : un détecteur de
+    source qui ne détecterait rien passerait ce test pour toujours, et il passerait aussi
+    le jour où la phase 8 écrit la ligne fautive. Le cas synthétique ci-dessous est donc
+    passé au même détecteur, par le même chemin.
     """
-    pytest.fail("non implémenté : plan 03-07")
+    import textwrap
+
+    from plateforme.projection.checks import (
+        modules_de_vues,
+        retours_values_queryset,
+    )
+
+    modules = modules_de_vues()
+    assert modules, (
+        "Aucun module de vues trouvé. Le test est vacant : il passerait tout aussi bien "
+        "au-dessus d'une vue qui sert un values queryset."
+    )
+
+    fautifs = retours_values_queryset(modules)
+    assert not fautifs, (
+        f"Des vues renvoient un values queryset : {fautifs}. Ce chemin ne touche aucun "
+        "sérialiseur, donc la projection n'y est pas contournée — elle est absente. "
+        "Passez par un sérialiseur, ou par une méthode de queryset qui prend l'accès."
+    )
+
+    # Le contrôle négatif : quatre formes de la même faute, et le détecteur doit voir les
+    # quatre. Écrites ici plutôt que dans un fichier de fixture pour qu'elles se lisent
+    # à côté de l'assertion qu'elles justifient.
+    fautif = textwrap.dedent(
+        """
+        from rest_framework.response import Response
+
+        class Vue:
+            def direct(self, requete):
+                return Response(Article.objects.values("prix_achat"))
+
+            def chaine(self, requete):
+                return Response(self.get_queryset().filter(x=1).values_list("marge"))
+
+            def par_variable(self, requete):
+                lignes = Article.objects.values("prix_achat")
+                return Response(lignes)
+
+            def enveloppe(self, requete):
+                return Response(list(Article.objects.values("prix_achat")))
+        """
+    )
+    detectes = retours_values_queryset([("synthetique.py", fautif)])
+    assert len(detectes) == 4, (
+        f"Le détecteur a vu {len(detectes)} fautes sur quatre : {detectes}. Un détecteur "
+        "qui ne détecte pas est un test vert et vide — exactement la forme de garantie "
+        "que ce plan existe pour refuser."
+    )
+
+
+def test_perm06_enumeration_tout_serializer_exposant_un_champ_protege_est_projete(
+    registre_de_la_fixture,
+):
+    """PERM-06 / A-03-08 — le jumeau, côté champs : un champ du registre exige la projection.
+
+    `test_perm06_tout_champ_de_modele_expose_est_classe` exige qu'un champ soit **classé**.
+    Celui-ci exige, du champ déjà classé protégé, qu'il soit servi par un sérialiseur qui
+    lit le registre. Les deux ensemble ferment A-03-08 : la phase 6 imbriquera
+    `ArticleSerializer` dans `LigneVenteSerializer`, et un `ModelSerializer` ordinaire y
+    ressusciterait `prix_achat` sans que rien ne change ni dans le registre, ni dans les
+    tests existants.
+
+    Le garde est **une fonction pure prenant une liste**, pas une boucle écrite dans le
+    test : c'est ce qui permet de lui passer le cas fautif ci-dessous sans le déclarer au
+    niveau du module, où il polluerait `__subclasses__()` pour toute la session.
+    """
+    from rest_framework import serializers
+
+    from plateforme.projection.checks import (
+        serializers_sans_projection,
+        tous_les_serializers,
+    )
+
+    examines = tous_les_serializers()
+    assert examines, "Aucun ModelSerializer chargé : le garde n'examinerait rien."
+
+    fautifs = serializers_sans_projection(examines)
+    assert not fautifs, (
+        f"Des sérialiseurs exposent un champ du registre sans lire le registre : "
+        f"{fautifs}. Héritez de `SerializerProjete` — ou, si le champ ne doit plus être "
+        "protégé, retirez sa ligne du registre. Les deux sont des décisions ; l'oubli "
+        "n'en est pas une."
+    )
+
+    # Le contrôle négatif : exactement la faute que la phase 6 commettra.
+    class SerializerNonProjete(serializers.ModelSerializer):
+        class Meta:
+            model = RessourceFixture
+            fields = ["id", "valeur_protegee"]
+
+    detectes = serializers_sans_projection([SerializerNonProjete])
+    assert len(detectes) == 1, (
+        f"Le garde n'a pas vu le sérialiseur non projeté : {detectes}. Sans ce contrôle "
+        "il serait vert au-dessus de l'exacte régression qu'il surveille."
+    )
 
 
 def test_perm06_le_renderer_html_est_absent_hors_developpement():

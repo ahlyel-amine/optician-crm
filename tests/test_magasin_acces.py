@@ -342,6 +342,54 @@ def test_perm05_un_agregat_est_calcule_sur_le_queryset_deja_filtre(
     assert direct["total"] == TOTAL_ANFA
 
 
+def test_perm04_enumeration_toute_vue_magasin_scopee_herite_du_mixin():
+    """PERM-04 / T-03-45 — ce qui rend la phase 7 sûre : l'oubli est rouge en CI.
+
+    La caisse arrivera avec de nouveaux modèles magasin-scopés, et le mixin de portée
+    s'oublie exactement comme une application s'oublie dans `BUSINESS_APPS` — sans bruit,
+    et avec un résultat qui *a l'air* correct jusqu'à ce qu'un gérant ouvre la caisse d'un
+    collègue. C'est l'idiome de `tenancy.E001`, appliqué un étage plus haut : rendre
+    l'oubli **impossible**, et non seulement improbable.
+
+    **Le garde vérifie l'ordre du MRO, pas seulement l'héritage**, et c'est le prix du
+    choix « mixin plutôt que sous-classe de `ModelViewSet` » :
+    `class Vue(ModelViewSet, MagasinScopedViewSet)` hérite bien du mixin et pourtant
+    `GenericAPIView.get_queryset` gagne — la portée disparaît sans erreur. Un garde qui ne
+    regarderait que `issubclass` serait vert au-dessus de cette vue-là.
+    """
+    from rest_framework import viewsets
+
+    from plateforme.projection.checks import toutes_les_vues, vues_sans_portee_magasin
+    from plateforme.projection.vues import MagasinScopedViewSet
+    from tests.ressources_fixture import RessourceMagasin, VueRessourceMagasin
+
+    examinees = toutes_les_vues()
+    assert VueRessourceMagasin in examinees, (
+        "La vue magasin-scopée de référence n'est pas énumérée. Le garde examinerait "
+        "zéro vue et resterait vert jusqu'à la phase 7, où il aurait dû mordre."
+    )
+
+    fautives = vues_sans_portee_magasin(examinees)
+    assert not fautives, (
+        f"Des vues servent un modèle magasin-scopé sans portée : {fautives}. Faites-les "
+        "hériter de `MagasinScopedViewSet`, **en première base**."
+    )
+
+    # Les deux contrôles négatifs, et il en faut deux : le mixin absent, et le mixin
+    # présent mais dans le mauvais ordre. Le second est le plus vicieux des deux.
+    class VueSansMixin(viewsets.ModelViewSet):
+        queryset = RessourceMagasin.objects.all()
+
+    class VueDansLeMauvaisOrdre(viewsets.ModelViewSet, MagasinScopedViewSet):
+        queryset = RessourceMagasin.objects.all()
+
+    detectees = vues_sans_portee_magasin([VueSansMixin, VueDansLeMauvaisOrdre])
+    assert len(detectees) == 2, (
+        f"Le garde a vu {len(detectees)} fautes sur deux : {detectees}. S'il n'attrape "
+        "pas l'ordre du MRO, il déclare sûre une vue dont la portée ne s'applique pas."
+    )
+
+
 def test_perm05_la_generation_du_schema_ne_subit_pas_la_portee_magasin(
     db_all, deux_magasins, table_ressource_magasin
 ):
