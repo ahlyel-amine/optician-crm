@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-06-PLAN.md
-last_updated: "2026-09-16T18:15:02.570Z"
-last_activity: 2026-09-14
+stopped_at: Completed 03-07-PLAN.md
+last_updated: "2026-09-16T19:35:25.787Z"
+last_activity: 2026-09-16
 progress:
   total_phases: 12
   completed_phases: 1
   total_plans: 21
-  completed_plans: 14
-  percent: 67
+  completed_plans: 15
+  percent: 71
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-09-09)
 ## Current Position
 
 Phase: 3 of 12 (Comptes, Permissions & App Shell)
-Plan: 7 of 14 complete in current phase (03-01 à 03-06 et 03-11) ; la couche de projection PERM-06 existe, les prochains sont 03-07 (portée des lignes et des agrégats) et 03-08
+Plan: 8 of 14 complete in current phase (03-01 à 03-07 et 03-11) ; la projection de champs (03-06) et la portée des lignes et des agrégats (03-07) existent toutes deux, le prochain est 03-08 (authentification de session, même vague) puis 03-09
 Status: Executing
 Last activity: 2026-09-16
 
-Progress: [███████░░░] 67%
+Progress: [███████░░░] 71%
 
 ## Performance Metrics
 
@@ -61,6 +61,7 @@ Progress: [███████░░░] 67%
 | Phase 03 P04 | ~45m | 2 tasks | 6 files |
 | Phase 03 P05 | 50m | 2 tasks | 5 files |
 | Phase 03 P06 | ~70m | 3 tasks | 10 files |
+| Phase 03 P07 | ~75m | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -112,6 +113,13 @@ Recent decisions affecting current work:
 - [Phase 03]: 03-06: COMPONENT_NO_READ_ONLY_REQUIRED n'est pas seulement laisse a False, son nom est absent de config/settings/ et un test l'exige — le basculer rendrait id optionnel partout
 - [Phase 03]: 03-06: DEFAULT_RENDERER_CLASSES est JSON seul en base ; le renderer HTML navigable de DRF n'existe que dans local.py (A-03-06)
 - [Phase 03]: 03-06: le setter Request.user de DRF reecrit _request.user, donc request.acces paresseux voit le verdict de DRF — fail-closed en production, mais les tests doivent employer force_authenticate
+- [Phase 03]: 03-07: la portee des lignes est dans get_queryset(), jamais dans list() — get_object() y passe, donc filtrer dans list() laisse la route de detail ouverte (IDOR)
+- [Phase 03]: 03-07: MagasinScopedViewSet est un MIXIN et non une sous-classe de ModelViewSet (la caisse phase 7 est en ajout seul) ; le prix est le mauvais ordre de bases, qui fait disparaitre la portee sans erreur — le garde verifie donc le MRO
+- [Phase 03]: 03-07: on ne caviarde pas un scalaire deja calcule — agreger_dans_la_portee PREND l'acces et restreint elle-meme, pour qu'un appelant qui se trompe obtienne un nombre restreint et non global
+- [Phase 03]: 03-07: tout refus d'un parametre de tri ou de filtre produit le meme corps — champ protege, champ public non declare et nom inexistant sont indiscernables, sinon le code de statut est l'oracle
+- [Phase 03]: 03-07: django-filter n'est pas ajoute ; une dependance qui entre dans la pile est une decision de PROJECT.md
+- [Phase 03]: 03-07: les gardes d'enumeration restent des tests et non des system checks ; la condition de promotion en projection.E001 est ecrite dans la docstring de checks.py
+- [Phase 03]: 03-07: regle des phases 5 a 10 — tout modele magasin-scope herite de MagasinScopedViewSet EN PREMIERE BASE, tout agregat passe par le queryset deja restreint, et toute annotate() produisant de la monnaie est une question de registre
 
 ### Pending Todos
 
@@ -125,6 +133,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-16T18:15:02.568Z
-Stopped at: Completed 03-06-PLAN.md
+Last session: 2026-09-16T19:35:25.785Z
+Stopped at: Completed 03-07-PLAN.md
 Resume file: None
