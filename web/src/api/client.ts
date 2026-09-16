@@ -18,17 +18,20 @@ import type { paths } from "./types.gen";
  */
 
 /**
- * **Pas de prefixe.** Les cles de chemin du schema portent deja `/api/...`
+ * **Aucun prefixe de chemin.** Les cles du schema portent deja `/api/...`
  * (`/api/auth/connexion/`, `/api/comptes/`), parce que drf-spectacular emet les
  * chemins tels que Django les route. Poser `baseUrl: "/api"` produirait
  * `/api/api/auth/connexion/` — un 404 sur chaque appel.
  *
- * L'origine reste implicite, et c'est la decision du plan 03-03 : le serveur de
- * developpement proxifie `/api` vers Django, donc le navigateur ne voit qu'une
- * origine. Pas de CORS, pas de prevol, `SameSite=Lax` suffit, et le cookie se
- * comporte en developpement exactement comme en production.
+ * Ce qui est pose, c'est **l'origine de la page elle-meme**, et c'est la
+ * decision du plan 03-03 : le serveur de developpement proxifie `/api` vers
+ * Django, donc le navigateur ne voit qu'une origine. Pas de CORS, pas de
+ * prevol, `SameSite=Lax` suffit, et le cookie se comporte en developpement
+ * exactement comme en production. L'ecrire plutot que de la laisser implicite
+ * n'est pas cosmetique : `new Request()` refuse une URL relative hors d'un
+ * document, donc une base vide casse des qu'on sort du navigateur.
  */
-const RACINE = "";
+const RACINE = typeof window === "undefined" ? "" : window.location.origin;
 
 /** Le nom du cookie pose par `GET /api/auth/csrf/`. */
 const COOKIE_CSRF = "csrftoken";
@@ -43,6 +46,18 @@ const METHODES_MUTANTES = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 /** 401 : la session est morte. Compare numeriquement, jamais affiche. */
 const NON_AUTHENTIFIE = 401;
+
+/**
+ * Le seul endroit du code qui sait a quel nombre correspond « non authentifie ».
+ *
+ * L'amorcage en a besoin — un visiteur anonyme recoit ce statut sur
+ * `/api/auth/moi/` et ce n'est pas une erreur — et le faire passer par une
+ * fonction evite de semer des litteraux numeriques dans des composants, ou ils
+ * finissent tot ou tard par etre affiches.
+ */
+export function estNonAuthentifie(reponse: Response): boolean {
+  return reponse.status === NON_AUTHENTIFIE;
+}
 
 /**
  * Lit un cookie non `HttpOnly`.
@@ -173,6 +188,11 @@ const intergicielDeSession: Middleware = {
 export const clientApi = createClient<paths>({
   baseUrl: RACINE,
   credentials: "same-origin",
+  // `openapi-fetch` capture `globalThis.fetch` UNE fois, a la creation du
+  // client. Le reference ici a chaque appel : sinon aucune suite de tests ne
+  // peut doubler le reseau sans doubler ce module entier, et un module double
+  // est un module qu'on ne teste plus.
+  fetch: (requete: Request) => globalThis.fetch(requete),
 });
 
 clientApi.use(intergicielCsrf, intergicielDeSession);
