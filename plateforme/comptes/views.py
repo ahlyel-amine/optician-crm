@@ -53,16 +53,22 @@ from rest_framework.views import APIView, exception_handler
 from plateforme.comptes.acces import Acces, acces_pour
 from plateforme.comptes.models import Utilisateur
 from plateforme.comptes.permissions_catalogue import Permission
+from plateforme.comptes import services
 from plateforme.comptes.serializers import (
     AmorcageSerializer,
+    BasculeDroitSerializer,
+    BasculeMagasinSerializer,
     ChangementMotDePasseSerializer,
     CompteCreeSerializer,
     CompteSerializer,
     ConnexionSerializer,
     CreationCompteSerializer,
     ModificationIdentiteSerializer,
+    ResultatOctroiSerializer,
     StatutSerializer,
+    UniformisationSerializer,
     charge_utile_moi,
+    charge_utile_resultat,
 )
 from plateforme.comptes.services import (
     magasins_actifs_par_id,
@@ -622,3 +628,94 @@ class VueComptes(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Gene
             "compte": self.get_serializer(compte).data,
             "mot_de_passe_provisoire": secret,
         }
+
+    # ----------------------------------------------------------------------------------
+    # PERM-03 — les trois bascules de l'écran de droits (`03-UI-SPEC.md` 7.5, 7.8)
+    # ----------------------------------------------------------------------------------
+    #
+    # Trois routes, trois interrupteurs. Il n'y a **pas de bouton Enregistrer** et pas de
+    # lot : vingt-et-un interrupteurs derrière un `Enregistrer` est un formulaire qu'on
+    # abandonne à moitié rempli, et `JournalDroit` enregistre un acteur et un horodatage
+    # par octroi — ce qui correspond exactement à une bascule.
+    #
+    # Chacune délègue à `plateforme.comptes.services` sans rien décider elle-même. Ce
+    # n'est pas de la politesse architecturale : la fermeture des prérequis, l'extension
+    # des lignes uniformes et le refus hors intersection doivent valoir pour la commande
+    # de gestion d'onboarding et pour l'inscription en libre service de la phase 12, qui
+    # n'ont pas de requête HTTP.
+
+    @extend_schema(
+        request=BasculeDroitSerializer,
+        responses={200: ResultatOctroiSerializer},
+        summary="Accorder ou retirer un droit",
+    )
+    @action(detail=True, methods=["post"], url_path="droits")
+    def droits(self, request, pk=None):
+        """Un interrupteur : `accorde` décide du sens, `magasins` de la portée.
+
+        `magasins` absent vaut **tous les magasins accordés**, ce qui est le
+        comportement uniforme par défaut de 7.5 et l'état que la quasi-totalité des
+        affaires verra.
+        """
+        cible = self.get_object()
+        formulaire = BasculeDroitSerializer(data=request.data)
+        formulaire.is_valid(raise_exception=True)
+        donnees = formulaire.validated_data
+
+        operation = services.accorder if donnees["accorde"] else services.revoquer
+        with _erreurs_de_service():
+            resultat = operation(
+                cible, donnees["code"], donnees.get("magasins"), par=request.user
+            )
+        return Response(charge_utile_resultat(resultat))
+
+    @extend_schema(
+        request=UniformisationSerializer,
+        responses={200: ResultatOctroiSerializer},
+        summary="Uniformiser un droit sur tous les magasins",
+    )
+    @action(detail=True, methods=["post"], url_path="droits/uniformiser")
+    def uniformiser(self, request, pk=None):
+        """Le bouton `Uniformiser` de 7.5, qui replie une ligne personnalisée.
+
+        Une route distincte pour une raison d'interface : l'action demande une
+        confirmation quand les sous-interrupteurs divergent, et le journal doit pouvoir
+        se relire comme « il a tout aligné » plutôt que comme une bascule de plus.
+        """
+        cible = self.get_object()
+        formulaire = UniformisationSerializer(data=request.data)
+        formulaire.is_valid(raise_exception=True)
+        with _erreurs_de_service():
+            resultat = services.uniformiser(
+                cible,
+                formulaire.validated_data["code"],
+                formulaire.validated_data["accorde"],
+                par=request.user,
+            )
+        return Response(charge_utile_resultat(resultat))
+
+    @extend_schema(
+        request=BasculeMagasinSerializer,
+        responses={200: ResultatOctroiSerializer},
+        summary="Accorder ou retirer l'accès à un magasin",
+    )
+    @action(detail=True, methods=["post"], url_path="magasins")
+    def magasins(self, request, pk=None):
+        """L'accès à un magasin — le rayon d'action le plus large de cet écran.
+
+        Accorder étend les lignes **uniformes** au nouveau magasin et laisse les
+        personnalisées où elles sont ; retirer emporte les droits qui visaient ce
+        magasin. Les deux effets sont annoncés par l'interface avant d'être appliqués
+        (7.5 et 7.9), et appliqués ici que l'interface les ait annoncés ou non.
+        """
+        cible = self.get_object()
+        formulaire = BasculeMagasinSerializer(data=request.data)
+        formulaire.is_valid(raise_exception=True)
+        donnees = formulaire.validated_data
+
+        operation = (
+            services.accorder_magasin if donnees["accorde"] else services.retirer_magasin
+        )
+        with _erreurs_de_service():
+            resultat = operation(cible, donnees["magasin_code"], par=request.user)
+        return Response(charge_utile_resultat(resultat))

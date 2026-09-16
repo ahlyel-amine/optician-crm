@@ -26,7 +26,12 @@ from rest_framework import serializers
 
 from domaine.magasins.models import Magasin
 from plateforme.comptes.models import Utilisateur
-from plateforme.comptes.permissions_catalogue import EXPLICATIONS, PREREQUIS, SECTIONS
+from plateforme.comptes.permissions_catalogue import (
+    EXPLICATIONS,
+    PREREQUIS,
+    SECTIONS,
+    Permission,
+)
 from plateforme.control_plane.models import Client
 from plateforme.projection.serializers import SerializerProjete
 
@@ -448,3 +453,106 @@ class CompteCreeSerializer(serializers.Serializer):
 
     compte = CompteSerializer(read_only=True)
     mot_de_passe_provisoire = serializers.CharField(read_only=True)
+
+
+# ======================================================================================
+# PERM-03 — l'octroi, la révocation, et la forme de leur réponse (plan 03-09)
+# ======================================================================================
+#
+# **La réponse d'une bascule est un contrat**, et le plan 03-14 construit l'écran de
+# droits contre lui. Elle porte de quoi reconstruire la ligne — `actif`, `inactif` ou
+# `mixte` — pour **chaque** code touché, cascade comprise. Sans cela, la sauvegarde par
+# interrupteur de `03-UI-SPEC.md` 7.8 obligerait l'interface à recharger toute la page
+# après chaque clic, ce qui est exactement ce que « immédiate » exclut.
+
+
+class BasculeDroitSerializer(serializers.Serializer):
+    """`{code, accorde, magasins?}` — un interrupteur, et rien d'autre.
+
+    Un seul point de terminaison pour les deux sens, parce que c'est **un seul contrôle**
+    à l'écran : un `accorde: false` sur une route d'octroi se lit mieux que deux routes
+    dont l'interface devrait choisir à chaque clic.
+
+    `magasins` absent signifie **tous les magasins accordés**, ce qui produit le
+    comportement uniforme par défaut de 7.5. Le fournir est le chemin « Par magasin »,
+    celui qui n'apparaît qu'à la demande et seulement au-dessus de deux magasins.
+    """
+
+    code = serializers.ChoiceField(choices=Permission.choices)
+    accorde = serializers.BooleanField()
+    magasins = serializers.ListField(
+        child=serializers.CharField(max_length=20), required=False, allow_empty=False
+    )
+
+
+class UniformisationSerializer(serializers.Serializer):
+    """`{code, accorde}` — le bouton `Uniformiser` de 7.5, qui replie une ligne mixte."""
+
+    code = serializers.ChoiceField(choices=Permission.choices)
+    accorde = serializers.BooleanField()
+
+
+class BasculeMagasinSerializer(serializers.Serializer):
+    """`{magasin_code, accorde}` — l'accès à un magasin (`03-UI-SPEC.md` 7.3 B).
+
+    Le code métier, jamais l'identifiant : c'est ce que stocke `AccesMagasin`, et c'est
+    ce qui survit à une restauration là où un `id` est réattribué (TENANT-09).
+    """
+
+    magasin_code = serializers.CharField(max_length=20)
+    accorde = serializers.BooleanField()
+
+
+class LigneDeDroitSerializer(serializers.Serializer):
+    """L'état d'un code pour un compte : sa valeur, et les magasins où elle vaut.
+
+    `etat` vaut `actif`, `inactif` ou `mixte`. Les deux premiers sont **uniformes** au
+    sens de 7.5 — tous les magasins accordés sont d'accord — et `mixte` est l'unique
+    état personnalisé, celui que l'interrupteur parent rend en tri-état avec
+    `aria-checked="mixed"`.
+    """
+
+    code = serializers.CharField(read_only=True)
+    etat = serializers.CharField(read_only=True)
+    magasins = serializers.ListField(child=serializers.CharField(), read_only=True)
+
+
+class ResultatOctroiSerializer(serializers.Serializer):
+    """Ce qu'une bascule renvoie, et ce que l'écran de droits en fait.
+
+    | Champ | Ce que l'interface en fait |
+    |---|---|
+    | `lignes` | redessine chaque interrupteur touché, **sans recharger** (7.8) |
+    | `cascade` | la note en ligne « … a été activé automatiquement » (7.6) |
+    | `cascade` | et le **toast d'annulation unique** qui couvre tout l'ensemble |
+    | `magasins_accordes` | le dénominateur de « Personnalisé : 2 magasins sur 3 » |
+    | `magasins_etendus` | la note « Californie a été ajouté. Vérifiez les 2 droits… » |
+
+    `lignes` porte le code demandé **en tête**, puis les codes emportés par la cascade.
+    """
+
+    code = serializers.CharField(read_only=True)
+    action = serializers.CharField(read_only=True)
+    lignes = LigneDeDroitSerializer(many=True, read_only=True)
+    cascade = serializers.ListField(child=serializers.CharField(), read_only=True)
+    magasins_accordes = serializers.ListField(
+        child=serializers.CharField(), read_only=True
+    )
+    magasins_etendus = serializers.ListField(
+        child=serializers.CharField(), read_only=True
+    )
+
+
+def charge_utile_resultat(resultat) -> dict:
+    """Le `Resultat` du service, en dictionnaire. Une seule traduction, pour trois routes."""
+    return {
+        "code": str(resultat.code),
+        "action": str(resultat.action),
+        "lignes": [
+            {"code": ligne.code, "etat": ligne.etat, "magasins": list(ligne.magasins)}
+            for ligne in resultat.lignes
+        ],
+        "cascade": [str(code) for code in resultat.cascade],
+        "magasins_accordes": list(resultat.magasins_accordes),
+        "magasins_etendus": list(resultat.magasins_etendus),
+    }

@@ -1,12 +1,20 @@
 """PERM-02 et PERM-03 — créer un compte gérant, le désactiver, accorder et révoquer.
 
-**Ces tests ne sont pas encore implémentés.** Ils portent le marqueur `pending` et
-échouent volontairement. Trois plans se partagent leur mise au vert :
+**Ce fichier ne porte plus aucun marqueur `pending`.** Quatre plans se sont partagé sa
+mise au vert, et l'ordre dit ce que chacun garantit :
 
 * **03-04** pose `DroitAccorde(utilisateur, magasin_code, code)`, `AccesMagasin` et
   `JournalDroit` — la forme de stockage ;
 * **03-05** pose `Acces` et `acces_pour()` — la résolution ;
-* **03-09** pose la surface d'écriture de l'API — création de compte, octroi, révocation.
+* **03-08** pose la connexion par session, donc les tests qui exigent une vraie session ;
+* **03-09** pose la surface d'écriture de l'API — création de compte, octroi, révocation,
+  et la cascade des prérequis appliquée **côté serveur**.
+
+Les tests de ce fichier se lisent à trois niveaux, délibérément : le **stockage** (des
+lignes et des contraintes), le **service** (la règle, appelable sans HTTP) et l'**API**
+(le contrat que la SPA consomme). Une règle vérifiée au seul niveau de l'API serait une
+règle qu'une commande de gestion contourne ; vérifiée au seul niveau du service, elle
+serait une règle qu'une vue oublie d'appeler.
 
 La règle que ce fichier existe pour pinner est CLAUDE.md **#6** : *« Permissions are
 granted per gérant individually, as data, not as role tiers »*, et CLAUDE.md **#13** :
@@ -767,25 +775,6 @@ def test_perm03_la_revocation_prend_effet_sans_reconnexion(db_all, deux_magasins
     assert apres.magasins_ids == frozenset({anfa.pk})
 
 
-@pytest.mark.pending
-def test_perm03_un_proprietaire_ne_peut_pas_accorder_a_un_utilisateur_dun_autre_client(
-    db_all,
-):
-    """PERM-03 — l'octroi traverse la frontière des affaires si personne ne l'en empêche.
-
-    Les droits vivent dans le plan de contrôle, donc **tous les gérants de la flotte sont
-    dans la même table**. Rien dans le schéma n'empêche une ligne `DroitAccorde` dont
-    l'`utilisateur` appartient à une autre affaire : c'est une clé étrangère parfaitement
-    valide. La garantie est applicative, donc elle a besoin d'un test, et le test a besoin
-    d'un second client — d'où `db_all`.
-
-    Rouge, il dirait qu'un propriétaire peut accorder des droits sur ses propres magasins à
-    un compte qu'il ne contrôle pas, ou pire, à un compte d'une autre affaire qu'il
-    rendrait ainsi actif chez lui.
-    """
-    pytest.fail("non implémenté : plan 03-09")
-
-
 def test_perm03_un_droit_ne_peut_viser_un_magasin_non_accorde(db_all):
     """PERM-03 — un droit sans accès au magasin n'accorde rien : c'est un mensonge stocké.
 
@@ -889,3 +878,493 @@ def test_perm03_le_journal_enregistre_qui_a_accorde_quoi_et_quand(db_all):
     with pytest.raises(ValidationError):
         survivante.save()
     assert JournalDroit.objects.get(pk=entree.pk).par == proprietaire
+
+
+def test_perm03_le_service_journalise_chaque_octroi_et_chaque_revocation(
+    db_all, deux_magasins
+):
+    """PERM-03 — la moitié **service** du test ci-dessus, livrée par le plan 03-09.
+
+    Le test précédent vérifie que le modèle sait répondre à « qui a donné les marges à
+    Karim ? ». Celui-ci vérifie que la question a une réponse **sans que personne n'ait
+    pensé à l'écrire** : le journal est rempli par le service, pas par la vue, donc une
+    commande de gestion et l'inscription en libre service de la phase 12 laissent la
+    même trace qu'un clic dans l'interface (menace T-03-63).
+
+    Rouge, il dirait que la traçabilité dépend du chemin d'appel — ce qui est la façon
+    dont un journal devient faux : il n'est pas vide, il est **incomplet**, et rien ne
+    le signale.
+
+    La cascade est journalisée elle aussi, et c'est délibéré : `stock.voir` accordé
+    automatiquement est un droit réellement accordé, et « je ne l'ai jamais coché » n'est
+    pas une réponse à « qui le lui a donné ».
+    """
+    from plateforme.comptes import services
+    from plateforme.comptes.models import JournalDroit
+    from plateforme.comptes.permissions_catalogue import Permission
+    from tests.factories import ProprietaireFactory
+
+    proprietaire = ProprietaireFactory()
+    karim = _cible(proprietaire, deux_magasins)
+    JournalDroit.objects.filter(utilisateur=karim).delete()
+
+    services.accorder(karim, Permission.STOCK_AJUSTER, par=proprietaire)
+    services.revoquer(karim, Permission.STOCK_VOIR, par=proprietaire)
+
+    entrees = list(
+        JournalDroit.objects.filter(utilisateur=karim).order_by("le", "pk").values_list(
+            "action", "cible", "par"
+        )
+    )
+    assert entrees == [
+        ("accorde", Permission.STOCK_AJUSTER.value, proprietaire.pk),
+        ("accorde", Permission.STOCK_VOIR.value, proprietaire.pk),
+        ("revoque", Permission.STOCK_VOIR.value, proprietaire.pk),
+        ("revoque", Permission.STOCK_AJUSTER.value, proprietaire.pk),
+    ], f"Le journal du service est incomplet ou mal ordonné : {entrees}"
+
+    # L'acteur est celui qui a agi, jamais la cible. Rouge, cette ligne dirait que le
+    # journal répond « Karim » à « qui a donné les marges à Karim ? ».
+    assert all(par == proprietaire.pk for _action, _cible, par in entrees)
+
+
+def test_perm03_les_trois_bascules_repondent_le_contrat_de_lecran_de_droits(affaire_reelle):
+    """PERM-03 / `03-UI-SPEC.md` 7.5, 7.8 — le contrat de réponse contre lequel 03-14 se construit.
+
+    L'écran de droits n'a **pas de bouton Enregistrer** : chaque interrupteur écrit
+    immédiatement et redessine sa ligne depuis la réponse. Ce test fixe cette réponse,
+    parce qu'une interface construite contre une forme non testée se casse au premier
+    champ renommé, et que le plan 03-14 ne la redécouvrira pas.
+
+    Les trois routes sont jouées sur une vraie session, dans l'ordre où l'écran les
+    déclenche : une bascule personnalisée, un `Uniformiser`, un retrait de magasin.
+    """
+    from plateforme.comptes.permissions_catalogue import Permission
+    from tests.factories import AccesMagasinFactory, GerantFactory, ProprietaireFactory
+
+    anfa, maarif = affaire_reelle.magasins
+    proprietaire = ProprietaireFactory(client=affaire_reelle.client)
+    karim = GerantFactory(client=affaire_reelle.client)
+    for magasin in affaire_reelle.magasins:
+        AccesMagasinFactory(
+            utilisateur=karim, magasin_code=magasin.code, accorde_par=proprietaire
+        )
+    api = _connecter(_client_api(), proprietaire)
+
+    mixte = api.post(
+        _droits(karim),
+        {
+            "code": Permission.CAISSE_SAISIR.value,
+            "accorde": True,
+            "magasins": [anfa.code],
+        },
+        format="json",
+    )
+    assert mixte.status_code == 200, mixte.data
+    assert mixte.data["code"] == Permission.CAISSE_SAISIR.value
+    assert mixte.data["action"] == "accorde"
+    assert mixte.data["cascade"] == [Permission.CAISSE_VOIR.value]
+    assert sorted(mixte.data["magasins_accordes"]) == sorted([anfa.code, maarif.code])
+    par_code = {ligne["code"]: ligne for ligne in mixte.data["lignes"]}
+    assert par_code[Permission.CAISSE_SAISIR.value]["etat"] == "mixte"
+    assert par_code[Permission.CAISSE_SAISIR.value]["magasins"] == [anfa.code]
+    assert par_code[Permission.CAISSE_VOIR.value]["etat"] == "mixte"
+
+    uniforme = api.post(
+        _uniformiser(karim),
+        {"code": Permission.CAISSE_SAISIR.value, "accorde": True},
+        format="json",
+    )
+    assert uniforme.status_code == 200, uniforme.data
+    assert uniforme.data["lignes"][0]["etat"] == "actif"
+    assert sorted(uniforme.data["lignes"][0]["magasins"]) == sorted(
+        [anfa.code, maarif.code]
+    )
+
+    retrait = api.post(
+        _magasins(karim),
+        {"magasin_code": maarif.code, "accorde": False},
+        format="json",
+    )
+    assert retrait.status_code == 200, retrait.data
+    assert retrait.data["magasins_accordes"] == [anfa.code]
+    assert set(retrait.data["cascade"]) == {
+        Permission.CAISSE_SAISIR.value,
+        Permission.CAISSE_VOIR.value,
+    }
+
+    # Et la ligne de la liste suit : le badge « Personnalisé par magasin » de 7.2 est
+    # calculé côté serveur, donc il ne peut pas diverger de ce qui vient d'être écrit.
+    fiche = api.get(_detail(karim))
+    assert fiche.status_code == 200
+    assert fiche.data["nombre_de_droits"] == 2
+    assert fiche.data["personnalise"] is False
+    assert [m["code"] for m in fiche.data["magasins"]] == [anfa.code]
+
+
+# --------------------------------------------------------------------------------------
+# PERM-03 — la surface d'octroi (plan 03-09)
+# --------------------------------------------------------------------------------------
+def _cible(proprietaire, magasins, codes_par_magasin=None):
+    """Un gérant de l'affaire du propriétaire, avec ses accès magasins et ses droits."""
+    from tests.factories import AccesMagasinFactory, DroitAccordeFactory, GerantFactory
+
+    gerant = GerantFactory(client=proprietaire.client)
+    for magasin in magasins:
+        AccesMagasinFactory(
+            utilisateur=gerant, magasin_code=magasin.code, accorde_par=proprietaire
+        )
+    for magasin, codes in (codes_par_magasin or {}).items():
+        for code in codes:
+            DroitAccordeFactory(
+                utilisateur=gerant,
+                magasin_code=magasin,
+                code=code,
+                accorde_par=proprietaire,
+            )
+    return gerant
+
+
+def test_perm03_un_octroi_ecrit_une_ligne_par_magasin_accorde(db_all, deux_magasins):
+    """PERM-03 / CLAUDE.md #13 — un interrupteur, N lignes. C'est tout le compromis.
+
+    `03-UI-SPEC.md` 7.5 cache la dimension magasin par défaut : le propriétaire voit une
+    case à cocher par droit, et le stockage garde la granularité
+    `(gérant, magasin, permission)`. Ce test est la charnière entre les deux — allumer
+    écrit une ligne **par magasin accordé**, éteindre les supprime **toutes**.
+
+    Rouge, il dirait soit qu'un octroi n'écrit qu'une ligne (donc que l'interface
+    uniforme ment sur ce qui est accordé), soit qu'une révocation en laisse une derrière
+    elle (donc qu'un droit « retiré » reste actif dans un magasin).
+
+    La réponse est vérifiée en même temps que la base, parce que le plan 03-14 construit
+    l'écran contre elle : l'état de ligne — `actif`, `inactif` ou `mixte` — doit suffire
+    à redessiner l'interrupteur sans recharger la page (7.8).
+    """
+    from plateforme.comptes import services
+    from plateforme.comptes.models import DroitAccorde
+    from plateforme.comptes.permissions_catalogue import Permission
+    from tests.factories import ProprietaireFactory
+
+    anfa, maarif = deux_magasins
+    proprietaire = ProprietaireFactory()
+    karim = _cible(proprietaire, deux_magasins)
+
+    resultat = services.accorder(karim, Permission.CAISSE_VOIR, par=proprietaire)
+
+    assert set(
+        DroitAccorde.objects.filter(
+            utilisateur=karim, code=Permission.CAISSE_VOIR
+        ).values_list("magasin_code", flat=True)
+    ) == {anfa.code, maarif.code}, (
+        "Allumer l'interrupteur n'a pas écrit une ligne par magasin accordé. "
+        "L'interface uniforme de 7.5 affirmerait alors un droit que la moitié des "
+        "magasins n'a pas."
+    )
+    ligne = resultat.lignes[0]
+    assert ligne.code == Permission.CAISSE_VOIR.value
+    assert ligne.etat == services.ETAT_ACTIF
+    assert set(ligne.magasins) == {anfa.code, maarif.code}
+    assert set(resultat.magasins_accordes) == {anfa.code, maarif.code}
+
+    retour = services.revoquer(karim, Permission.CAISSE_VOIR, par=proprietaire)
+    assert not DroitAccorde.objects.filter(
+        utilisateur=karim, code=Permission.CAISSE_VOIR
+    ).exists()
+    assert retour.lignes[0].etat == services.ETAT_INACTIF
+    assert retour.lignes[0].magasins == ()
+
+    # Et l'état **mixte**, qui est le seul état personnalisé de 7.5 : un octroi limité à
+    # un magasin. Sans cette moitié, une implémentation qui ne saurait produire que
+    # `actif` et `inactif` passerait tout ce qui précède.
+    mixte = services.accorder(
+        karim, Permission.CAISSE_VOIR, [anfa.code], par=proprietaire
+    )
+    assert mixte.lignes[0].etat == services.ETAT_MIXTE
+    assert mixte.lignes[0].magasins == (anfa.code,)
+
+
+def test_perm03_la_cascade_des_prerequis_est_appliquee_cote_serveur(db_all, deux_magasins):
+    """PERM-03 / `03-UI-SPEC.md` 7.6 — « la note de l'interface est une explication, pas la règle ».
+
+    Rouge, ce test dirait que la cascade vit dans la SPA : un appel direct à l'API
+    accorderait alors `stock.ajuster` sans `stock.voir`, et produirait le gérant qui doit
+    corriger un stock qu'il ne voit pas — la classe d'appels que la carte des prérequis
+    existe pour supprimer (menace T-03-61).
+
+    Les deux sens sont vérifiés, parce que ce sont deux fonctions : `fermeture_prerequis`
+    en accordant, `dependants` en révoquant. Une implémentation qui n'aurait que la
+    première laisserait `stock.ajuster` derrière elle après avoir retiré `stock.voir`,
+    c'est-à-dire un droit que la règle déclare absurde, stocké.
+
+    La liste `cascade` de la réponse est vérifiée en même temps : l'interface en tire sa
+    note en ligne (« Consulter le stock a été activé automatiquement ») **et** son toast
+    d'annulation unique. Sans elle, il lui faudrait recharger la page pour savoir ce qui
+    a bougé.
+    """
+    from plateforme.comptes import services
+    from plateforme.comptes.models import DroitAccorde
+    from plateforme.comptes.permissions_catalogue import Permission
+    from tests.factories import ProprietaireFactory
+
+    proprietaire = ProprietaireFactory()
+    karim = _cible(proprietaire, deux_magasins)
+
+    resultat = services.accorder(karim, Permission.STOCK_AJUSTER, par=proprietaire)
+    accordes = set(
+        DroitAccorde.objects.filter(utilisateur=karim).values_list("code", flat=True)
+    )
+    assert accordes == {
+        Permission.STOCK_AJUSTER.value,
+        Permission.STOCK_VOIR.value,
+    }, f"La cascade montante n'a pas été appliquée côté serveur : {sorted(accordes)}"
+    assert resultat.cascade == (Permission.STOCK_VOIR.value,)
+    assert {ligne.code for ligne in resultat.lignes} == accordes
+
+    retour = services.revoquer(karim, Permission.STOCK_VOIR, par=proprietaire)
+    assert not DroitAccorde.objects.filter(utilisateur=karim).exists(), (
+        "Retirer `stock.voir` a laissé `stock.ajuster` derrière lui. Le stockage garde "
+        "un droit que la règle déclare inopérant, et il redeviendra actif le jour où "
+        "`stock.voir` sera réaccordé."
+    )
+    assert retour.cascade == (Permission.STOCK_AJUSTER.value,)
+
+
+def test_perm03_un_magasin_ajoute_etend_les_lignes_uniformes_et_pas_les_personnalisees(
+    db_all, deux_magasins
+):
+    """PERM-03 / `03-UI-SPEC.md` 7.5 — la règle d'extension, et son mode de défaillance.
+
+    Rouge dans un sens, ce test dirait qu'une ligne **uniforme** ne s'étend pas : le
+    propriétaire ajoute Californie et découvre plus tard que Karim n'y voit rien, alors
+    que l'interrupteur est allumé. Rouge dans l'autre, il dirait qu'une ligne
+    **personnalisée** s'étend : le propriétaire avait délibérément refusé `caisse.saisir`
+    à Maârif, et l'ajout d'un magasin sans rapport le lui accorde à Californie (menace
+    T-03-62). Le second sens est le grave — c'est une permission distribuée que personne
+    n'a accordée, à l'occasion d'une action sans rapport.
+
+    Le retrait d'un magasin est vérifié dans la foulée : il emporte les droits qui le
+    visaient, ce que le dialogue de 7.9 annonce en toutes lettres. Une ligne laissée
+    derrière serait inerte aujourd'hui et redeviendrait active au prochain octroi du même
+    magasin (menace T-03-18).
+    """
+    from plateforme.comptes import services
+    from plateforme.comptes.models import DroitAccorde
+    from plateforme.comptes.permissions_catalogue import Permission
+    from tests.factories import MagasinFactory, ProprietaireFactory
+
+    anfa, maarif = deux_magasins
+    proprietaire = ProprietaireFactory()
+    karim = _cible(proprietaire, deux_magasins)
+
+    services.accorder(karim, Permission.CLIENT_VOIR, par=proprietaire)  # uniforme
+    services.accorder(
+        karim, Permission.CAISSE_VOIR, [anfa.code], par=proprietaire
+    )  # personnalisée
+    assert services.ligne_de(karim, Permission.CAISSE_VOIR).etat == services.ETAT_MIXTE
+
+    californie = MagasinFactory(code="CALIFORNIE", nom="Optique Californie", actif=True)
+    resultat = services.accorder_magasin(karim, californie.code, par=proprietaire)
+
+    assert resultat.magasins_etendus == (Permission.CLIENT_VOIR.value,), (
+        f"Les lignes étendues au nouveau magasin sont {resultat.magasins_etendus}. "
+        "Seules les lignes uniformes s'étendent (7.5)."
+    )
+    assert DroitAccorde.objects.filter(
+        utilisateur=karim, magasin_code=californie.code, code=Permission.CLIENT_VOIR
+    ).exists()
+    assert not DroitAccorde.objects.filter(
+        utilisateur=karim, magasin_code=californie.code, code=Permission.CAISSE_VOIR
+    ).exists(), (
+        "Une ligne personnalisée s'est étendue au magasin ajouté. Le propriétaire avait "
+        "refusé ce droit à Maârif ; il vient de l'accorder à Californie sans le savoir."
+    )
+
+    # Le retrait emporte les droits de ce magasin, et lui seul.
+    retrait = services.retirer_magasin(karim, anfa.code, par=proprietaire)
+    assert set(retrait.cascade) == {
+        Permission.CLIENT_VOIR.value,
+        Permission.CAISSE_VOIR.value,
+    }
+    assert not DroitAccorde.objects.filter(
+        utilisateur=karim, magasin_code=anfa.code
+    ).exists()
+    assert DroitAccorde.objects.filter(
+        utilisateur=karim, magasin_code=maarif.code, code=Permission.CLIENT_VOIR
+    ).exists(), (
+        "Le retrait d'Anfa a emporté les droits de Maârif. Le dialogue de 7.9 promet le "
+        "contraire, nommément."
+    )
+    assert set(services.magasins_accordes(karim)) == {maarif.code, californie.code}
+
+
+def test_perm03_un_gerant_gestionnaire_ne_donne_que_ce_quil_detient(db_all, deux_magasins):
+    """PERM-03 / `03-UI-SPEC.md` 7.7 — l'intersection est une règle de serveur, pas d'écran.
+
+    Un gérant détenant `compte.gerer` administre ses collègues. S'il pouvait accorder un
+    droit qu'il ne détient pas, `compte.gerer` serait un droit d'auto-promotion par
+    procuration : il crée un compte, lui accorde `article.voir_prix_achat`, s'y connecte
+    (il en a posé le mot de passe) et lit les marges (menace T-03-58). La même chose vaut
+    pour un magasin : le gérant d'Anfa ne peut rien accorder à Maârif.
+
+    Rouge, ce test dit que l'interface est la seule chose qui tient cette règle — donc
+    qu'un `curl` la contourne.
+    """
+    from django.core.exceptions import PermissionDenied
+
+    from plateforme.comptes import services
+    from plateforme.comptes.models import DroitAccorde
+    from plateforme.comptes.permissions_catalogue import Permission
+    from tests.factories import ProprietaireFactory
+
+    anfa, maarif = deux_magasins
+    proprietaire = ProprietaireFactory()
+    gestionnaire = _cible(
+        proprietaire,
+        [anfa],
+        {anfa.code: [Permission.COMPTE_GERER, Permission.STOCK_VOIR]},
+    )
+    karim = _cible(proprietaire, deux_magasins)
+
+    # Le contrôle positif d'abord : ce qu'il détient, il le donne. Sans lui, un service
+    # qui refuserait tout passerait les deux refus qui suivent.
+    services.accorder(karim, Permission.STOCK_VOIR, [anfa.code], par=gestionnaire)
+    assert DroitAccorde.objects.filter(
+        utilisateur=karim, magasin_code=anfa.code, code=Permission.STOCK_VOIR
+    ).exists()
+
+    with pytest.raises(PermissionDenied):
+        services.accorder(karim, Permission.CAISSE_VOIR, [anfa.code], par=gestionnaire)
+    with pytest.raises(PermissionDenied):
+        services.accorder(karim, Permission.STOCK_VOIR, [maarif.code], par=gestionnaire)
+
+    assert not DroitAccorde.objects.filter(
+        utilisateur=karim, magasin_code=maarif.code
+    ).exists()
+    assert not DroitAccorde.objects.filter(
+        utilisateur=karim, code=Permission.CAISSE_VOIR
+    ).exists()
+
+    # La cascade n'est pas une porte de service : accorder `stock.ajuster` exige aussi
+    # `stock.voir`, et un code de la fermeture non détenu refuse l'octroi entier plutôt
+    # que de le servir à moitié.
+    with pytest.raises(PermissionDenied):
+        services.accorder(
+            karim, Permission.VENTE_VOIR_MARGE, [anfa.code], par=gestionnaire
+        )
+    assert not DroitAccorde.objects.filter(
+        utilisateur=karim, code=Permission.ARTICLE_VOIR_PRIX_ACHAT
+    ).exists()
+
+
+def test_perm03_la_revocation_par_lapi_prend_effet_sans_reconnexion(affaire_reelle):
+    """PERM-03 — **le test qui échouerait sous un jeton porteur**, joué de bout en bout.
+
+    `03-UI-SPEC.md` 7.8 affiche sous la liste des droits : « Les changements prennent
+    effet immédiatement, dès l'action suivante de l'utilisateur. Il n'a pas besoin de se
+    reconnecter. » Cette phrase n'est vraie que si les lignes de droits sont relues à
+    **chaque** requête.
+
+    Sous un jeton porteur de quinze minutes, ou sous un `Acces` posé en session, ce test
+    est rouge et rien d'autre ne l'est : le gérant garde son droit jusqu'à l'expiration
+    du jeton, l'écran affiche que le propriétaire a agi, et le propriétaire le croit.
+    C'est aussi le pendant exact de PERM-02 (compte désactivé, plan 03-08), et c'est
+    pourquoi la session — et non le jeton — est la décision de la phase.
+
+    Le test joue **deux vraies requêtes du gérant**, avec la même session, autour d'une
+    révocation faite par le propriétaire depuis la sienne.
+    """
+    from plateforme.comptes.permissions_catalogue import Permission
+    from tests.factories import AccesMagasinFactory, GerantFactory, ProprietaireFactory
+
+    proprietaire = ProprietaireFactory(client=affaire_reelle.client)
+    karim = GerantFactory(client=affaire_reelle.client)
+    for magasin in affaire_reelle.magasins:
+        AccesMagasinFactory(
+            utilisateur=karim, magasin_code=magasin.code, accorde_par=proprietaire
+        )
+
+    patron = _connecter(_client_api(), proprietaire)
+    octroi = patron.post(
+        _droits(karim),
+        {"code": Permission.CAISSE_VOIR.value, "accorde": True},
+        format="json",
+    )
+    assert octroi.status_code == 200, octroi.data
+    assert octroi.data["lignes"][0]["etat"] == "actif"
+
+    # Karim ouvre sa session **après** l'octroi et ne la referme jamais.
+    sien = _connecter(_client_api(), karim)
+    avant = sien.get("/api/auth/moi/")
+    assert avant.status_code == 200
+    assert Permission.CAISSE_VOIR.value in avant.data["permissions"]
+
+    revocation = patron.post(
+        _droits(karim),
+        {"code": Permission.CAISSE_VOIR.value, "accorde": False},
+        format="json",
+    )
+    assert revocation.status_code == 200, revocation.data
+
+    apres = sien.get("/api/auth/moi/")
+    assert apres.status_code == 200, (
+        "Le gérant a été déconnecté par une révocation. Retirer un droit n'est pas "
+        "retirer un compte (7.8) ; c'est la désactivation qui déconnecte."
+    )
+    assert Permission.CAISSE_VOIR.value not in apres.data["permissions"], (
+        "Le droit retiré s'applique encore à la requête suivante, sur une session déjà "
+        "ouverte. La phrase affichée sous la liste des droits est fausse."
+    )
+
+
+def test_perm03_un_proprietaire_ne_peut_pas_accorder_a_un_utilisateur_dun_autre_client(
+    db_all, deux_magasins
+):
+    """PERM-03 — l'octroi traverse la frontière des affaires si personne ne l'en empêche.
+
+    Les droits vivent dans le plan de contrôle, donc **tous les gérants de la flotte sont
+    dans la même table**. Rien dans le schéma n'empêche une ligne `DroitAccorde` dont
+    l'`utilisateur` appartient à une autre affaire : c'est une clé étrangère parfaitement
+    valide. La garantie est applicative, donc elle a besoin d'un test, et le test a besoin
+    d'un second client — d'où `db_all`.
+
+    Rouge, il dirait qu'un propriétaire peut accorder des droits sur ses propres magasins à
+    un compte qu'il ne contrôle pas, ou pire, à un compte d'une autre affaire qu'il
+    rendrait ainsi actif chez lui.
+
+    Deux couches sont vérifiées et elles ne se remplacent pas : le service refuse la
+    cible, et la vue ne la trouve même pas — son `get_queryset` est borné à l'affaire de
+    l'appelant, donc la route de détail répond 404 sur un petit entier deviné plutôt que
+    de servir la fiche d'un gérant d'en face (menace T-03-59).
+    """
+    from django.core.exceptions import PermissionDenied
+
+    from plateforme.comptes import services
+    from plateforme.comptes.models import DroitAccorde
+    from plateforme.comptes.permissions_catalogue import Permission
+    from tests.factories import AccesMagasinFactory, GerantFactory, ProprietaireFactory
+
+    anfa, _maarif = deux_magasins
+    proprietaire = ProprietaireFactory()
+    concurrent = ProprietaireFactory()
+    assert proprietaire.client_id != concurrent.client_id
+
+    etranger = GerantFactory(client=concurrent.client)
+    AccesMagasinFactory(
+        utilisateur=etranger, magasin_code=anfa.code, accorde_par=concurrent
+    )
+
+    with pytest.raises(PermissionDenied):
+        services.accorder(etranger, Permission.CAISSE_VOIR, [anfa.code], par=proprietaire)
+    with pytest.raises(PermissionDenied):
+        services.accorder_magasin(etranger, anfa.code, par=proprietaire)
+    with pytest.raises(PermissionDenied):
+        services.retirer_magasin(etranger, anfa.code, par=proprietaire)
+
+    assert not DroitAccorde.objects.filter(utilisateur=etranger).exists()
+
+    # Le contrôle positif : la même opération, sur un compte de sa propre affaire, passe.
+    # Sans lui, un service qui refuserait toute cible passerait les trois refus ci-dessus.
+    sien = _cible(proprietaire, [anfa])
+    services.accorder(sien, Permission.CAISSE_VOIR, [anfa.code], par=proprietaire)
+    assert DroitAccorde.objects.filter(utilisateur=sien).count() == 1
