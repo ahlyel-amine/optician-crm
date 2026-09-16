@@ -260,6 +260,58 @@ TEMPLATES = [
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
+# Note on what is deliberately ABSENT from TEMPLATES["OPTIONS"]: `string_if_invalid`.
+# A missing template key renders "" by default, so a field the projection removed and a
+# field somebody misspelled look identical — which is threat T-03-35. The fix is NOT to
+# set this option globally: Django's own docs warn that any non-empty value breaks
+# `{% if %}` on optional variables. Document templates iterate a declared, already
+# projected column list instead, and two tests hold that (see
+# plateforme/projection/documents.py).
+
+
+# --------------------------------------------------------------------------------------
+# API — DRF and the OpenAPI schema (PERM-06, consumer 4)
+# --------------------------------------------------------------------------------------
+REST_FRAMEWORK = {
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    # JSON only, on purpose (threat A-03-06). DRF's browsable HTML renderer draws its
+    # forms from `get_fields()`, which IS projected — but it also renders related
+    # objects' `__str__` inside `<select>` dropdowns, and a dropdown enumerates rows: a
+    # gérant with one magasin would read the client names of the others. It is added in
+    # `local.py` and nowhere else, and a test asserts its class name appears in exactly
+    # one settings module — which is why that name is not written here.
+    "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
+}
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "API Optique",
+    "VERSION": "1.0.0",
+    # The schema endpoint does not describe itself. It is infrastructure, not API surface.
+    "SERVE_INCLUDE_SCHEMA": False,
+    # Pin the projection during schema generation, so the served document is identical
+    # for every caller and matches the committed schema.yml.
+    # `generators.py:231` assigns `view.request = GET_MOCK_REQUEST(...)`, and the stock
+    # `build_mock_request` copies `request.user` from the caller
+    # (`plumbing.py:1283-1299`) — which would make `/api/schema/` a per-user document and
+    # let a gérant enumerate the protected fields by diffing it (threat T-03-32).
+    "GET_MOCK_REQUEST": "plateforme.projection.schema.requete_mock_schema",
+    # The registry also drives `required`, so the generated TypeScript is
+    # `prix_achat?: string` rather than a type that lies. `openapi.py:1094-1099` computes
+    # membership as `field.required or readOnly`, so a read-only money field lands in
+    # `required` and the compiler then promises a key that a gérant's payload will not
+    # carry (threat T-03-33).
+    # Order matters: the enum hook runs first, ours last, on the finished document.
+    "POSTPROCESSING_HOOKS": [
+        "drf_spectacular.hooks.postprocess_schema_enums",
+        "plateforme.projection.schema.marquer_champs_proteges_optionnels",
+    ],
+    # Note what is absent here, and keep it absent: the global switch that drops *every*
+    # read-only field from `required`. Flipping it would make `id` optional on every
+    # resource in the product — a much broader lie than the one being fixed. The hook
+    # above is surgical; that switch is not. A test asserts the name appears in no
+    # settings module, because a setting nobody writes down is a setting nobody flips.
+}
+
 
 # --------------------------------------------------------------------------------------
 # Identity

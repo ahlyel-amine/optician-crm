@@ -364,8 +364,41 @@ def test_perm06_lacces_absent_vaut_aucun_droit(registre_de_la_fixture):
     assert nom in complet.fields
 
 
-@pytest.mark.pending
-def test_perm06_le_schema_est_identique_pour_le_proprietaire_et_le_gerant(db_all):
+def _mock_naif(method, path, view, original_request, **kwargs):
+    """La faute que `requete_mock_schema` existe pour empêcher, écrite en trois lignes.
+
+    `build_mock_request` recopie `request.user` de l'appelant (`plumbing.py:1288`) ; en
+    résoudre l'accès est donc l'implémentation que quelqu'un écrit naturellement, et elle
+    produit **un schéma par utilisateur**. Ce faux est le contrôle qui rend le test
+    d'identité octet-pour-octet autre chose qu'une tautologie.
+    """
+    from drf_spectacular.plumbing import build_mock_request
+
+    from plateforme.comptes.acces import acces_pour
+
+    requete = build_mock_request(method, path, view, original_request, **kwargs)
+    requete.acces = acces_pour(requete.user)
+    return requete
+
+
+def _schema_servi(utilisateur, reglages, *, vue=None):
+    """Le document que `/api/schema/` rendrait à cet utilisateur, en octets."""
+    from drf_spectacular.views import SpectacularAPIView
+    from rest_framework.test import APIRequestFactory, force_authenticate
+
+    reglages.ROOT_URLCONF = "tests.ressources_fixture"
+    classe = vue or SpectacularAPIView
+    requete = APIRequestFactory().get("/api/schema/")
+    requete.user = utilisateur
+    force_authenticate(requete, user=utilisateur)
+    reponse = classe.as_view()(requete)
+    reponse.render()
+    return reponse.content
+
+
+def test_perm06_le_schema_est_identique_pour_le_proprietaire_et_le_gerant(
+    db_all, deux_magasins, registre_de_la_fixture, settings
+):
     """PERM-06 / A-03-09 — le schéma ne doit pas être un document par utilisateur.
 
     `build_mock_request` de drf-spectacular recopie `request.user` (vérifié,
@@ -376,24 +409,154 @@ def test_perm06_le_schema_est_identique_pour_le_proprietaire_et_le_gerant(db_all
     Elle est doublement coûteuse : le client TypeScript est généré depuis ce schéma, donc un
     schéma qui varie produit des types qui varient, et la SPA cesse d'avoir un contrat.
     Rouge, ce test dirait que `GET_MOCK_REQUEST` n'épingle plus `Acces.SCHEMA`.
+
+    **Deux contrôles, parce que l'égalité seule est facile à satisfaire par accident.**
+
+    1. Sans épinglage du tout (`build_mock_request` d'origine), la requête mock ne porte
+       aucun `acces`, donc la projection retombe fail-closed sur `Acces.ANONYME` et le
+       document perd le champ protégé **pour tout le monde**. Deux schémas égaux, et tous
+       deux faux : c'est le committé qui cesserait de correspondre au servi.
+    2. Avec l'épinglage naïf — résoudre l'accès de l'appelant, ce que la recopie de
+       `request.user` invite à écrire — les deux documents **diffèrent**. C'est la fuite
+       que A-03-09 décrit, reproduite ici pour que l'assertion d'égalité ait un contraire.
     """
-    pytest.fail("non implémenté : plan 03-06")
+    proprietaire, _ = acces_avec_le_droit(deux_magasins)
+    gerant, acces_gerant = acces_sans_le_droit(deux_magasins)
+    assert acces_gerant.peut(CODE_PROTEGE) is False
+
+    nom = CLE_PROTEGEE.rsplit(".", 1)[-1].encode()
+
+    du_proprietaire = _schema_servi(proprietaire, settings)
+    du_gerant = _schema_servi(gerant, settings)
+
+    assert du_proprietaire == du_gerant, (
+        "Le schéma servi diffère selon l'appelant. Le client TypeScript est généré "
+        "depuis ce document : un schéma par utilisateur n'est plus un contrat, et "
+        "comparer les deux énumère les champs protégés."
+    )
+    assert nom in du_proprietaire, (
+        "Le champ protégé est absent du schéma servi. « Identiques » voudrait alors dire "
+        "« tous deux amputés », et le schéma commité ne décrirait plus l'API."
+    )
+
+    from drf_spectacular.views import SpectacularAPIView
+
+    class _VueSansEpinglage(SpectacularAPIView):
+        custom_settings = {
+            "GET_MOCK_REQUEST": "drf_spectacular.plumbing.build_mock_request"
+        }
+
+    class _VueNaive(SpectacularAPIView):
+        custom_settings = {"GET_MOCK_REQUEST": _mock_naif}
+
+    sans_epinglage = _schema_servi(proprietaire, settings, vue=_VueSansEpinglage)
+    assert nom not in sans_epinglage, (
+        "Sans `GET_MOCK_REQUEST`, le champ protégé est quand même décrit : la projection "
+        "ne s'applique donc pas au schéma, et ce test ne prouve rien."
+    )
+
+    naif_proprietaire = _schema_servi(proprietaire, settings, vue=_VueNaive)
+    naif_gerant = _schema_servi(gerant, settings, vue=_VueNaive)
+    assert naif_proprietaire != naif_gerant, (
+        "Même en résolvant l'accès de l'appelant, les deux schémas sont identiques : le "
+        "contrôle ne contrôle rien, et l'assertion d'égalité ci-dessus est vide."
+    )
 
 
-@pytest.mark.pending
-def test_perm06_un_champ_protege_est_optionnel_dans_le_schema():
+def test_perm06_un_champ_protege_est_optionnel_dans_le_schema(
+    registre_de_la_fixture, settings
+):
     """PERM-06 / P9 — un champ protégé marqué `required` ment au client TypeScript.
 
     Le schéma est le contrat du client généré. Un champ protégé déclaré `required` promet
     une clé qui, pour un gérant, ne sera pas là : le type dit `prix_achat: string`, la valeur
     est `undefined`, et le bug se manifeste en phase 8 dans un composant qui n'a rien à voir.
     Le champ doit sortir du tableau `required` de son composant — par le post-traitement, pas
-    par `COMPONENT_NO_READ_ONLY_REQUIRED = True`, qui est l'instrument brutal qui rendrait
-    `id` optionnel du même coup.
+    par le réglage global qui rendrait **tous** les champs en lecture seule optionnels,
+    `id` compris — un mensonge bien pire, et l'instrument brutal là où le crochet est
+    chirurgical.
 
     Rouge, ce test dirait que le hook de post-traitement a été retiré ou n'est plus branché.
+
+    Trois assertions, et la troisième est celle qui distingue le crochet du réglage global :
+    la propriété **est** décrite, elle n'est **pas** requise, et `id` — en lecture seule —
+    l'est toujours.
     """
-    pytest.fail("non implémenté : plan 03-06")
+    from drf_spectacular.generators import SchemaGenerator
+    from drf_spectacular.settings import patched_settings
+
+    settings.ROOT_URLCONF = "tests.ressources_fixture"
+    nom = CLE_PROTEGEE.rsplit(".", 1)[-1]
+
+    resultat = SchemaGenerator().get_schema(request=None, public=True)
+    composants = resultat["components"]["schemas"]
+
+    porteurs = {
+        titre: schema
+        for titre, schema in composants.items()
+        if nom in (schema.get("properties") or {})
+    }
+    assert porteurs, (
+        f"Aucun composant ne décrit {nom!r}. Le schéma ne décrit donc pas l'API, et "
+        "l'assertion sur `required` porterait sur rien."
+    )
+    for titre, schema in porteurs.items():
+        assert nom not in schema.get("required", []), (
+            f"Le composant {titre} déclare {nom!r} comme requis. Le TypeScript généré "
+            f"promet alors une clé qui, pour un gérant, ne sera pas là."
+        )
+
+    avec_id = [t for t, s in porteurs.items() if "id" in s.get("required", [])]
+    assert avec_id, (
+        "Aucun composant ne requiert `id`. Le crochet n'est donc pas chirurgical — ou "
+        "quelqu'un a basculé le réglage global qui rend tout champ en lecture seule "
+        "optionnel, ce qui est le mensonge que ce test existe pour refuser."
+    )
+
+    # Le contrôle : sans le crochet, le champ protégé **est** requis. Sinon ce test
+    # passerait aussi bien contre un post-traitement débranché.
+    with patched_settings(
+        {"POSTPROCESSING_HOOKS": ["drf_spectacular.hooks.postprocess_schema_enums"]}
+    ):
+        sans_crochet = SchemaGenerator().get_schema(request=None, public=True)
+    requis_sans_crochet = [
+        titre
+        for titre, schema in sans_crochet["components"]["schemas"].items()
+        if nom in schema.get("required", [])
+    ]
+    assert requis_sans_crochet, (
+        "Sans le crochet de post-traitement, le champ protégé n'est déjà pas requis. Le "
+        "crochet ne fait donc rien et l'assertion principale est vide."
+    )
+
+
+def test_perm06_le_reglage_global_de_required_reste_a_son_defaut(registre_de_la_fixture):
+    """PERM-06 / P9 — le crochet est précis, l'interrupteur global ne l'est pas.
+
+    `drf-spectacular` calcule `required = field.required or (readOnly and not <réglage>)`.
+    Basculer ce réglage retirerait de `required` **tous** les champs en lecture seule,
+    `id` le premier : le client TypeScript déclarerait alors `id?: number` sur chaque
+    ressource, et chaque site d'appel devrait traiter l'absence d'une clé qui est toujours
+    là. C'est un mensonge plus large que celui qu'on répare.
+
+    Le nom du réglage est donc absent de `config/settings/` — un réglage qu'on ne nomme pas
+    est un réglage que personne ne bascule « pour voir ».
+    """
+    from pathlib import Path
+
+    from drf_spectacular.settings import spectacular_settings
+
+    assert spectacular_settings.COMPONENT_NO_READ_ONLY_REQUIRED is False
+
+    fautifs = [
+        chemin.name
+        for chemin in sorted(Path("config/settings").glob("*.py"))
+        if "COMPONENT_NO_READ_ONLY_REQUIRED" in chemin.read_text(encoding="utf-8")
+    ]
+    assert not fautifs, (
+        f"Le réglage global est nommé dans {fautifs}. Le retirer du fichier est la "
+        "moitié du garde : ce qui n'est pas écrit ne se bascule pas par curiosité."
+    )
 
 
 @pytest.mark.pending
@@ -478,7 +641,6 @@ def test_perm06_aucune_vue_ne_renvoie_un_values_queryset():
     pytest.fail("non implémenté : plan 03-07")
 
 
-@pytest.mark.pending
 def test_perm06_le_renderer_html_est_absent_hors_developpement():
     """PERM-06 / A-03-06 — l'API navigable énumère des objets que l'appelant ne peut pas voir.
 
@@ -490,8 +652,34 @@ def test_perm06_le_renderer_html_est_absent_hors_developpement():
     `DEFAULT_RENDERER_CLASSES` ne contient donc que le renderer JSON en base, et
     `BrowsableAPIRenderer` n'est ajouté que dans `local.py`. Rouge, ce test dirait qu'un
     réglage de confort posé pour déboguer est parti en production.
+
+    L'assertion porte sur le **source** des modules de configuration, pas sur leur import :
+    importer `config/settings/production.py` poserait `sslmode=require` dans le `DATABASES`
+    partagé avec les réglages de test — le module y mute le dictionnaire de `base`, qui est
+    le même objet — et casserait toutes les connexions des tests suivants. Un test qui
+    casse la suite pour vérifier une chaîne de caractères n'est pas un bon marché.
     """
-    pytest.fail("non implémenté : plan 03-06")
+    from pathlib import Path
+
+    from rest_framework.settings import api_settings
+
+    modules = sorted(Path("config/settings").glob("*.py"))
+    avec_navigable = [
+        chemin.name
+        for chemin in modules
+        if "BrowsableAPIRenderer" in chemin.read_text(encoding="utf-8")
+    ]
+    assert avec_navigable == ["local.py"], (
+        f"`BrowsableAPIRenderer` apparaît dans {avec_navigable}. Il n'a sa place que dans "
+        "`local.py` : ses listes déroulantes énumèrent les objets liés, donc les lignes "
+        "d'autres magasins et les clients d'autres gérants."
+    )
+
+    # Et le réglage effectif de la suite — qui hérite de `base` — ne le porte pas.
+    effectifs = [classe.__name__ for classe in api_settings.DEFAULT_RENDERER_CLASSES]
+    assert effectifs == ["JSONRenderer"], (
+        f"Les renderers effectifs sont {effectifs}. La base ne doit servir que du JSON."
+    )
 
 
 #: Les trois portes d'entrée de la projection hors HTTP. Une fonction qui appelle l'une
