@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-12-PLAN.md (point de controle repondu ; les sept verifications manuelles au navigateur restent NON EFFECTUEES — voir 03-12-SUMMARY.md)
-last_updated: "2026-09-16T23:03:26.812Z"
+stopped_at: Completed quick 260917-04r (echec CSRF d'origine corrige ; point de controle approuve sur reproduction machine, la connexion au navigateur reste NON VERIFIEE par un humain — comme les sept verifications de 03-12). Suivant : 03-13
+last_updated: "2026-09-17T00:35:00.000Z"
 last_activity: 2026-09-17
 progress:
   total_phases: 12
@@ -66,6 +66,12 @@ Progress: [█████████░] 90%
 | Phase 03 P09 | ~85m | 3 tasks | 8 files |
 | Phase 03 P10 | ~30m | 3 tasks | 8 files |
 | Phase 03 P12 | ~45m | 4 tasks | 18 files |
+
+## Quick Tasks Completed
+
+| ID | Titre | Date | Commits | Resultat |
+|----|-------|------|---------|----------|
+| 260917-04r | Corriger l'echec CSRF d'origine qui bloquait la connexion au navigateur | 2026-09-17 | `fe138d5` (test), `30b853c` (fix) | Le proxy Vite preserve `Host` (`changeOrigin: false`), `CSRF_TRUSTED_ORIGINS` en filet dans `local.py` seul, et le premier test de la suite qui envoie un en-tete `Origin`. Backend 180 passed / 30 deselected (baseline 179), frontend 50 passed, build a 0. Point de controle approuve sur **reproduction machine** (200 avec l'origine du navigateur, 403 avec une origine tierce) ; la connexion dans un vrai navigateur **n'a pas ete effectuee par un humain**. Detail : `.planning/quick/260917-04r-corriger-l-echec-csrf-d-origine-qui-bloq/260917-04r-SUMMARY.md` |
 
 ## Accumulated Context
 
@@ -153,6 +159,8 @@ Recent decisions affecting current work:
 - [Phase 03]: 03-12: un 401 sur /api/auth/moi/ au premier chargement anonyme est le cas NORMAL — le drapeau sessionOuverte empeche d'afficher « votre session a expire » a quelqu'un qui n'en a jamais ouvert
 - [Phase 03]: 03-12: 03-UI-SPEC 9.4 AMENDEE au point de controle — /mot-de-passe porte un quatrieme champ, « Mot de passe actuel », parce que le point de terminaison 03-08 l'exige ; decision tranchee, la phase 9 ne la rouvre pas
 - [Phase 03]: 03-12: les cinq etats globaux de 03-UI-SPEC 8.6 vivent dans web/src/etats/ (repertoire non prevu au plan) — neuf phases en heritent, et une copie par page rendrait fausse la regle « la chaine apparait une seule fois » des la phase 4
+- [Quick 260917-04r]: **Piege transverse, verifie dans Django 6.1.1 — les origines de confiance du CSRF sont gelees au premier `Origin` du processus.** `csrf_protect` est `decorator_from_middleware(CsrfViewMiddleware)` et `make_middleware_decorator` (`django/utils/decorators.py:126`) instancie le middleware **une seule fois, a l'import du module de vues** ; `allowed_origins_exact` et `csrf_trusted_origins_hosts` sont des `cached_property` (`django/middleware/csrf.py:174-186`) et `django/test/signals.py` ne contient **aucun** recepteur de `setting_changed` qui les invalide. Consequence pour toute phase : **un test qui envoie un en-tete `Origin` ne peut pas supposer que son propre `override_settings` gagne** — s'il tourne apres un autre test porteur d'`Origin`, il voit la liste du premier. Les jambes d'un meme test partagent donc un seul override ; deux valeurs differentes donnent silencieusement le meme resultat aux deux, et le test « passe » sans rien prouver
+- [Quick 260917-04r]: le proxy de developpement Vite preserve `Host` (`changeOrigin: false` explicite, la forme chaine le met a `true`) — `CsrfViewMiddleware` reconstruit l'origine attendue depuis `request.get_host()`, donc un `Host` reecrit refuse toute ecriture en 403. **Le reverse proxy de production doit preserver `Host` pour la meme raison**, et `CSRF_TRUSTED_ORIGINS` ne le rattrapera pas la-bas : il vit dans `local.py` seul, jamais dans `base.py`
 
 ### Pending Todos
 
@@ -163,10 +171,12 @@ None yet.
 - [Phase 6] Four open questions block the facturation schema and need a Moroccan comptable, not research: TVA rate on optical goods after the 2026 reform, série per magasin vs per company, TVA treatment of the acompte, and whether the facture is issued at commande or délivrance. Start these during Phase 1.
 - [Phase 1] CNDP prior authorization is reported at 2-4 months and the Moroccan merchant contract at weeks to months. Both must be in flight from day one or they become the launch critical path.
 - [Phase 12] Recurring card-on-file on Moroccan rails is a vendor claim and needs sandbox proof; if false, billing falls back to invoice plus payment link per period.
-- [Phase 3] **Les sept vérifications manuelles au navigateur du point de contrôle 03-12 n'ont pas été effectuées.** Le propriétaire a approuvé sur la preuve automatisée (50 tests frontend, 179 backend, build à 0) et a explicitement dit ne pas les avoir exécutées. Restent ouvertes : connexion sans clignotement, stabilité de la carte à l'erreur, compte à rebours à la onzième tentative, atterrissage forcé sans issue, traversée au clavier seul, lecture en français contre `03-UI-SPEC.md` 9.3 (la vérification manuelle nommée dans `03-VALIDATION.md`), bannière de connexion perdue. À reprendre à la vérification de phase — vitest rend dans jsdom et ne voit ni clignotement, ni saut de mise en page réel, ni anneau de focus, ni si une phrase se lit comme du français. Détail : `.planning/phases/03-comptes-permissions-app-shell/03-12-SUMMARY.md`.
+- [Phase 3] **Les sept vérifications manuelles au navigateur du point de contrôle 03-12 n'ont pas été effectuées.** Le propriétaire a approuvé sur la preuve automatisée (50 tests frontend, 179 backend, build à 0) et a explicitement dit ne pas les avoir exécutées. Restent ouvertes : connexion sans clignotement, stabilité de la carte à l'erreur, compte à rebours à la onzième tentative, atterrissage forcé sans issue, traversée au clavier seul, lecture en français contre `03-UI-SPEC.md` 9.3 (la vérification manuelle nommée dans `03-VALIDATION.md`), bannière de connexion perdue. À reprendre à la vérification de phase — vitest rend dans jsdom et ne voit ni clignotement, ni saut de mise en page réel, ni anneau de focus, ni si une phrase se lit comme du français. Détail : `.planning/phases/03-comptes-permissions-app-shell/03-12-SUMMARY.md`. **S'y ajoute la confirmation au navigateur du quick 260917-04r** (connexion réussie depuis `http://localhost:5173/connexion`, et `Host: localhost:5173` dans les en-têtes reçus par Django) : le correctif est prouvé par reproduction HTTP, pas par un humain devant l'écran. Les huit vérifications se font en une seule passe.
 
 ## Session Continuity
 
-Last session: 2026-09-16T23:03:26.810Z
-Stopped at: Completed 03-12-PLAN.md (point de controle repondu ; les sept verifications manuelles au navigateur restent NON EFFECTUEES — voir 03-12-SUMMARY.md)
+Last session: 2026-09-17T00:35:00.000Z
+Stopped at: Completed quick 260917-04r (echec CSRF d'origine corrige ; point de controle approuve sur reproduction machine, la connexion au navigateur reste NON VERIFIEE par un humain — comme les sept verifications de 03-12). Suivant : 03-13
 Resume file: None
+
+Serveurs de developpement laisses TOURNANTS : Vite sur 5173, Django sur 127.0.0.1:8010 — le proprietaire peut encore regarder l'ecran de connexion.
