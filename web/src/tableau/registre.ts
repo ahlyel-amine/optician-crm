@@ -34,12 +34,37 @@ export type AlignementColonne = "left" | "right";
 /** Formatage applique a la valeur. Toujours celui de `src/format/`, jamais une locale. */
 export type FormatColonne = "montant" | "date" | "dateheure";
 
+/**
+ * Le rendu d'une cellule, quand la valeur n'est ni un montant, ni une date, ni
+ * du texte.
+ *
+ * Ajoute au plan 03-14, et la raison merite d'etre ecrite : la liste des
+ * comptes porte un tableau de magasins, un compte de droits assorti d'un badge
+ * et un booleen d'activite. Aucun des trois ne se rend en `<bdi>`.
+ *
+ * L'alternative etait de composer les chaines d'affichage AVANT d'appeler le
+ * tableau, et elle est fausse : le filtre de presence s'appliquerait alors a
+ * des cles inventees par la page au lieu de celles du serveur, ce qui est
+ * exactement la reconstruction cliente que PERM-06 ferme. Le rendu change, la
+ * PRESENCE reste pilotee par la charge utile.
+ *
+ * `ligne` est fourni parce qu'une cellule depend parfois d'un second champ — le
+ * badge « Personnalisé par magasin » se lit sur `personnalise` et s'affiche
+ * dans la colonne `nombre_de_droits`. Un champ absent y vaut `undefined`, donc
+ * l'absence reste fail-closed sans branche a ecrire.
+ */
+export type RenduCellule = (
+  valeur: unknown,
+  ligne: Record<string, unknown>,
+) => import("react").ReactNode;
+
 /** Une colonne, clee par le NOM DE CHAMP DE L'API — c'est ce qui rend le filtre mecanique. */
 export type Colonne = {
   champ: string;
   libelle: string;
   align?: AlignementColonne;
   format?: FormatColonne;
+  rendu?: RenduCellule;
 };
 
 /** Le contrat minimal qu'une colonne doit remplir pour etre filtrable. */

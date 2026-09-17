@@ -65,6 +65,24 @@ export type ProprietesTableauProjete = {
 
 const LIBELLE_TOTAL = "Total";
 
+/**
+ * Le rendu d'une cellule, decide par le registre.
+ *
+ * `colonne.rendu` passe AVANT le format, et c'est le seul ordre correct : une
+ * colonne qui declare les deux a un rendu sur mesure ET une intention de
+ * formatage, et c'est le rendu sur mesure qui sait laquelle des deux
+ * s'applique (une date nulle affiche « Jamais connecté », un formateur leverait).
+ */
+function rendreCellule(
+  colonne: Colonne,
+  ligne: Record<string, unknown>,
+): ReactNode {
+  if (colonne.rendu) {
+    return colonne.rendu(ligne[colonne.champ], ligne);
+  }
+  return rendreValeur(ligne[colonne.champ], colonne.format);
+}
+
 /** Le rendu d'une valeur, decide par le registre — jamais par le type de la donnee. */
 function rendreValeur(valeur: unknown, format: Colonne["format"]): ReactNode {
   if (format === "montant") {
@@ -168,7 +186,7 @@ export function TableauProjete({
                 data-champ={colonne.champ}
                 className={`px-3 py-2 ${classeAlignement(colonne)}`}
               >
-                {rendreValeur(ligne[colonne.champ], colonne.format)}
+                {rendreCellule(colonne, ligne)}
               </td>
             ))}
           </tr>

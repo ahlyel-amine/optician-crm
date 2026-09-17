@@ -2,12 +2,15 @@ import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 
 import { AuthProvider, useAuth } from "@/auth/AuthProvider";
 import { RequireAuth } from "@/auth/RequireAuth";
+import { RequireDroit } from "@/auth/RequireDroit";
 import { BanniereDeLien } from "@/etats/BanniereDeLien";
 import { PageIntrouvable } from "@/etats/PageIntrouvable";
 import { AppShell } from "@/layout/AppShell";
 import { NAV, type EntreeNav } from "@/layout/nav";
 import { Connexion } from "@/pages/Connexion";
 import { MotDePasse } from "@/pages/MotDePasse";
+import { DetailCompte } from "@/pages/comptes/DetailCompte";
+import { ListeComptes } from "@/pages/comptes/ListeComptes";
 
 /**
  * Les routes de la phase 3.
@@ -75,12 +78,16 @@ function SessionRequise({ children }: { children: React.ReactNode }) {
  * qu'une entree et sa destination ne peuvent pas diverger : il n'y a qu'une
  * liste de routes de premier niveau dans le produit.
  *
- * **Aucune garde de droit au niveau de la route en phase 3, et c'est
- * delibere.** L'entree de navigation est retiree, ce qui est le contrat de
- * 5.3 ; le 403 pleine page de `PageInterdite` appartient aux ecrans qui
- * portent reellement de la donnee, a partir du plan 03-14. Une route de phase 3
- * ne rend qu'un titre — il n'y a rien a divulguer, et le controle reste, comme
- * toujours, la restriction de queryset et la projection cote serveur.
+ * **La garde de droit au niveau de la route commence au plan 03-14**, et pas
+ * avant. Le plan 03-13 l'avait differee en le disant : une route qui ne rend
+ * qu'un titre n'a rien a divulguer, donc le retrait de l'entree de navigation
+ * (contrat de 5.3) suffisait. `/parametres/comptes` est le premier ecran de la
+ * phase a porter de la donnee reelle, donc le premier a meriter le 403 pleine
+ * page — celui qui NOMME le droit manquant plutot que de laisser un ecran vide.
+ *
+ * Le controle, lui, reste ce qu'il a toujours ete : la restriction de queryset
+ * et la classe de permission cote serveur. `RequireDroit` epargne un
+ * aller-retour et une page blanche, rien de plus.
  */
 function ContenuDuShell() {
   return (
@@ -89,10 +96,61 @@ function ContenuDuShell() {
         <Route
           key={entree.route}
           path={entree.route === "/" ? "" : `${entree.route.slice(1)}/*`}
-          element={<PageEnAttente entree={entree} />}
+          element={
+            SOUS_ROUTES[entree.route]?.(entree) ?? <PageEnAttente entree={entree} />
+          }
         />
       ))}
       <Route path="*" element={<PageIntrouvable />} />
+    </Routes>
+  );
+}
+
+/**
+ * Le contenu d'une entree de navigation dont le module EST construit, clee par
+ * la route de `NAV`.
+ *
+ * Deriver de `NAV` reste la regle — il n'existe toujours qu'une liste de routes
+ * de premier niveau — et cette table ne fait que dire, pour une entree donnee,
+ * ce qui s'affiche a la place du titre d'attente. Une entree absente d'ici est
+ * une entree dont le module n'est pas encore ecrit, ce que `disponible` dit
+ * deja par ailleurs.
+ */
+const SOUS_ROUTES: Record<string, (entree: EntreeNav) => React.ReactNode> = {
+  "/parametres": (entree) => <Parametres entree={entree} />,
+};
+
+/**
+ * La navigation de second niveau des parametres (03-UI-SPEC.md 5.3).
+ *
+ * Dans la zone de contenu, **jamais en accordeon de barre laterale** : la
+ * phase 9 (Personnalisation) et la phase 12 (Abonnement) y ajoutent leurs
+ * ecrans sans que la barre laterale grossisse.
+ *
+ * L'index reste `PageEnAttente` : l'accueil des parametres n'a pas encore de
+ * contenu propre, et le dire par le meme titre d'attente que les sept autres
+ * modules vaut mieux que d'inventer une page vide qui aurait l'air finie.
+ */
+function Parametres({ entree }: { entree: EntreeNav }) {
+  return (
+    <Routes>
+      <Route
+        path="comptes"
+        element={
+          <RequireDroit code="compte.gerer" proprietaireToujours>
+            <ListeComptes />
+          </RequireDroit>
+        }
+      />
+      <Route
+        path="comptes/:id"
+        element={
+          <RequireDroit code="compte.gerer" proprietaireToujours>
+            <DetailCompte />
+          </RequireDroit>
+        }
+      />
+      <Route path="*" element={<PageEnAttente entree={entree} />} />
     </Routes>
   );
 }

@@ -58,6 +58,14 @@ export type Catalogue = components["schemas"]["Catalogue"];
 export type SectionCatalogue = components["schemas"]["SectionCatalogue"];
 export type DroitCatalogue = components["schemas"]["DroitCatalogue"];
 
+// L'ecran `Comptes et droits` (plan 03-14), premier consommateur metier du
+// client genere. Les noms pointent dans `components["schemas"]` : renommer un
+// composant cote serveur casse le typecheck ici, ce qui est le but.
+export type Compte = components["schemas"]["Compte"];
+export type CatalogueOffrable = components["schemas"]["CatalogueOffrable"];
+export type LigneDeDroit = components["schemas"]["LigneDeDroit"];
+export type ResultatOctroi = components["schemas"]["ResultatOctroi"];
+
 /** Les cinq routes d'authentification, nommees pour que personne ne les retape. */
 export const ROUTE_CSRF = "/api/auth/csrf/" as const;
 export const ROUTE_CONNEXION = "/api/auth/connexion/" as const;

@@ -34,7 +34,6 @@ import { reinitialiserLeClient } from "@/api/client";
 
 const ANFA = { id: 1, code: "ANFA", nom: "Anfa" };
 const MAARIF = { id: 2, code: "MAARIF", nom: "Maârif" };
-const CALIFORNIE = { id: 3, code: "CALIFORNIE", nom: "Californie" };
 
 /** Le catalogue de `/api/auth/moi/` : les 21 codes existent pour tout le monde. */
 const CATALOGUE_COMPLET = {
@@ -138,7 +137,7 @@ const GERANT_SANS_DROIT = {
   magasins: [ANFA],
 };
 
-function ligneProprietaire(surcharge: Record<string, unknown> = {}) {
+function ligneProprietaire(surcharge: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     id: 1,
     nom_complet: "Amine El Fassi",
@@ -154,7 +153,7 @@ function ligneProprietaire(surcharge: Record<string, unknown> = {}) {
   };
 }
 
-function ligneKarim(surcharge: Record<string, unknown> = {}) {
+function ligneKarim(surcharge: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     id: 2,
     nom_complet: "Karim Benali",

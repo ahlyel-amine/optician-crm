@@ -397,7 +397,11 @@ describe("le selecteur de magasin", () => {
   });
 
   it("changer de portee invalide les requetes du magasin, l'annonce, et NE CHANGE PAS de route", async () => {
-    const { requetes } = rendreShell(amorcageDe({ proprietaire: true }), "/parametres/comptes");
+    // Une route dont le module n'est pas construit, donc qui rend son titre
+    // d'attente et son `destination` : ce test ne parle que de la portee, il
+    // n'a pas a dependre d'un ecran qui charge des donnees. Il visait
+    // `/parametres/comptes` jusqu'a ce que le plan 03-14 construise cet ecran.
+    const { requetes } = rendreShell(amorcageDe({ proprietaire: true }), "/clients");
     await screen.findByRole("navigation", { name: "Navigation principale" });
 
     const clePortante = ["/api/caisse/journal/", { magasin: "ANFA" }];
