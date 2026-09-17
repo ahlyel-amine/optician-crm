@@ -60,9 +60,10 @@ export type ProprietesSectionDroits = {
   /** Les echecs de bascule, clees par code — **sur la ligne**, jamais en toast. */
   erreurs?: Readonly<Record<string, string>>;
   surBascule: (code: string, accorde: boolean) => void;
-  /** Ce que la surcharge par magasin ajoute a une ligne (7.5, tache 3). */
-  actionsDeLigne?: (code: string, etat: EtatInterrupteur) => React.ReactNode;
-  sousListeDeLigne?: (code: string) => React.ReactNode;
+  /** La bascule d'UN magasin sur UNE ligne — la surcharge de 7.5. */
+  surBasculeDunMagasin: (code: string, magasinCode: string, accorde: boolean) => void;
+  /** Ouvre la confirmation d'uniformisation, decidee par la fiche. */
+  surUniformiser: (code: string) => void;
   /** La note d'un magasin ajoute plus tard (7.5). */
   noteDeSection?: string;
 };
@@ -75,14 +76,18 @@ export function SectionDroits({
   notes,
   erreurs,
   surBascule,
-  actionsDeLigne,
-  sousListeDeLigne,
+  surBasculeDunMagasin,
+  surUniformiser,
   noteDeSection,
 }: ProprietesSectionDroits) {
   const nomsParCode = new Map(
     catalogue.magasins.map((magasin) => [magasin.code, magasin.nom]),
   );
   const noms = magasinsAccordes.map((code) => nomsParCode.get(code) ?? code);
+  const magasinsDuCompte = magasinsAccordes.map((code) => ({
+    code,
+    nom: nomsParCode.get(code) ?? code,
+  }));
   const portee = phraseDePortee(noms);
   const aucunDroit = Object.values(lignes).every((ligne) => ligne.etat === "inactif");
 
@@ -122,8 +127,12 @@ export function SectionDroits({
                   etat={etat}
                   note={notes?.[droit.code]}
                   erreur={erreurs?.[droit.code]}
-                  actions={actionsDeLigne?.(droit.code, etat)}
-                  sousListe={sousListeDeLigne?.(droit.code)}
+                  magasinsAccordes={magasinsDuCompte}
+                  detenus={lignes[droit.code]?.magasins ?? []}
+                  surBasculeDunMagasin={(magasinCode, accorde) =>
+                    surBasculeDunMagasin(droit.code, magasinCode, accorde)
+                  }
+                  surUniformiser={() => surUniformiser(droit.code)}
                   // Un parent MIXTE s'allume : cliquer dessus met tous les
                   // magasins a l'allumage, et le toast d'annulation le dit
                   // (7.5). L'autre lecture — « eteindre tout » — ferait d'un

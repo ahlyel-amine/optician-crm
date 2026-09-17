@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 
 import { useParams } from "react-router-dom";
 
@@ -9,12 +9,20 @@ import {
   type Magasin,
   type ResultatOctroi,
 } from "@/api/requetes";
+import { Button } from "@/components/ui/button";
 import { CarteDechec } from "@/etats/CarteDechec";
 import { Valeur } from "@/tableau/Valeur";
 
 import { HistoriqueDroits } from "./HistoriqueDroits";
+import { toastDannulation } from "./LigneDroit";
 import { SectionDroits } from "./SectionDroits";
 import { SectionMagasins } from "./SectionMagasins";
+import {
+  DialogueDesactivation,
+  DialogueMotDePasse,
+  DialogueRetraitMagasin,
+  DialogueUniformisation,
+} from "./dialogues";
 
 /**
  * `03-UI-SPEC.md` 7.3 — la fiche d'un compte, 880px, quatre regions.
@@ -28,6 +36,11 @@ import { SectionMagasins } from "./SectionMagasins";
  * Vingt et un interrupteurs derriere un unique Enregistrer est un formulaire
  * qu'on abandonne a moitie rempli, et `JournalDroit` enregistre un acteur et un
  * horodatage par octroi — ce qui correspond exactement a une bascule.
+ *
+ * Les deux actions a large rayon — retirer un magasin, desactiver un compte —
+ * gardent une confirmation (7.8) : la premiere change tous les droits d'un
+ * coup, la seconde ferme la porte. Les vingt et un interrupteurs, eux, ont une
+ * annulation : vingt et une confirmations est une fatigue de confirmation.
  */
 
 const PHRASE_PROPRIETAIRE =
@@ -43,6 +56,18 @@ function indexer(lignes: readonly LigneDeDroit[]): Record<string, LigneDeDroit> 
   return Object.fromEntries(lignes.map((ligne) => [ligne.code, ligne]));
 }
 
+/** Le nombre de lignes personnalisees — celles que 7.5 appelle « mixte ». */
+function compterLesPersonnalisees(
+  lignes: Record<string, LigneDeDroit>,
+  magasinCode?: string,
+): number {
+  return Object.values(lignes).filter(
+    (ligne) =>
+      ligne.etat === "mixte" &&
+      (magasinCode === undefined || ligne.magasins.includes(magasinCode)),
+  ).length;
+}
+
 type FicheCompte = {
   id: number;
   nom_complet: string;
@@ -54,9 +79,15 @@ type FicheCompte = {
   magasins_accordes: string[];
 };
 
+type Confirmation =
+  | { quoi: "desactivation" }
+  | { quoi: "retrait-magasin"; magasin: Magasin }
+  | { quoi: "uniformisation"; code: string; libelle: string };
+
 export function DetailCompte() {
   const { id = "" } = useParams();
   const identifiant = Number(id);
+  const champStatut = useId();
 
   const fiche = $api.useQuery("get", "/api/comptes/{id}/", {
     params: { path: { id: identifiant } },
@@ -64,7 +95,10 @@ export function DetailCompte() {
   const catalogue = $api.useQuery("get", "/api/comptes/catalogue/");
 
   const bascule = $api.useMutation("post", "/api/comptes/{id}/droits/");
+  const uniformisation = $api.useMutation("post", "/api/comptes/{id}/droits/uniformiser/");
   const basculeMagasin = $api.useMutation("post", "/api/comptes/{id}/magasins/");
+  const changementDeStatut = $api.useMutation("post", "/api/comptes/{id}/statut/");
+  const reinitialisation = $api.useMutation("post", "/api/comptes/{id}/mot-de-passe/");
 
   /**
    * L'etat local des lignes et des magasins.
@@ -78,6 +112,9 @@ export function DetailCompte() {
   const [accordes, setAccordes] = useState<readonly string[]>([]);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [erreurs, setErreurs] = useState<Record<string, string>>({});
+  const [noteDeSection, setNoteDeSection] = useState<string | undefined>(undefined);
+  const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
+  const [secret, setSecret] = useState<string | null>(null);
 
   const donnees = fiche.data as FicheCompte | undefined;
   useEffect(() => {
@@ -106,18 +143,48 @@ export function DetailCompte() {
   const compte = fiche.data as FicheCompte;
   const offrable = catalogue.data as CatalogueOffrable;
   const prenom = prenomDe(compte.nom_complet);
+  const libelles = new Map(
+    offrable.sections.flatMap((section) =>
+      section.droits.map((droit) => [droit.code, droit.libelle] as const),
+    ),
+  );
 
   /** Absorbe la reponse d'une bascule : lignes, cascade, magasins accordes. */
-  const absorber = (resultat: ResultatOctroi) => {
-    setLignes((precedent) => ({ ...precedent, ...indexer(resultat.lignes) }));
+  const absorber = (resultat: ResultatOctroi): Record<string, LigneDeDroit> => {
+    const fusion = { ...lignes, ...indexer(resultat.lignes) };
+    setLignes(fusion);
     setAccordes(resultat.magasins_accordes);
-    setNotes(notesDeCascade(resultat, offrable));
+    setNotes(notesDeCascade(resultat, libelles));
+    return fusion;
+  };
+
+  /**
+   * Rejoue un etat anterieur — **l'annulation**, cascade comprise.
+   *
+   * Une annulation qui ne restaurerait que le code demande laisserait les codes
+   * emportes par la cascade a l'arret : le `Annuler` unique de 7.6 ne tiendrait
+   * pas sa promesse, et l'utilisateur croirait avoir tout remis.
+   */
+  const rejouer = async (avant: readonly LigneDeDroit[]) => {
+    for (const ligne of avant) {
+      await bascule.mutateAsync({
+        params: { path: { id: identifiant } },
+        body: {
+          code: ligne.code as never,
+          accorde: ligne.magasins.length > 0,
+          magasins: ligne.magasins.length > 0 ? [...ligne.magasins] : [...accordes],
+        },
+      });
+    }
+    void fiche.refetch();
   };
 
   const basculerLeDroit = (code: string, accorde: boolean) => {
-    const avant = lignes[code];
+    const avant = lignes[code] ?? { code, etat: "inactif", magasins: [] };
+    const etaitMixte = avant.etat === "mixte";
     setErreurs((precedent) => retirer(precedent, code));
     setNotes({});
+    setNoteDeSection(undefined);
     // Optimiste : l'interrupteur bouge tout de suite.
     setLignes((precedent) => ({
       ...precedent,
@@ -139,21 +206,122 @@ export function DetailCompte() {
         body: { code: code as never, accorde, magasins: [...accordes] },
       },
       {
-        onSuccess: absorber,
+        onSuccess: (resultat) => {
+          absorber(resultat);
+          const etatAvant = [
+            avant,
+            ...resultat.cascade.map(
+              (emporte) =>
+                lignes[emporte] ?? { code: emporte, etat: "inactif", magasins: [] },
+            ),
+          ];
+          const libelle = libelles.get(code) ?? code;
+          if (!accorde) {
+            toastDannulation(`Droit retiré : « ${libelle} ».`, () => void rejouer(etatAvant));
+          } else if (etaitMixte) {
+            // Cliquer un parent mixte allume TOUS les magasins, et le toast le
+            // dit : sans cette phrase, l'action a l'air d'un simple « cocher »
+            // alors qu'elle distribue le droit la ou il etait deliberement
+            // absent.
+            toastDannulation(
+              `Droit accordé dans tous les magasins : « ${libelle} ».`,
+              () => void rejouer(etatAvant),
+            );
+          }
+        },
         onError: (erreur) => {
           // Retour arriere, puis l'explication **sur la ligne** (7.8). Un
           // interrupteur laisse en place apres un echec ment sur l'etat reel.
-          setLignes((precedent) => ({ ...precedent, [code]: avant ?? precedent[code] }));
+          setLignes((precedent) => ({ ...precedent, [code]: avant }));
           setErreurs((precedent) => ({ ...precedent, [code]: messageDechec(erreur) }));
         },
       },
     );
   };
 
-  const basculerLeMagasin = (code: string, accorde: boolean) => {
-    basculeMagasin.mutate(
-      { params: { path: { id: identifiant } }, body: { magasin_code: code, accorde } },
+  /** La surcharge : un seul magasin d'une seule ligne. */
+  const basculerUnMagasin = (code: string, magasinCode: string, accorde: boolean) => {
+    setErreurs((precedent) => retirer(precedent, code));
+    bascule.mutate(
+      {
+        params: { path: { id: identifiant } },
+        body: { code: code as never, accorde, magasins: [magasinCode] },
+      },
+      {
+        onSuccess: absorber,
+        onError: (erreur) => {
+          setErreurs((precedent) => ({ ...precedent, [code]: messageDechec(erreur) }));
+        },
+      },
+    );
+  };
+
+  const demanderUniformisation = (code: string) => {
+    const ligne = lignes[code];
+    if (ligne?.etat !== "mixte") {
+      // Rien a remplacer : une ligne deja uniforme se replie sans rien demander.
+      return;
+    }
+    setConfirmation({
+      quoi: "uniformisation",
+      code,
+      libelle: libelles.get(code) ?? code,
+    });
+  };
+
+  const uniformiser = (code: string) => {
+    setConfirmation(null);
+    uniformisation.mutate(
+      {
+        params: { path: { id: identifiant } },
+        body: { code: code as never, accorde: true },
+      },
       { onSuccess: absorber },
+    );
+  };
+
+  const ajouterUnMagasin = (magasinCode: string) => {
+    setNotes({});
+    basculeMagasin.mutate(
+      {
+        params: { path: { id: identifiant } },
+        body: { magasin_code: magasinCode, accorde: true },
+      },
+      {
+        onSuccess: (resultat) => {
+          const fusion = absorber(resultat);
+          // Les lignes uniformes se sont etendues, les personnalisees non.
+          // La note existe pour que cette asymetrie — voulue, et qui evite une
+          // elevation silencieuse — ne passe pas inapercue.
+          const personnalisees = compterLesPersonnalisees(fusion);
+          const nom =
+            offrable.magasins.find((magasin) => magasin.code === magasinCode)?.nom ??
+            magasinCode;
+          setNoteDeSection(
+            personnalisees === 0 ? undefined : noteDeMagasinAjoute(nom, personnalisees),
+          );
+        },
+      },
+    );
+  };
+
+  const retirerUnMagasin = (magasin: Magasin) => {
+    setConfirmation(null);
+    setNoteDeSection(undefined);
+    basculeMagasin.mutate(
+      {
+        params: { path: { id: identifiant } },
+        body: { magasin_code: magasin.code, accorde: false },
+      },
+      { onSuccess: absorber },
+    );
+  };
+
+  const changerLeStatut = (actif: boolean) => {
+    setConfirmation(null);
+    changementDeStatut.mutate(
+      { params: { path: { id: identifiant } }, body: { actif } },
+      { onSuccess: () => void fiche.refetch() },
     );
   };
 
@@ -167,6 +335,56 @@ export function DetailCompte() {
           Identité
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">{compte.email}</p>
+
+        {compte.est_proprietaire ? null : (
+          <div className="mt-4 flex items-center gap-4">
+            {/*
+              `Statut` est une LISTE DEROULANTE et non un interrupteur (7.3 A) :
+              un interrupteur suggere une bascule instantanee, alors que la
+              desactivation merite une confirmation. Et la reactivation, elle,
+              n'en merite pas — on ne confirme pas de rouvrir une porte.
+            */}
+            <label htmlFor={champStatut} className="text-sm">
+              Statut
+            </label>
+            <select
+              id={champStatut}
+              className="h-9 rounded-md border border-border bg-background px-2 text-sm"
+              value={compte.actif ? "actif" : "inactif"}
+              onChange={(evenement) => {
+                if (evenement.target.value === "inactif") {
+                  setConfirmation({ quoi: "desactivation" });
+                  return;
+                }
+                changerLeStatut(true);
+              }}
+            >
+              <option value="actif">Actif</option>
+              <option value="inactif">Désactivé</option>
+            </select>
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                reinitialisation.mutate(
+                  { params: { path: { id: identifiant } }, body: {} as never },
+                  {
+                    onSuccess: (reponse) => {
+                      setSecret(
+                        (reponse as { mot_de_passe_provisoire: string })
+                          .mot_de_passe_provisoire,
+                      );
+                    },
+                  },
+                )
+              }
+            >
+              Réinitialiser le mot de passe
+            </Button>
+          </div>
+        )}
       </section>
 
       {compte.est_proprietaire ? (
@@ -181,9 +399,11 @@ export function DetailCompte() {
           <SectionMagasins
             magasinsOffrables={offrable.magasins}
             accordes={accordes}
-            surAjout={(code) => basculerLeMagasin(code, true)}
-            surRetrait={(magasin) => basculerLeMagasin(magasin.code, false)}
-            surDemandeDeDesactivation={() => undefined}
+            surAjout={ajouterUnMagasin}
+            surRetrait={(magasin) =>
+              setConfirmation({ quoi: "retrait-magasin", magasin })
+            }
+            surDemandeDeDesactivation={() => setConfirmation({ quoi: "desactivation" })}
           />
 
           <SectionDroits
@@ -193,14 +413,71 @@ export function DetailCompte() {
             prenom={prenom}
             notes={notes}
             erreurs={erreurs}
+            noteDeSection={noteDeSection}
             surBascule={basculerLeDroit}
+            surBasculeDunMagasin={basculerUnMagasin}
+            surUniformiser={demanderUniformisation}
           />
 
           <HistoriqueDroits compteId={identifiant} />
         </>
       )}
+
+      <DialogueDesactivation
+        ouvert={confirmation?.quoi === "desactivation"}
+        nomComplet={compte.nom_complet}
+        surRetour={() => setConfirmation(null)}
+        surConfirmation={() => changerLeStatut(false)}
+      />
+
+      <DialogueRetraitMagasin
+        ouvert={confirmation?.quoi === "retrait-magasin"}
+        prenom={prenom}
+        nomDuMagasin={
+          confirmation?.quoi === "retrait-magasin" ? confirmation.magasin.nom : ""
+        }
+        reglagesPersonnalises={
+          confirmation?.quoi === "retrait-magasin"
+            ? compterLesPersonnalisees(lignes, confirmation.magasin.code)
+            : 0
+        }
+        surRetour={() => setConfirmation(null)}
+        surConfirmation={() => {
+          if (confirmation?.quoi === "retrait-magasin") {
+            retirerUnMagasin(confirmation.magasin);
+          }
+        }}
+      />
+
+      <DialogueUniformisation
+        ouvert={confirmation?.quoi === "uniformisation"}
+        libelleDuDroit={
+          confirmation?.quoi === "uniformisation" ? confirmation.libelle : ""
+        }
+        prenom={prenom}
+        nombreDeMagasins={accordes.length}
+        surRetour={() => setConfirmation(null)}
+        surConfirmation={() => {
+          if (confirmation?.quoi === "uniformisation") {
+            uniformiser(confirmation.code);
+          }
+        }}
+      />
+
+      <DialogueMotDePasse
+        ouvert={secret !== null}
+        secret={secret}
+        surFermeture={() => setSecret(null)}
+      />
     </div>
   );
+}
+
+/** `Californie a été ajouté. Vérifiez les 2 droits personnalisés par magasin.` */
+export function noteDeMagasinAjoute(nom: string, personnalises: number): string {
+  return personnalises === 1
+    ? `${nom} a été ajouté. Vérifiez le droit personnalisé par magasin.`
+    : `${nom} a été ajouté. Vérifiez les ${String(personnalises)} droits personnalisés par magasin.`;
 }
 
 /**
@@ -214,13 +491,8 @@ export function DetailCompte() {
  */
 function notesDeCascade(
   resultat: ResultatOctroi,
-  catalogue: CatalogueOffrable,
+  libelles: ReadonlyMap<string, string>,
 ): Record<string, string> {
-  const libelles = new Map(
-    catalogue.sections.flatMap((section) =>
-      section.droits.map((droit) => [droit.code, droit.libelle] as const),
-    ),
-  );
   const demande = libelles.get(resultat.code) ?? resultat.code;
   const notes: Record<string, string> = {};
   for (const code of resultat.cascade) {

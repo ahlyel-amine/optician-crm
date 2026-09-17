@@ -1,4 +1,9 @@
-import type { ReactNode } from "react";
+import { useState } from "react";
+
+import { toast } from "sonner";
+
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 
 /**
  * `03-UI-SPEC.md` 7.4 — l'anatomie d'une ligne de droit.
@@ -9,7 +14,7 @@ import type { ReactNode } from "react";
  *
  * **Pas une infobulle.** Une infobulle est invisible a qui balaie l'ecran, et
  * cette ligne est le levier de cout de support de tout l'ecran : a 2 400 MAD
- * par an et par boutique, elle est la difference entre une charge de support
+ * par an et par magasin, elle est la difference entre une charge de support
  * viable et non viable. Elle nomme la CONSEQUENCE, pas le code.
  */
 
@@ -81,6 +86,89 @@ export function Interrupteur({
   );
 }
 
+/**
+ * Dix secondes, et une fermeture explicite.
+ *
+ * `03-UI-SPEC.md` 7.8 : l'annulation plutot que la confirmation. Vingt et un
+ * interrupteurs a dialogues de confirmation est une fatigue de confirmation —
+ * on finit par confirmer sans lire — alors que chacune de ces actions est
+ * reversible en un clic. Dix secondes est le temps de lire la phrase, la
+ * comprendre et se raviser ; la fermeture explicite existe pour qui a compris
+ * tout de suite et veut recuperer le coin de l'ecran.
+ */
+export const DUREE_ANNULATION_MS = 10_000;
+
+/** L'unique emplacement du mot, et il ne veut jamais dire « fermer » (7.10). */
+const ACTION_ANNULER = "Annuler";
+
+/**
+ * Le toast d'annulation. **Un seul** par action de l'utilisateur, cascade
+ * comprise.
+ *
+ * `cascade` est une liste separee dans la reponse du serveur alors qu'elle est
+ * derivable de `lignes`, et c'est exactement pour cela : un `Annuler` par code
+ * emporte produirait trois toasts pour un seul clic.
+ */
+export function toastDannulation(message: string, defaire: () => void): void {
+  toast(message, {
+    duration: DUREE_ANNULATION_MS,
+    closeButton: true,
+    action: { label: ACTION_ANNULER, onClick: defaire },
+  });
+}
+
+export type ProprietesSurchargeParMagasin = {
+  libelle: string;
+  /** `{code: nom}` des magasins accordes, dans la portee de l'appelant. */
+  magasins: readonly { code: string; nom: string }[];
+  /** Les codes de magasins ou le droit est effectivement detenu. */
+  detenus: readonly string[];
+  surBasculeDunMagasin: (magasinCode: string, accorde: boolean) => void;
+};
+
+/**
+ * La sous-liste depliee : **le seul endroit ou une grille apparait**.
+ *
+ * Le pire cas de `03-UI-SPEC.md` 7.1 — 21 par N controles — n'est atteignable
+ * qu'au prix de 21 actions deliberees, et releve alors du choix de celui qui
+ * les a faites. Dans le cas attendu, zero ligne est depliee.
+ */
+export function SousListeParMagasin({
+  libelle,
+  magasins,
+  detenus,
+  surBasculeDunMagasin,
+}: ProprietesSurchargeParMagasin) {
+  return (
+    <ul className="mt-2 ml-[calc(24px+0.75rem)] space-y-2">
+      {magasins.map((magasin) => {
+        const detenu = detenus.includes(magasin.code);
+        return (
+          <li key={magasin.code} className="flex items-center gap-3">
+            <Interrupteur
+              // Le magasin est DANS le nom accessible : sans lui, un lecteur
+              // d'ecran annonce quatre fois « Saisir en caisse, coché » et la
+              // sous-liste ne veut plus rien dire (section 10).
+              nomAccessible={`${libelle} — ${magasin.nom}`}
+              etat={detenu ? "actif" : "inactif"}
+              onBascule={() => surBasculeDunMagasin(magasin.code, !detenu)}
+            />
+            <span className="text-sm" aria-hidden="true">
+              {magasin.nom}
+            </span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/** `Personnalisé : 2 magasins sur 3`, le numerateur et son denominateur. */
+export function aideDePersonnalisation(detenus: number, accordes: number): string {
+  const pluriel = detenus > 1 ? "magasins" : "magasin";
+  return `Personnalisé : ${String(detenus)} ${pluriel} sur ${String(accordes)}`;
+}
+
 export type ProprietesLigneDroit = {
   code: string;
   libelle: string;
@@ -99,10 +187,16 @@ export type ProprietesLigneDroit = {
    * un interrupteur qui ment sur l'etat reel.
    */
   erreur?: string;
-  /** Ce que la surcharge par magasin ajoute a droite de la ligne (7.5). */
-  actions?: ReactNode;
-  /** La sous-liste depliee, un interrupteur par magasin accorde. */
-  sousListe?: ReactNode;
+  /**
+   * Les magasins accordes a ce compte, dans la portee de l'appelant. C'est
+   * `magasins.length >= 2` qui decide de l'existence meme de `Par magasin`.
+   */
+  magasinsAccordes?: readonly { code: string; nom: string }[];
+  /** Les codes de magasins ou le droit est effectivement detenu, tels que servis. */
+  detenus?: readonly string[];
+  surBasculeDunMagasin?: (magasinCode: string, accorde: boolean) => void;
+  /** Ouvre la confirmation d'uniformisation, decidee par la fiche. */
+  surUniformiser?: () => void;
 };
 
 export function LigneDroit({
@@ -113,12 +207,31 @@ export function LigneDroit({
   onBascule,
   note,
   erreur,
-  actions,
-  sousListe,
+  magasinsAccordes = [],
+  detenus = [],
+  surBasculeDunMagasin,
+  surUniformiser,
 }: ProprietesLigneDroit) {
   const identifiant = `droit-${code}`;
+  const surchargeable = magasinsAccordes.length >= 2 && surBasculeDunMagasin !== undefined;
+
+  /*
+    **Seules les lignes que le proprietaire a personnalisees se deplient**
+    d'emblee. Une ligne mixte l'est par definition — c'est l'unique etat
+    personnalise de 7.5 — et une ligne uniforme ne se deplie qu'a la demande.
+    Dans le cas attendu, zero ligne est depliee.
+  */
+  const [choix, setChoix] = useState<boolean | null>(null);
+  /*
+    `null` veut dire « personne n'a encore decide » : la ligne suit alors son
+    etat, et une ligne personnalisee est depliee. Des que l'utilisateur plie ou
+    deplie, son choix l'emporte — sans quoi une ligne qu'il vient de replier se
+    redeploierait a la premiere reponse du serveur qui la redit mixte.
+  */
+  const deplie = choix ?? etat === "mixte";
+
   return (
-    <li className="border-b border-border py-3 last:border-0" data-code={code}>
+    <li className="group border-b border-border py-3 last:border-0" data-code={code}>
       <div className="flex items-start gap-3">
         <div className="pt-0.5">
           <Interrupteur
@@ -143,7 +256,22 @@ export function LigneDroit({
           >
             {libelle}
           </button>
+          {!deplie && etat === "mixte" ? (
+            /*
+              Une ligne personnalisee garde son badge une fois repliee : sinon
+              l'etat serait cache, et un propriétaire relisant l'ecran croirait
+              le droit uniforme.
+            */
+            <Badge variant="outline" className="ml-2 align-middle">
+              Personnalisé
+            </Badge>
+          ) : null}
           <p className="mt-0.5 text-xs text-muted-foreground">{explication}</p>
+          {etat === "mixte" ? (
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {aideDePersonnalisation(detenus.length, magasinsAccordes.length)}
+            </p>
+          ) : null}
           {note === undefined ? null : (
             <p className="mt-1 text-xs text-muted-foreground" role="status">
               {note}
@@ -155,9 +283,49 @@ export function LigneDroit({
             </p>
           )}
         </div>
-        {actions}
+
+        {surchargeable ? (
+          deplie ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="text-xs"
+              onClick={() => {
+                // `Uniformiser` replie la ligne, puis demande — la fiche decide
+                // s'il y a lieu de demander, puisqu'elle seule sait si les
+                // sous-interrupteurs divergent.
+                setChoix(false);
+                surUniformiser?.();
+              }}
+            >
+              Uniformiser
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              // Rendu seulement au survol ou au focus de la ligne : la grille
+              // ne doit pas encombrer un ecran que la quasi-totalite des
+              // affaires n'utilisera jamais.
+              className="text-xs opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100"
+              onClick={() => setChoix(true)}
+            >
+              Par magasin
+            </Button>
+          )
+        ) : null}
       </div>
-      {sousListe}
+
+      {deplie && surchargeable && surBasculeDunMagasin !== undefined ? (
+        <SousListeParMagasin
+          libelle={libelle}
+          magasins={magasinsAccordes}
+          detenus={detenus}
+          surBasculeDunMagasin={surBasculeDunMagasin}
+        />
+      ) : null}
     </li>
   );
 }

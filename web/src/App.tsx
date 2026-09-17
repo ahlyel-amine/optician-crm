@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/auth/AuthProvider";
 import { RequireAuth } from "@/auth/RequireAuth";
 import { RequireDroit } from "@/auth/RequireDroit";
+import { Toaster } from "@/components/ui/sonner";
 import { BanniereDeLien } from "@/etats/BanniereDeLien";
 import { PageIntrouvable } from "@/etats/PageIntrouvable";
 import { AppShell } from "@/layout/AppShell";
@@ -30,6 +31,30 @@ export default function App() {
   return (
     <AuthProvider>
       <BanniereDeLien />
+      {/*
+        L'hote des toasts, monte une fois pour toute l'application.
+
+        Il ne sert QU'A L'ANNULATION (03-UI-SPEC.md 7.8) : un echec de
+        chargement est une carte en ligne, un echec d'ecriture est un message
+        sur la ligne concernee. Un toast qui disparait au bout de dix secondes
+        ne doit jamais etre le seul endroit ou une panne a ete annoncee.
+
+        Deux reglages, et aucun n'est cosmetique. `containerAriaLabel` parce que
+        le defaut du bloc est « Notifications », en anglais, dans un produit qui
+        n'en affiche pas un mot. `hotkey={[]}` parce que le bloc pose un
+        raccourci global Alt+T qui annonce sa propre existence dans le nom de la
+        region — 03-UI-SPEC.md 5.7 interdit tout accord en v1, Ctrl+K etant
+        l'unique exception. C'est le meme defaut que le Ctrl+B du bloc `sidebar`
+        retire au plan 03-13, arrive par le meme chemin.
+      */}
+      <Toaster
+        position="bottom-right"
+        containerAriaLabel="Annulations"
+        hotkey={[]}
+        // Le libelle du bouton de fermeture est une option du conteneur, pas
+        // de chaque toast. Son defaut est « Close toast ».
+        toastOptions={{ closeButtonAriaLabel: "Fermer" }}
+      />
       <Routes>
         <Route path="/connexion" element={<Connexion />} />
         <Route

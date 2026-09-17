@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import { toast } from "sonner";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "@/App";
@@ -237,6 +238,15 @@ function rendreLaListe(comptes: unknown[], amorcage: unknown = PROPRIETAIRE) {
 }
 
 beforeEach(() => {
+  // Les toasts survivent au demontage : `sonner` rend dans une couche haute
+  // ajoutee a `document.body`, que le nettoyage de Testing Library ne possede
+  // pas. Sans cette purge, le `Annuler` d'un test se compte dans le suivant —
+  // et les tests qui affirment son ABSENCE dans un dialogue deviennent faux
+  // pour une raison qui n'a rien a voir avec le code teste.
+  toast.dismiss();
+  for (const reste of document.querySelectorAll("[data-sonner-toaster]")) {
+    reste.remove();
+  }
   appels = [];
   localStorage.clear();
   reinitialiserLeClient();
