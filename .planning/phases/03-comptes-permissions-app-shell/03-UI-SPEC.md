@@ -425,6 +425,26 @@ told the product is broken. Entries appear as each phase lands. `VITE_NAV_COMPLE
 it is — a density-review tool that must keep compiling to a constant `false` in a production build,
 never a feature flag anyone ships enabled.
 
+**The second-level row is not optional decoration — built 2026-09-17 at the plan 03-14 checkpoint,
+after it was found missing.** `Paramètres` shipped in plan 03-13 with an index that rendered the
+placeholder title, and nothing anywhere in the product linked to `/parametres/comptes`. The only
+screen in Phase 3 carrying real data was therefore reachable **only by typing its address**, and
+every test of it passed because every test mounted it at its route directly. Three rules came out of
+that:
+
+- The second level lives in the **same `NAV` array** as the first, under `sousEntrees`, and is
+  filtered by the **same predicate**. A phase adds a settings screen by adding data, never JSX, and
+  an entry whose code is not held is absent — no disabled state, no padlock, exactly as the sidebar
+  behaves.
+- **A section index redirects to the first entry the caller may see.** A landing page that lists what
+  is one click away is a click tax; a placeholder is worse, it is a dead end. If no entry is visible
+  — reachable only by typing the address — the 403 full page of 8.6 is rendered, **without naming a
+  droit**, because no single droit owns `/parametres` and Phase 9 will add a screen under a different
+  code.
+- **At least one test must reach a screen the way a person reaches it**: mount at `/`, click the
+  sidebar, assert the content. A suite that only mounts screens at their own routes cannot tell the
+  difference between built and reachable.
+
 ### 5.4 The magasin selector
 
 Top bar, immediately right of the shop name. Phases 5, 6, 7, 8 and 10 all depend on this piece.
@@ -617,9 +637,22 @@ CLAUDE.md #6 and costs one line instead of a support call.
 
 **Creation dialog** (shadcn `dialog`, 480px): `Nom complet`, `Adresse e-mail`, `Mot de passe provisoire`
 with a `Générer un mot de passe` button, and a read-only note `Ce mot de passe devra être changé à la première
-connexion.` Confirm label `Créer le compte`. On success the dialog closes, the new row is highlighted
-for 2 seconds, and the route goes straight to the detail page — because a freshly created account has
-no droits and no magasin, which is the next thing to do.
+connexion.` Confirm label `Créer le compte`. On success the dialog closes and **the route goes
+straight to the detail page** — because a freshly created account has no droits and no magasin, which
+is the next thing to do.
+
+**The 2-second new-row highlight is superseded — resolved 2026-09-17 at the plan 03-14 checkpoint.**
+This row originally read "the dialog closes, the new row is highlighted for 2 seconds, and the route
+goes straight to the detail page". The two halves contradict each other: the navigation to
+`/parametres/comptes/:id` happens in the same tick, so **the list is unmounted before the highlight
+can be painted**. It would animate a row on a screen nobody is on. There is nothing to verify at the
+checkpoint and nothing a test could assert that would mean anything.
+
+Landing on the detail page is the half that was kept, and it is the one that carries the intent — the
+owner is taken to the only screen where the new account becomes useful. **Do not re-add the
+highlight** unless the destination changes: if some later phase decides creation should *stay* on the
+list, the highlight becomes meaningful again and this paragraph is the record of why it was dropped,
+not an argument that row highlights are wrong in general.
 
 ### 7.3 Account detail (`/parametres/comptes/:id`) — three regions, in this order
 
