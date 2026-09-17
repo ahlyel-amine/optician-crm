@@ -8,7 +8,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "@/App";
 import { reinitialiserLeClient } from "@/api/client";
-import { NAV, PLAFOND_NAV, entreesVisibles, navCompletActif } from "@/layout/nav";
+import {
+  NAV,
+  PLAFOND_NAV,
+  entreesVisibles,
+  navCompletActif,
+  sousEntreesVisibles,
+} from "@/layout/nav";
 import {
   MAX_PAR_GROUPE,
   enregistrerFournisseurDeRecherche,
@@ -116,10 +122,15 @@ function poserLesReponses(table: Record<string, () => Response | Promise<Respons
  * que rien, nulle part dans l'arbre reel, ne rend une entree de navigation en
  * dehors du tableau `NAV`. Un montage isole ne pourrait pas le dire.
  */
-function rendreShell(amorcage: unknown = PROPRIETAIRE, chemin = "/") {
+function rendreShell(
+  amorcage: unknown = PROPRIETAIRE,
+  chemin = "/",
+  supplement: Record<string, () => Response | Promise<Response>> = {},
+) {
   poserLesReponses({
     "/api/auth/csrf/": () => vide(204),
     "/api/auth/moi/": () => json(amorcage),
+    ...supplement,
   });
   const requetes = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -319,12 +330,18 @@ describe("la mise en page et le clavier", () => {
   });
 
   it("un changement de route porte le focus sur le h1 de la nouvelle page et l'annonce", async () => {
-    rendreShell();
-    await screen.findByRole("navigation", { name: "Navigation principale" });
-
     // « Parametres » plutot que « Clients » : sans `VITE_NAV_COMPLET`, seules
     // les entrees des modules CONSTRUITS sont rendues, ce qui est exactement le
     // comportement qu'affirme la suite du contrat de navigation.
+    //
+    // Le titre attendu est `Comptes et droits` et non `Paramètres` depuis que
+    // l'accueil des parametres redirige vers sa premiere entree visible (plan
+    // 03-14). Le test y gagne : il traverse maintenant une REDIRECTION, et
+    // c'est precisement le cas ou l'annonce de route peut rester sur l'etape
+    // intermediaire au lieu de suivre jusqu'a la destination.
+    rendreShell(PROPRIETAIRE, "/", { "/api/comptes/": () => json([]) });
+    await screen.findByRole("navigation", { name: "Navigation principale" });
+
     const versParametres = within(barreDeNavigation()).getByRole("link", {
       name: "Paramètres",
     });
@@ -334,11 +351,13 @@ describe("la mise en page et le clavier", () => {
     // clique une entree : la page a change, sa position n'a pas bouge.
     await waitFor(() => {
       const titre = screen.getByRole("heading", { level: 1 });
-      expect(titre.textContent).toBe("Paramètres");
+      expect(titre.textContent).toBe("Comptes et droits");
       expect(document.activeElement).toBe(titre);
     });
     await waitFor(() => {
-      expect(screen.getByTestId("annonce-de-route").textContent).toBe("Paramètres");
+      expect(screen.getByTestId("annonce-de-route").textContent).toBe(
+        "Comptes et droits",
+      );
     });
   });
 });
@@ -476,11 +495,19 @@ describe("la portee de route", () => {
   });
 
   it("une route a portee multi ne demande rien", async () => {
-    rendreShell(amorcageDe({ proprietaire: true }), "/parametres");
+    rendreShell(amorcageDe({ proprietaire: true }), "/parametres", {
+      "/api/comptes/": () => json([]),
+    });
     await screen.findByRole("navigation", { name: "Navigation principale" });
 
     expect(screen.queryByText("Choisissez un magasin")).toBeNull();
-    expect(screen.getByTestId("destination").textContent).toBe("/parametres");
+    // `Parametres` se lit sur toute l'affaire, donc la zone de contenu rend son
+    // ecran sans rien demander. L'assertion porte sur le contenu REEL depuis
+    // que l'accueil redirige : un titre d'attente aurait ete vert ici alors
+    // meme que l'ecran etait inatteignable a la souris.
+    expect(
+      await screen.findByRole("heading", { name: "Comptes et droits", level: 1 }),
+    ).toBeTruthy();
   });
 });
 
@@ -686,5 +713,78 @@ describe("les ecarts tranches au point de controle", () => {
     // Et c'est bien ce crochet que le bloc `sidebar` consulte pour choisir
     // entre le tiroir et la barre : sans ce lien, la constante ne pilote rien.
     expect(sourceBarre).toContain("useIsMobile");
+  });
+});
+
+/* =========================================================================
+ * La navigation de second niveau des parametres (PERM-02)
+ *
+ * `03-UI-SPEC.md` 5.3 la decrit depuis le debut de la phase : « Second-level
+ * navigation renders as a row of section links inside the content area, not as
+ * a sidebar accordion ». Elle n'avait jamais ete construite, et le defaut
+ * qu'elle laissait etait total : cliquer `Parametres` menait au titre
+ * d'attente, et `/parametres/comptes` — le seul ecran metier de la phase —
+ * n'etait atteignable qu'en tapant son adresse.
+ *
+ * Deux tests, et le second est celui qui aurait rattrape le defaut : le
+ * premier verifie la DONNEE (une entree dont le droit manque n'existe pas), le
+ * second verifie le CHEMIN (on clique, on arrive).
+ * ======================================================================= */
+
+describe("la navigation de second niveau des parametres (PERM-02)", () => {
+  it("rend `Comptes et droits` a un porteur de `compte.gerer`, et RIEN a qui ne l'a pas", () => {
+    // Exactement la regle de la barre laterale (5.3, decision 1 du point de
+    // controle 03-13) : absente, pas grisee, pas cadenassee. Un lien inerte
+    // apprendrait a un gerant qu'un pouvoir existe et qu'il ne l'a pas.
+    const parametres = NAV.find((entree) => entree.route === "/parametres");
+    expect(parametres?.sousEntrees?.map((sous) => sous.route)).toEqual([
+      "/parametres/comptes",
+    ]);
+
+    const avecLeDroit = sousEntreesVisibles(parametres!, {
+      permissions: ["compte.gerer"],
+      proprietaire: false,
+      complet: true,
+    });
+    expect(avecLeDroit.map((sous) => sous.libelle)).toEqual(["Comptes et droits"]);
+
+    const sansLeDroit = sousEntreesVisibles(parametres!, {
+      permissions: ["stock.voir"],
+      proprietaire: false,
+      complet: true,
+    });
+    expect(sansLeDroit).toEqual([]);
+
+    // Le proprietaire garde la porte par laquelle il reprend la main, meme si
+    // le serveur ne lui liste pas le code — meme raison que `proprietaireToujours`
+    // au premier niveau.
+    const chezLeProprietaire = sousEntreesVisibles(parametres!, {
+      permissions: [],
+      proprietaire: true,
+      complet: true,
+    });
+    expect(chezLeProprietaire.map((sous) => sous.route)).toEqual([
+      "/parametres/comptes",
+    ]);
+  });
+
+  it("rend la rangee de liens DANS la zone de contenu, jamais en accordeon de barre laterale", async () => {
+    rendreShell(PROPRIETAIRE, "/parametres", {
+      "/api/comptes/": () => json([]),
+    });
+
+    const secondNiveau = await screen.findByRole("navigation", { name: "Paramètres" });
+
+    // Dans `main`, et pas dans la barre laterale. Un accordeon a cette taille
+    // devient un arbre que l'utilisateur renavigue a chaque visite, et il
+    // ferait grossir la barre a chaque phase — ce que le plafond de neuf
+    // entrees existe pour empecher.
+    expect(document.getElementById("contenu")?.contains(secondNiveau)).toBe(true);
+    expect(barreDeNavigation().contains(secondNiveau)).toBe(false);
+
+    const liens = within(secondNiveau).getAllByRole("link");
+    expect(liens.map((lien) => lien.getAttribute("href"))).toEqual([
+      "/parametres/comptes",
+    ]);
   });
 });

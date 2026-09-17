@@ -259,6 +259,58 @@ afterEach(() => {
 });
 
 /* =========================================================================
+ * 5.3 — atteindre l'ecran, ce qui precede tout le reste
+ * ======================================================================= */
+
+describe("l'acces a l'ecran depuis la navigation (PERM-02)", () => {
+  it("atteint la liste depuis la barre laterale, sans jamais taper d'adresse", async () => {
+    // LE TEST QUI MANQUAIT. Les trois ecrans de ce fichier etaient montes
+    // directement sur `/parametres/comptes`, donc tous verts pendant que
+    // l'ecran etait INATTEIGNABLE par l'interface : `Parametres` menait au
+    // titre d'attente, et rien dans le produit ne liait vers la liste.
+    //
+    // Monter a la racine et cliquer est la seule forme qui l'aurait dit.
+    rendre({ "/api/comptes/": () => json([ligneProprietaire(), ligneKarim()]) }, "/");
+
+    const barre = await screen.findByRole("navigation", {
+      name: "Navigation principale",
+    });
+    fireEvent.click(within(barre).getByRole("link", { name: "Paramètres" }));
+
+    // Un seul clic : l'accueil des parametres redirige vers la premiere entree
+    // que l'appelant peut voir, plutot que de le deposer sur une page vide.
+    expect(
+      await screen.findByRole("heading", { name: "Comptes et droits", level: 1 }),
+    ).toBeTruthy();
+    expect(await screen.findByText("Karim Benali")).toBeTruthy();
+
+    // Et la rangee de second niveau est la, dans le contenu, pour que les
+    // phases 9 et 12 y ajoutent leurs ecrans sans toucher a la barre laterale.
+    const secondNiveau = screen.getByRole("navigation", { name: "Paramètres" });
+    expect(
+      within(secondNiveau).getByRole("link", { name: "Comptes et droits" }),
+    ).toBeTruthy();
+  });
+
+  it("ne depose personne sur une impasse quand aucune entree de parametres n'est visible", async () => {
+    // Le cas ne s'atteint qu'en TAPANT l'adresse : la barre laterale retire
+    // deja `Parametres` a qui n'a pas `compte.gerer`. Il doit quand meme avoir
+    // une issue, et la 403 pleine page de 8.6 en est une — un `PageEnAttente`
+    // affichant `/parametres` n'en est pas une.
+    //
+    // Le droit n'est PAS nomme ici, et c'est delibere : aucun droit unique ne
+    // possede `/parametres`. La phase 9 y ajoute un ecran sous un autre code,
+    // et nommer `compte.gerer` enverrait alors demander le mauvais droit.
+    rendre({}, "/parametres", GERANT_SANS_DROIT);
+
+    expect(
+      await screen.findByRole("heading", { name: "Vous n'avez pas accès à cette page." }),
+    ).toBeTruthy();
+    expect(screen.queryByTestId("destination")).toBeNull();
+  });
+});
+
+/* =========================================================================
  * 7.2 — la liste des comptes
  * ======================================================================= */
 
