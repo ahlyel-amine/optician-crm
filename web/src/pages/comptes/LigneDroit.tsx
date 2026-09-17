@@ -231,7 +231,7 @@ export function LigneDroit({
   const deplie = choix ?? etat === "mixte";
 
   return (
-    <li className="group border-b border-border py-3 last:border-0" data-code={code}>
+    <li className="border-b border-border py-3 last:border-0" data-code={code}>
       <div className="flex items-start gap-3">
         <div className="pt-0.5">
           <Interrupteur
@@ -306,10 +306,26 @@ export function LigneDroit({
               type="button"
               variant="ghost"
               size="sm"
-              // Rendu seulement au survol ou au focus de la ligne : la grille
-              // ne doit pas encombrer un ecran que la quasi-totalite des
-              // affaires n'utilisera jamais.
-              className="text-xs opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100"
+              // **Visible en permanence.** Il a d'abord ete rendu `opacity-0`
+              // jusqu'au survol de sa ligne, pour ne pas encombrer un ecran
+              // que la quasi-totalite des affaires n'utilisera jamais. Cela
+              // rendait le controle indecouvrable — il fallait pointer
+              // exactement la bonne ligne pour apprendre qu'il existait — et
+              // absent purement et simplement au toucher, donc absent de la
+              // tablette du comptoir. Le proprietaire en a conclu que
+              // l'octroi par magasin n'existait pas.
+              //
+              // Ce qui limite l'encombrement n'est pas la revelation, c'est
+              // `magasinsAccordes.length >= 2` juste au-dessus : une
+              // entreprise mono-magasin ne voit toujours rien, et c'est elle
+              // qui est le cas frequent.
+              //
+              // Le poids visuel reste subordonne : `ghost`, `text-xs` quand
+              // le libelle du droit est en `text-sm`, et la couleur de
+              // l'explication de ligne. `Uniformiser` garde sa couleur
+              // pleine — il REMPLACE des reglages poses a la main, ce qui
+              // pese plus que l'invitation a en poser.
+              className="text-xs text-muted-foreground"
               onClick={() => setChoix(true)}
             >
               Par magasin

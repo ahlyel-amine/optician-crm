@@ -761,6 +761,50 @@ describe("la surcharge par magasin", () => {
     expect(screen.queryByRole("button", { name: "Par magasin" })).toBeNull();
   });
 
+  it("rend `Par magasin` visible sans survol ni focus, sur chaque ligne (PERM-03)", async () => {
+    // Le pendant du test ci-dessus, et le defaut qu'il ne voyait pas : le
+    // bouton EXISTAIT a deux magasins, et il etait rendu `opacity-0` jusqu'au
+    // survol de sa ligne. Indecouvrable — il faut pointer exactement la bonne
+    // ligne pour apprendre qu'il existe — et purement absent au toucher, donc
+    // absent de la tablette du comptoir. Le proprietaire en a conclu que
+    // l'octroi par magasin n'existait pas.
+    //
+    // **Pourquoi une assertion de CLASSES et non de visibilite.** jsdom ne
+    // calcule pas le CSS : `getComputedStyle` n'y resout ni Tailwind ni une
+    // feuille externe, donc `toBeVisible()` rend vrai sur un `opacity-0`. Ce
+    // test attrape la regression exacte qui vient de se produire ; il ne
+    // prouve pas une visibilite reelle. Cette preuve-la reste humaine.
+    rendreLaFiche({
+      droits: [
+        { code: "stock.voir", etat: "actif", magasins: ["ANFA", "MAARIF"] },
+        { code: "caisse.voir", etat: "actif", magasins: ["ANFA", "MAARIF"] },
+      ],
+    });
+
+    await screen.findByRole("switch", { name: "Consulter le stock" });
+    // Aucun `mouseOver`, aucun `focus` : l'ecran tel qu'il est rendu.
+    const boutons = screen.getAllByRole("button", { name: "Par magasin" });
+    expect(boutons).toHaveLength(5);
+
+    for (const bouton of boutons) {
+      const classes = bouton.className.split(/\s+/);
+      expect(classes).not.toContain("opacity-0");
+      expect(
+        classes.filter(
+          (classe) =>
+            classe.startsWith("group-hover:") ||
+            classe.startsWith("group-focus-within:") ||
+            classe.startsWith("focus:opacity"),
+        ),
+      ).toEqual([]);
+    }
+
+    // CLAUDE.md #13 : rendre le bouton visible ne deplie RIEN. Le defaut reste
+    // la case a cocher uniforme ; le tiret cadratin est ce que la sous-liste
+    // met dans le nom accessible de chaque sous-interrupteur.
+    expect(screen.queryAllByRole("switch", { name: /\u2014/ })).toHaveLength(0);
+  });
+
   it("annonce le tri-etat plutot que de seulement le dessiner", async () => {
     rendreLaFiche({ droits: DROITS_MIXTES });
 
