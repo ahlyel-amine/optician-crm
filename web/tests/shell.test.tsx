@@ -606,3 +606,81 @@ describe("la feuille d'impression", () => {
     expect(feuille).not.toMatch(/outline:\s*none/);
   });
 });
+
+/* =========================================================================
+ * Les ecarts releves au point de controle humain du plan 03-13 (2026-09-17)
+ *
+ * Trois d'entre eux sont des ecarts entre le produit et sa propre
+ * specification, dont deux vivent dans un fichier VENDU par shadcn. Un fichier
+ * vendu se reinstalle : sans un test nomme, la correction disparait au
+ * prochain `shadcn add` sans que rien ne rougisse. C'est la raison d'etre de ce
+ * bloc, et il se lit en lisant les fichiers, parce que jsdom ne met pas en page
+ * et n'evalue aucune variable CSS.
+ * ======================================================================= */
+
+describe("les ecarts tranches au point de controle", () => {
+  const feuilleDeStyle = readFileSync(resolve(process.cwd(), "src/index.css"), "utf8");
+  const sourceBarre = readFileSync(
+    resolve(process.cwd(), "src/components/ui/sidebar.tsx"),
+    "utf8",
+  );
+  const sourceMobile = readFileSync(
+    resolve(process.cwd(), "src/hooks/use-mobile.ts"),
+    "utf8",
+  );
+
+  it("--primary vaut l'accent #2563EB de la specification, et non le presque-noir du preset", () => {
+    // `03-UI-SPEC.md` section 4 reserve #2563EB au bouton primaire, a l'anneau
+    // de focus, a la barre de l'entree active, a l'etat coche et a la ligne
+    // selectionnee. Le preset zinc du plan 03-03 laissait --primary quasi noir,
+    // donc le bouton primaire n'etait pas celui de la specification.
+    expect(feuilleDeStyle).toMatch(/--primary:\s*var\(--accent-produit\)/);
+    expect(feuilleDeStyle).toMatch(/--accent-produit:\s*#2563eb/i);
+
+    // Et l'alignement vient APRES le bloc du preset, sinon la cascade rend le
+    // presque-noir et l'assertion ci-dessus serait verte pour rien.
+    const presetOklch = feuilleDeStyle.lastIndexOf("--primary: oklch");
+    const aligne = feuilleDeStyle.indexOf("--primary: var(--accent-produit)");
+    expect(aligne).toBeGreaterThan(presetOklch);
+  });
+
+  it("l'accroche de marque reste UNE redefinition de variable pour la phase 9", () => {
+    // BRAND-01 pose --primary et --primary-foreground sur :root au premier
+    // rendu authentifie. Aligner --primary ici ne doit pas avoir grave l'accent
+    // dans les composants : l'alias de marque continue de pointer sur lui.
+    expect(feuilleDeStyle).toMatch(/--accent-marque:\s*var\(--primary\)/);
+  });
+
+  it("aucun raccourci accorde ne replie la barre laterale", async () => {
+    // `03-UI-SPEC.md` 5.7 : aucun raccourci mnemonique ni accord en v1, Ctrl+K
+    // pour la recherche etant l'unique exception. Le bloc vendu par shadcn
+    // livre Ctrl+B, qui replie la navigation sans que personne l'ait demande —
+    // et en francais AZERTY comme en QWERTY, Ctrl+B est le gras dans tout autre
+    // logiciel de comptoir.
+    const { container } = rendreShell();
+    await screen.findByRole("navigation", { name: "Navigation principale" });
+
+    const barre = container.querySelector('[data-slot="sidebar"]');
+    expect(barre?.getAttribute("data-state")).toBe("expanded");
+
+    fireEvent.keyDown(window, { key: "b", ctrlKey: true });
+    fireEvent.keyDown(window, { key: "b", metaKey: true });
+
+    expect(barre?.getAttribute("data-state")).toBe("expanded");
+    // Rien n'a ete persiste non plus : le raccourci n'a pas seulement ete
+    // rendu invisible, il n'existe plus.
+    expect(localStorage.getItem("optique.barre-laterale.7")).toBeNull();
+    expect(sourceBarre).not.toContain("SIDEBAR_KEYBOARD_SHORTCUT");
+  });
+
+  it("le tiroir hors-canevas s'ouvre a 1024px, la borne de la specification", () => {
+    // `03-UI-SPEC.md` 5.6 : rail automatique de 1024 a 1279px, tiroir
+    // hors-canevas EN DESSOUS de 1024. Le fichier vendu coupait a 768, ce qui
+    // laissait la bande 768-1023px sur le rail au lieu du tiroir.
+    expect(sourceMobile).toMatch(/const MOBILE_BREAKPOINT = 1024/);
+    expect(sourceMobile).not.toMatch(/const MOBILE_BREAKPOINT = 768/);
+    // Et c'est bien ce crochet que le bloc `sidebar` consulte pour choisir
+    // entre le tiroir et la barre : sans ce lien, la constante ne pilote rien.
+    expect(sourceBarre).toContain("useIsMobile");
+  });
+});

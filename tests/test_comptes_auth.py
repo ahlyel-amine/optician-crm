@@ -843,8 +843,11 @@ def test_perm01_le_changement_de_mot_de_passe_efface_le_drapeau(affaire_reelle):
     Ce test tient la seule moitié automatisable : le drapeau tombe **parce que le mot de
     passe a changé**, et l'ancien ne vaut plus rien.
 
-    Le mot de passe actuel est exigé. Sans lui, un poste laissé déverrouillé une minute —
-    ou un CSRF réussi — donne un compte, définitivement, plutôt qu'une session.
+    Ce compte est en changement **forcé**, donc `mot_de_passe_actuel` y est facultatif
+    depuis le point de contrôle du plan 03-13 (2026-09-17). Facultatif n'est pas ignoré :
+    s'il est fourni, il est vérifié, et c'est ce que la première jambe ci-dessous tient.
+    L'exigence elle-même vit sur le chemin volontaire, et son garde-fou est
+    `test_perm01_un_compte_ordinaire_reste_refuse_sans_le_mot_de_passe_actuel`.
     """
     from tests.factories import MOT_DE_PASSE_DE_TEST, GerantFactory
 
@@ -858,8 +861,8 @@ def test_perm01_le_changement_de_mot_de_passe_efface_le_drapeau(affaire_reelle):
         format="json",
     )
     assert refuse.status_code == 400, (
-        "Le changement a été accepté sans le mot de passe actuel : une session volée "
-        "devient un compte volé."
+        "Un mot de passe actuel FAUX a été accepté. Le champ est facultatif en "
+        "changement forcé, il n'est pas ignoré quand il est là."
     )
 
     accepte = api.post(
@@ -876,6 +879,98 @@ def test_perm01_le_changement_de_mot_de_passe_efface_le_drapeau(affaire_reelle):
     assert gerant.doit_changer_mot_de_passe is False
     assert gerant.check_password("orage-pluie-soleil-42")
     assert not gerant.check_password(MOT_DE_PASSE_DE_TEST)
+
+
+def test_perm01_un_changement_force_n_exige_pas_le_mot_de_passe_actuel(affaire_reelle):
+    """PERM-01 — la dérogation, et elle est étroite : `doit_changer_mot_de_passe` seul.
+
+    Sur l'atterrissage forcé, la personne vient de taper ce mot de passe précis pour
+    ouvrir sa session, quelques secondes plus tôt. Le lui redemander, c'est lui faire
+    répéter ce qu'elle vient de saisir, sur l'écran le plus contraint du produit — une
+    page pleine, non refermable, dont elle ne sort pas sans réussir.
+
+    Ce que la dérogation ne coûte pas : le mot de passe d'un compte en changement forcé
+    a été **posé par le propriétaire ou l'opérateur**, il est connu d'un tiers par
+    construction, et c'est exactement pour cela que le drapeau est levé. La garantie que
+    `mot_de_passe_actuel` protège — qu'un poste déverrouillé ou un CSRF réussi donne une
+    session et non le compte — ne protège rien ici : le secret est déjà partagé.
+
+    Décision du propriétaire au point de contrôle du plan 03-13, le 2026-09-17, qui
+    revient sur celle du point de contrôle 03-12. Le test jumeau
+    `test_perm01_un_compte_ordinaire_reste_refuse_sans_le_mot_de_passe_actuel` est ce
+    qui empêche la dérogation de s'élargir plus tard.
+    """
+    from tests.factories import MOT_DE_PASSE_DE_TEST, GerantFactory
+
+    gerant = GerantFactory(client=affaire_reelle.client, doit_changer_mot_de_passe=True)
+    api = _client_api()
+    assert _connecter(api, gerant).data["utilisateur"]["doit_changer_mot_de_passe"] is True
+
+    reponse = api.post(
+        MOT_DE_PASSE,
+        {"nouveau_mot_de_passe": "orage-pluie-soleil-42"},
+        format="json",
+    )
+    assert reponse.status_code == 200, (
+        "Un compte en changement forcé s'est vu redemander le mot de passe qu'il venait "
+        f"de saisir : {reponse.status_code} {getattr(reponse, 'data', None)}"
+    )
+
+    gerant.refresh_from_db()
+    assert gerant.doit_changer_mot_de_passe is False
+    assert gerant.check_password("orage-pluie-soleil-42")
+    assert not gerant.check_password(MOT_DE_PASSE_DE_TEST)
+
+
+def test_perm01_un_compte_ordinaire_reste_refuse_sans_le_mot_de_passe_actuel(affaire_reelle):
+    """PERM-01 — la dérogation ne déborde pas du changement forcé. **Le garde-fou.**
+
+    C'est le test qui compte des deux. Une dérogation écrite pour un cas précis s'élargit
+    au premier refactoring qui trouve la condition gênante ; celui-ci rougit quand cela
+    arrive. Le chemin volontaire — `Changer mon mot de passe` dans le menu du compte —
+    exige `mot_de_passe_actuel`, parce que là, et seulement là, le secret n'est connu que
+    de la personne : sans le champ, un poste laissé déverrouillé une minute ou un CSRF
+    réussi ne donne plus une session mais le compte, définitivement.
+
+    Les deux jambes sont dans le même test à dessein : le refus seul serait vert si le
+    point de terminaison était simplement cassé.
+    """
+    from tests.factories import MOT_DE_PASSE_DE_TEST, GerantFactory
+
+    gerant = GerantFactory(client=affaire_reelle.client, doit_changer_mot_de_passe=False)
+    api = _client_api()
+    _connecter(api, gerant)
+
+    refuse = api.post(
+        MOT_DE_PASSE,
+        {"nouveau_mot_de_passe": "orage-pluie-soleil-42"},
+        format="json",
+    )
+    assert refuse.status_code == 400, (
+        "Un compte ORDINAIRE a changé son mot de passe sans fournir l'actuel. La "
+        "dérogation du changement forcé s'est élargie à tous les comptes : une session "
+        "volée redevient un compte volé."
+    )
+    assert "mot_de_passe_actuel" in refuse.json(), (
+        f"Le refus ne nomme pas le champ manquant : {refuse.json()}"
+    )
+    gerant.refresh_from_db()
+    assert gerant.check_password(MOT_DE_PASSE_DE_TEST), (
+        "Le mot de passe a changé malgré le 400."
+    )
+
+    accepte = api.post(
+        MOT_DE_PASSE,
+        {
+            "mot_de_passe_actuel": MOT_DE_PASSE_DE_TEST,
+            "nouveau_mot_de_passe": "orage-pluie-soleil-42",
+        },
+        format="json",
+    )
+    assert accepte.status_code == 200, (
+        f"Le même changement AVEC le champ a reçu {accepte.status_code} : le refus "
+        "ci-dessus ne prouvait donc rien."
+    )
 
 
 def test_perm01_un_mot_de_passe_trivial_est_refuse_en_francais(affaire_reelle):

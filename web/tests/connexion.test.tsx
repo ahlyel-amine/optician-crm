@@ -507,7 +507,17 @@ describe("/connexion", () => {
 });
 
 /* =========================================================================
- * /mot-de-passe — le changement force
+ * /mot-de-passe — DEUX chemins, deux jeux de champs
+ *
+ * Le chemin FORCE (doit_changer_mot_de_passe) rend DEUX champs : la personne
+ * vient de taper son mot de passe pour ouvrir la session, le lui redemander
+ * revient a le lui faire repeter. Le chemin VOLONTAIRE, atteint depuis
+ * `Changer mon mot de passe` du menu du compte, en rend TROIS : la, et
+ * seulement la, le secret n'est connu que d'elle, et le champ est ce qui fait
+ * qu'un poste deverrouille donne une session et non le compte.
+ *
+ * Tranche au point de controle du plan 03-13 le 2026-09-17, revenant sur la
+ * decision du point de controle 03-12. `03-UI-SPEC.md` 9.4 decrit les deux.
  * ======================================================================= */
 
 describe("/mot-de-passe", () => {
@@ -535,6 +545,10 @@ describe("/mot-de-passe", () => {
     expect(screen.queryByRole("button", { name: "Fermer" })).toBeNull();
     expect(screen.queryAllByRole("link")).toHaveLength(0);
     expect(screen.getByRole("button", { name: "Enregistrer" })).toBeTruthy();
+    // Deux champs, pas trois : le mot de passe actuel vient d'etre saisi.
+    expect(screen.queryByLabelText("Mot de passe actuel")).toBeNull();
+    expect(screen.getByLabelText("Nouveau mot de passe")).toBeTruthy();
+    expect(screen.getByLabelText("Confirmer")).toBeTruthy();
   });
 
   it("deux saisies differentes sont refusees avant tout appel reseau", async () => {
@@ -546,9 +560,6 @@ describe("/mot-de-passe", () => {
     rendreApplication("/");
     await screen.findByText("Choisissez votre mot de passe");
 
-    fireEvent.change(screen.getByLabelText("Mot de passe actuel"), {
-      target: { value: "provisoire-1234" },
-    });
     fireEvent.change(screen.getByLabelText("Nouveau mot de passe"), {
       target: { value: "un-mot-de-passe-long" },
     });
@@ -572,9 +583,6 @@ describe("/mot-de-passe", () => {
     rendreApplication("/");
     await screen.findByText("Choisissez votre mot de passe");
 
-    fireEvent.change(screen.getByLabelText("Mot de passe actuel"), {
-      target: { value: "provisoire-1234" },
-    });
     fireEvent.change(screen.getByLabelText("Nouveau mot de passe"), {
       target: { value: "un-mot-de-passe-long" },
     });
@@ -585,5 +593,60 @@ describe("/mot-de-passe", () => {
 
     await screen.findByTestId("destination");
     expect(screen.getByTestId("destination").textContent).toBe("/");
+
+    const envoi = appels.find((appel) => appel.url === "/api/auth/mot-de-passe/");
+    expect(envoi).toBeTruthy();
+    expect(JSON.parse(envoi!.corps!)).toEqual({
+      nouveau_mot_de_passe: "un-mot-de-passe-long",
+    });
+  });
+
+  it("le chemin volontaire rend TROIS champs et sa propre copie", async () => {
+    poserLesReponses({
+      "/api/auth/csrf/": () => vide(204),
+      "/api/auth/moi/": () => json(AMORCAGE),
+      "/api/auth/mot-de-passe/": () => json(AMORCAGE),
+    });
+
+    rendreApplication("/mot-de-passe");
+
+    expect(await screen.findByText("Changer mon mot de passe")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Choisissez un nouveau mot de passe. Saisissez d'abord celui que vous utilisez aujourd'hui.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByLabelText("Mot de passe actuel")).toBeTruthy();
+    expect(screen.getByLabelText("Nouveau mot de passe")).toBeTruthy();
+    expect(screen.getByLabelText("Confirmer")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Mot de passe actuel"), {
+      target: { value: "celui-d-aujourd-hui" },
+    });
+    fireEvent.change(screen.getByLabelText("Nouveau mot de passe"), {
+      target: { value: "un-mot-de-passe-long" },
+    });
+    fireEvent.change(screen.getByLabelText("Confirmer"), {
+      target: { value: "un-mot-de-passe-long" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
+
+    await waitFor(() => {
+      expect(appels.some((appel) => appel.url === "/api/auth/mot-de-passe/")).toBe(true);
+    });
+    const envoi = appels.find((appel) => appel.url === "/api/auth/mot-de-passe/");
+    expect(JSON.parse(envoi!.corps!)).toEqual({
+      mot_de_passe_actuel: "celui-d-aujourd-hui",
+      nouveau_mot_de_passe: "un-mot-de-passe-long",
+    });
+  });
+
+  it("le chemin volontaire a une issue, le chemin force n'en a aucune", async () => {
+    poserLesReponses(amorcageReussi());
+    rendreApplication("/mot-de-passe");
+    await screen.findByText("Changer mon mot de passe");
+    // `Retour` et non `Annuler` : le lexique reserve `Annuler` a l'annulation
+    // d'une modification enregistree (`03-UI-SPEC.md` 7.10 et 9.3).
+    expect(screen.getByRole("link", { name: "Retour" })).toBeTruthy();
   });
 });
