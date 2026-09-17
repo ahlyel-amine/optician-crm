@@ -520,6 +520,7 @@ function rendreLaFiche(options: {
   surMagasins?: (requete: Request) => Response | Promise<Response>;
   surUniformiser?: (requete: Request) => Response | Promise<Response>;
   surStatut?: (requete: Request) => Response | Promise<Response>;
+  surMotDePasse?: (requete: Request) => Response | Promise<Response>;
   surJournal?: (requete: Request) => Response | Promise<Response>;
 } = {}) {
   const compte = options.compte ?? ligneKarim();
@@ -543,6 +544,9 @@ function rendreLaFiche(options: {
   }
   if (options.surStatut) {
     table["POST /api/comptes/2/statut/"] = options.surStatut;
+  }
+  if (options.surMotDePasse) {
+    table["POST /api/comptes/2/mot-de-passe/"] = options.surMotDePasse;
   }
   table["/api/comptes/2/journal/"] = options.surJournal ?? (() => json([]));
   return rendre(table, "/parametres/comptes/2", options.amorcage ?? PROPRIETAIRE);
@@ -1037,6 +1041,89 @@ describe("l'annulation, les echecs et les dialogues", () => {
     expect(screen.queryByRole("button", { name: "Annuler" })).toBeNull();
     // Rien n'est parti avant la confirmation.
     expect(appels.some((appel) => appel.chemin === "/api/comptes/2/magasins/")).toBe(false);
+  });
+
+  it("ne reinitialise aucun mot de passe avant confirmation, et le `Retour` laisse le compte intact (PERM-02)", async () => {
+    // La seule action de cet ecran qui soit a la fois immediate et sans
+    // retour. Les vingt et une bascules ont leur toast `Annuler` (7.8), la
+    // desactivation et le retrait de magasin ont leur confirmation ; celle-ci
+    // n'avait ni l'un ni l'autre, et partait depuis le `onClick`. Un clic par
+    // megarde coupait l'acces d'un gerant en plein service.
+    //
+    // `DialogueMotDePasse` n'est pas une confirmation : il AFFICHE un mot de
+    // passe deja genere, c'est-a-dire un degat deja fait.
+    rendreLaFiche({
+      surMotDePasse: () => json({ mot_de_passe_provisoire: "Tr0is-Mots-Ici" }),
+    });
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Réinitialiser le mot de passe" }),
+    );
+
+    // **Vider la file avant d'affirmer l'absence.** `mutate()` rend la main
+    // avant d'appeler `fetch`, donc `appels` est encore vide une ligne apres
+    // le clic — meme au-dessus du code fautif. Une assertion posee la serait
+    // verte contre le defaut qu'elle est censee attraper, ce qui est
+    // exactement le piege que `.planning/TESTING.md` nomme. Un tour de boucle
+    // d'evenements suffit a laisser partir la requete si elle doit partir.
+    await new Promise((resoudre) => {
+      setTimeout(resoudre, 0);
+    });
+
+    // L'assertion qui mord : rien n'est parti sur le fil.
+    expect(appels.some((appel) => appel.chemin === "/api/comptes/2/mot-de-passe/")).toBe(
+      false,
+    );
+
+    expect(
+      screen.getByRole("heading", {
+        name: "Réinitialiser le mot de passe de Karim ?",
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Son mot de passe actuel cessera immédiatement de fonctionner. Vous devrez lui communiquer le nouveau.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retour" })).toBeTruthy();
+    // `Annuler` ne veut JAMAIS dire « fermer ce dialogue » (7.10).
+    expect(screen.queryByRole("button", { name: "Annuler" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retour" }));
+
+    await new Promise((resoudre) => {
+      setTimeout(resoudre, 0);
+    });
+    expect(appels.some((appel) => appel.chemin === "/api/comptes/2/mot-de-passe/")).toBe(
+      false,
+    );
+    expect(screen.queryByText("Tr0is-Mots-Ici")).toBeNull();
+  });
+
+  it("reinitialise apres confirmation, et montre le mot de passe provisoire (PERM-02)", async () => {
+    rendreLaFiche({
+      surMotDePasse: () => json({ mot_de_passe_provisoire: "Tr0is-Mots-Ici" }),
+    });
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Réinitialiser le mot de passe" }),
+    );
+    // Le nom accessible est EXACT en Testing Library : `Réinitialiser` ne
+    // designe que l'action du dialogue, jamais le bouton de la fiche qui
+    // s'appelle `Réinitialiser le mot de passe`.
+    fireEvent.click(screen.getByRole("button", { name: "Réinitialiser" }));
+
+    await waitFor(() => {
+      expect(
+        appels.some(
+          (appel) =>
+            appel.chemin === "/api/comptes/2/mot-de-passe/" && appel.methode === "POST",
+        ),
+      ).toBe(true);
+    });
+    // Apres confirmation, le comportement est exactement celui d'avant.
+    expect(await screen.findByText("Tr0is-Mots-Ici")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Fermer" })).toBeTruthy();
   });
 
   it("deroule l'historique du plus recent au plus ancien, a l'ouverture seulement", async () => {

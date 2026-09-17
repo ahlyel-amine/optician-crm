@@ -20,6 +20,7 @@ import { SectionMagasins } from "./SectionMagasins";
 import {
   DialogueDesactivation,
   DialogueMotDePasse,
+  DialogueReinitialisation,
   DialogueRetraitMagasin,
   DialogueUniformisation,
 } from "./dialogues";
@@ -82,7 +83,8 @@ type FicheCompte = {
 type Confirmation =
   | { quoi: "desactivation" }
   | { quoi: "retrait-magasin"; magasin: Magasin }
-  | { quoi: "uniformisation"; code: string; libelle: string };
+  | { quoi: "uniformisation"; code: string; libelle: string }
+  | { quoi: "reinitialisation" };
 
 export function DetailCompte() {
   const { id = "" } = useParams();
@@ -317,6 +319,30 @@ export function DetailCompte() {
     );
   };
 
+  /**
+   * La reinitialisation, **derriere sa confirmation**.
+   *
+   * Le corps est celui qui vivait dans le `onClick` du bouton : il n'a pas
+   * change, il a recule d'un cran. Un clic par megarde coupait l'acces d'un
+   * gerant en plein service sans rien demander et sans rien laisser defaire —
+   * la seule action de l'ecran qui fut a la fois immediate et sans retour.
+   * `DialogueMotDePasse`, en fin de fichier, n'y pouvait rien : il affiche un
+   * mot de passe deja genere.
+   */
+  const reinitialiserLeMotDePasse = () => {
+    setConfirmation(null);
+    reinitialisation.mutate(
+      { params: { path: { id: identifiant } }, body: {} as never },
+      {
+        onSuccess: (reponse) => {
+          setSecret(
+            (reponse as { mot_de_passe_provisoire: string }).mot_de_passe_provisoire,
+          );
+        },
+      },
+    );
+  };
+
   const changerLeStatut = (actif: boolean) => {
     setConfirmation(null);
     changementDeStatut.mutate(
@@ -367,19 +393,7 @@ export function DetailCompte() {
               type="button"
               variant="outline"
               size="sm"
-              onClick={() =>
-                reinitialisation.mutate(
-                  { params: { path: { id: identifiant } }, body: {} as never },
-                  {
-                    onSuccess: (reponse) => {
-                      setSecret(
-                        (reponse as { mot_de_passe_provisoire: string })
-                          .mot_de_passe_provisoire,
-                      );
-                    },
-                  },
-                )
-              }
+              onClick={() => setConfirmation({ quoi: "reinitialisation" })}
             >
               Réinitialiser le mot de passe
             </Button>
@@ -462,6 +476,13 @@ export function DetailCompte() {
             uniformiser(confirmation.code);
           }
         }}
+      />
+
+      <DialogueReinitialisation
+        ouvert={confirmation?.quoi === "reinitialisation"}
+        prenom={prenom}
+        surRetour={() => setConfirmation(null)}
+        surConfirmation={reinitialiserLeMotDePasse}
       />
 
       <DialogueMotDePasse

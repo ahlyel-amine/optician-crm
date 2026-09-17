@@ -31,9 +31,10 @@ import {
  * fichier doit rester vide, ce qui est la formulation que la discipline ne peut
  * pas eroder.
  *
- * **Aucune confirmation tapee** dans aucun des deux : les deux actions sont
- * reversibles, et faire recopier un nom pour une action reversible entraine a
- * recopier sans lire.
+ * **Aucune confirmation tapee** dans aucune des trois confirmations : chacune
+ * de ces actions se rattrape — on reactive un compte, on rend un magasin, on
+ * communique le nouveau mot de passe — et faire recopier un nom pour une
+ * action rattrapable entraine a recopier sans lire.
  *
  * **La seconde phrase enonce ce qui survit.** Un dialogue qui ne nomme que ce
  * qu'il detruit laisse l'utilisateur deviner ce qu'il advient de son historique
@@ -176,6 +177,64 @@ export function DialogueUniformisation({
         <AlertDialogFooter>
           <AlertDialogCancel onClick={surRetour}>{RETOUR}</AlertDialogCancel>
           <AlertDialogAction onClick={surConfirmation}>Uniformiser</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+export type ProprietesDialogueReinitialisation = {
+  ouvert: boolean;
+  prenom: string;
+  surRetour: () => void;
+  surConfirmation: () => void;
+};
+
+/**
+ * La confirmation que 7.9 ne nomme pas, et qui manquait.
+ *
+ * 7.9 enumere deux dialogues destructifs ; celui-ci est le troisieme, ajoute
+ * apres coup. `DialogueMotDePasse`, plus bas, **n'est pas** une confirmation :
+ * il AFFICHE un mot de passe deja genere, c'est-a-dire un degat deja fait.
+ * Jusqu'ici la reinitialisation partait du `onClick` du bouton de la fiche.
+ *
+ * C'etait la seule action de l'ecran a la fois **immediate et sans retour** :
+ * les vingt et une bascules ont leur toast defaisable (7.8), la desactivation
+ * et le retrait de magasin ont leur confirmation. Un clic par megarde coupait
+ * l'acces d'un gerant en plein service, et l'ancien mot de passe n'existait
+ * plus.
+ *
+ * (Le mot de l'action d'un toast reste banni de ce fichier — voir le bloc de
+ * tete. Cette confirmation est la troisieme, et la regle ne s'assouplit pas
+ * parce qu'un commentaire aurait ete plus court avec.)
+ *
+ * **Pas de `bg-destructive` sur l'action**, contrairement aux deux dialogues
+ * de 7.9 : l'action REMPLACE une identification, elle ne detruit aucune
+ * donnee et ne ferme aucune porte — le nouveau mot de passe est delivre dans
+ * le meme geste. C'est le cas de `DialogueUniformisation`. Peindre en rouge
+ * une operation de routine du support use le rouge des deux qui en ont besoin.
+ */
+export function DialogueReinitialisation({
+  ouvert,
+  prenom,
+  surRetour,
+  surConfirmation,
+}: ProprietesDialogueReinitialisation) {
+  return (
+    <AlertDialog open={ouvert} onOpenChange={(etat) => (etat ? undefined : surRetour())}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>
+            Réinitialiser le mot de passe de {prenom} ?
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            Son mot de passe actuel cessera immédiatement de fonctionner. Vous devrez lui
+            communiquer le nouveau.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel onClick={surRetour}>{RETOUR}</AlertDialogCancel>
+          <AlertDialogAction onClick={surConfirmation}>Réinitialiser</AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
