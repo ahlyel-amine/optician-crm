@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: "Completed 03.1-01-PLAN.md — le selecteur de magasin remplace l'ouverture ligne par ligne. `Par magasin`, sa sous-liste, l'etat `deplie` et `Uniformiser` sont supprimes ; `LigneDroit` est sans etat ; le selecteur ouvre sur `Tous les magasins de ce compte` et CLAUDE.md #13 n'est pas amende. Web 128 passed (base 126 : -3 caducs, +5 net, 7 neufs dont 2 reecrits sur place), backend 184/30 inchange, build 0, audit:format muet. Reste de la vague 1 : rien. Vague 2 : 03.1-02 et 03.1-03, puis le point de controle humain 03.1-04."
-last_updated: "2026-09-17T18:57:46.121Z"
+stopped_at: "Completed 03.1-02-PLAN.md — `accorder_magasin(cible, magasin_code, *, par, reappliquer=True)`, le champ de CORPS `reappliquer` (facultatif, defaut `True`, avec help_text), la branche explicite de la vue, et le schema + client TS regeneres dans le meme commit. Backend 187 passed / 30 deselected (base 184, +3 : deux tests neufs dont un parametre x2), web 128 passed inchange, build 0, `spectacular --fail-on-warn` 0 et diff vide. Deviation : `api:types` porte `--default-non-nullable=false`, sans quoi `reappliquer` sortait obligatoire dans types.gen.ts et le build cassait. `PARAMETRES_RESERVES` volontairement non touche (champ de corps). Reste de la vague 2 : 03.1-03 (le dialogue qui appelle cette route), puis le point de controle humain 03.1-04."
+last_updated: "2026-09-17T19:09:06.676Z"
 last_activity: 2026-09-17
 progress:
   total_phases: 13
   completed_phases: 2
   total_plans: 25
-  completed_plans: 22
-  percent: 88
+  completed_plans: 23
+  percent: 92
 ---
 
 # Project State
@@ -75,6 +75,7 @@ Progress: [██████████] 100% (14/14 plans de la phase 3 écri
 | Phase 03 P13 | ~55m | 4 tasks | 24 files |
 | Phase 03 P14 | ~100m | 4 tasks | 25 files |
 | Phase 03.1 P01 | 11m | 3 tasks | 7 files |
+| Phase 03.1 P02 | 6min | 3 tasks | 8 files |
 
 ## Quick Tasks Completed
 
@@ -190,6 +191,8 @@ Recent decisions affecting current work:
 - [Phase 03]: 03-14: la base de developpement porte desormais DEUX affaires — `rabat` (Optique Rabat, un seul magasin AGDAL, proprietaire hind@optiquerabat.ma, gerant youssef@optiquerabat.ma, mot de passe rabat-dev-2026). Donnee de developpement, aucune fixture commitee dans un chemin de production
 - [Phase 03.1]: Le selecteur de magasin des droits ouvre sur `Tous les magasins de ce compte` — CLAUDE.md #13 n'est PAS amende. Le choix du proprietaire est interprete comme portant sur le mecanisme, pas sur l'etat initial : ouvrir sur un magasin nomme ferait de chaque premier clic un sous-octroi silencieux. La contre-option tient dans la constante `MODE_PAR_DEFAUT` et lui est reposee a l'etape 2 du plan 03.1-04.
 - [Phase 03.1]: `POST /api/comptes/{id}/droits/uniformiser/` et `services.uniformiser` sont CONSERVEES et desormais SANS AUCUN APPELANT WEB — supprimer couterait une regeneration de schema et de client pour retirer du vert. A reexaminer a la phase 11 : si le mobile ne l'appelle pas non plus, elle se supprime alors.
+- [Phase 03.1]: 03.1-02 : le choix « reappliquer ou demarrer vierge » voyage en PARAMETRE de `accorder_magasin` (defaut `True`), pas en second appel de l'ecran — un seul appel atomique, donc aucune fenetre ou des droits refuses existent en base. La garde T-03-62 reste en amont du choix : une ligne personnalisee ne s'etend sous aucune des deux valeurs, prouve par un test parametre.
+- [Phase 03.1]: 03.1-02 : `api:types` porte desormais `--default-non-nullable=false`. openapi-typescript lisait un `default:` comme « toujours present » et rendait obligatoire dans le type le champ meme que le defaut existe pour permettre d'omettre ; le `build` echouait, y compris sur l'appel de retrait. Raison ecrite dans `docs/ci-schema.md`.
 
 ### Pending Todos
 
@@ -205,8 +208,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-17T18:57:46.118Z
-Stopped at: Completed 03.1-01-PLAN.md — le selecteur de magasin remplace l'ouverture ligne par ligne. `Par magasin`, sa sous-liste, l'etat `deplie` et `Uniformiser` sont supprimes ; `LigneDroit` est sans etat ; le selecteur ouvre sur `Tous les magasins de ce compte` et CLAUDE.md #13 n'est pas amende. Web 128 passed (base 126 : -3 caducs, +5 net, 7 neufs dont 2 reecrits sur place), backend 184/30 inchange, build 0, audit:format muet. Reste de la vague 1 : rien. Vague 2 : 03.1-02 et 03.1-03, puis le point de controle humain 03.1-04.
+Last session: 2026-09-17T19:09:06.673Z
+Stopped at: Completed 03.1-02-PLAN.md — `accorder_magasin(cible, magasin_code, *, par, reappliquer=True)`, le champ de CORPS `reappliquer` (facultatif, defaut `True`, avec help_text), la branche explicite de la vue, et le schema + client TS regeneres dans le meme commit. Backend 187 passed / 30 deselected (base 184, +3 : deux tests neufs dont un parametre x2), web 128 passed inchange, build 0, `spectacular --fail-on-warn` 0 et diff vide. Deviation : `api:types` porte `--default-non-nullable=false`, sans quoi `reappliquer` sortait obligatoire dans types.gen.ts et le build cassait. `PARAMETRES_RESERVES` volontairement non touche (champ de corps). Reste de la vague 2 : 03.1-03 (le dialogue qui appelle cette route), puis le point de controle humain 03.1-04.
 Resume file: None
 
 Serveurs de developpement laisses TOURNANTS : Vite sur 5173 (navigation filtree, l'etat livre) et sur 5174 (`VITE_NAV_COMPLET=1`, la densite a huit entrees), Django sur 127.0.0.1:8010 — le proprietaire peut reprendre la traversee, celle du shell (03-13) comme celle de l'ecran des droits (03-14).
