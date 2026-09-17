@@ -690,6 +690,13 @@ secondary text.
 - Unchecking the last magasin is refused inline: `Un compte doit avoir accès à au moins un magasin.
   Désactivez plutôt le compte.` — the last clause is a link that opens the deactivation dialog.
 - Removing a magasin that carries per-magasin overrides warns first (7.8).
+
+> **Ajouter un magasin avertit aussi, depuis le 2026-09-17 (phase 03.1, décision 2 du
+> propriétaire).** La règle d'extension de 7.5 était appliquée en silence et racontée après coup
+> par une note. Elle est désormais **proposée** : cocher un magasin ouvre une confirmation offrant
+> `Réappliquer les droits existants` — la règle de 7.5, présélectionnée — ou `Démarrer sans aucun
+> droit`. La section B compte donc deux confirmations, une par sens, et non plus une seule.
+
 - Section helper, always present: `Ce compte ne verra que les données des magasins cochés — clients,
   stock, ventes et caisse compris.`
 
@@ -823,6 +830,26 @@ Pressing `Par magasin` expands **that one row** into a sub-list, one switch per 
   `Californie a été ajouté. Vérifiez les 2 droits personnalisés par magasin.` — anchored to those rows.
   Silently extending a personalised grant would hand out a permission the owner never granted.
 
+> **La règle est inchangée ; ce qui change est qu'elle est énoncée avant d'être appliquée —
+> 2026-09-17, phase 03.1.** Le propriétaire choisit entre réappliquer et démarrer vierge, et le
+> dialogue chiffre les deux moitiés : combien de droits s'étendront, combien ne s'étendront pas.
+> **Les lignes personnalisées ne s'étendent sous aucun des deux choix** — `réappliquer` décide du
+> sort des lignes *uniformes* et de rien d'autre, et un test serveur paramétré sur les deux valeurs
+> le tient (menace T-03-62, qui reste vivante). Le choix voyage en paramètre de `accorder_magasin`,
+> dans l'appel existant : deux appels enchaînés ouvriraient une fenêtre où les droits étendus
+> existent avant d'être retirés.
+>
+> La note `Californie a été ajouté. Vérifiez les N droits personnalisés par magasin.` subsiste quand
+> `réappliquer` est choisi, et **disparaît** quand le magasin démarre vierge : dans ce cas tout est
+> à régler, pas seulement les personnalisés, et le dialogue vient de le dire.
+>
+> Deux variantes de copie que le contrat n'avait pas prévues, et qui sont livrées : la seconde
+> phrase est **omise** quand il n'y a aucune ligne personnalisée — chiffrer zéro exception invente
+> un doute qui n'existe pas — et la première devient `Aucun droit n'est aujourd'hui accordé dans
+> tous ses magasins : il n'y a rien à réappliquer à Californie.` quand le compte n'a encore aucun
+> droit uniforme. Ce dernier cas est **le cas fréquent** : un compte neuf démarre sans aucun droit
+> (CLAUDE.md #6), donc son deuxième magasin est souvent ajouté à un compte vide.
+
 ### 7.6 Permission prerequisites — the support-cost lever
 
 Several codes are nonsense on their own: `stock.ajuster` without `stock.voir`, `vente.remise` or
@@ -892,6 +919,16 @@ grants are read fresh from the control plane on every request.
 Two destructive dialogs exist in this phase. Both use shadcn `alert-dialog` with a destructive confirm
 button, a secondary button labelled `Retour` (7.10), and **no typed confirmation** — both are
 reversible.
+
+> **Trois confirmations se sont ajoutées depuis, et aucune n'est destructive — 2026-09-16 au
+> 2026-09-17.** `DialogueUniformisation` (plan 03-14, **retiré** en phase 03.1 avec le dépliage par
+> ligne), `DialogueReinitialisation` (quick `260917-l7l` : réinitialiser un mot de passe coupait
+> l'accès d'un gérant en plein service, sans rien demander et sans rien laisser défaire), et
+> `DialogueAjoutMagasin` (phase 03.1). Toutes portent `Retour` en secondaire, aucune ne porte
+> `bg-destructive`, et aucune ne porte de confirmation tapée. **Le compte n'est plus « deux », et la
+> règle qui vaut n'est pas un décompte** : elle est qu'une action à large rayon ou sans retour se
+> confirme, et que la seconde phrase dit **ce qui survit**. `DialogueAjoutMagasin` l'applique en
+> chiffrant ce qui ne sera *pas* réappliqué.
 
 **Deactivate an account**
 
