@@ -37,7 +37,7 @@ base de l'opticien, donc ce module exige un locataire lié.
 from __future__ import annotations
 
 import secrets
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
@@ -160,6 +160,24 @@ ETAT_INACTIF = "inactif"
 ETAT_MIXTE = "mixte"
 
 
+def etat_de(detenus, accordes) -> str:
+    """La règle d'état de `03-UI-SPEC.md` 7.5, **écrite une seule fois**.
+
+    « Uniforme » veut dire que **tous les magasins accordés sont d'accord**, donc `actif`
+    et `inactif` sont tous deux uniformes et `mixte` est l'unique état personnalisé.
+
+    Trois appelants la lisent — `ligne_de` (le point de vue du rédacteur), `etat_des_droits`
+    (la fiche) et `intersecter` (la réponse d'une bascule). Écrite trois fois, elle
+    divergerait, et la divergence serait un interrupteur qui ment sur l'état réel.
+    """
+    detenus, accordes = set(detenus), set(accordes)
+    if not detenus:
+        return ETAT_INACTIF
+    if accordes and detenus >= accordes:
+        return ETAT_ACTIF
+    return ETAT_MIXTE
+
+
 @dataclass(frozen=True, slots=True)
 class LigneDeDroit:
     """L'état d'un code pour une cible : sa valeur, et où elle vaut."""
@@ -186,6 +204,46 @@ class Resultat:
     cascade: tuple[str, ...] = ()
     magasins_accordes: tuple[str, ...] = ()
     magasins_etendus: tuple[str, ...] = field(default=())
+
+
+def intersecter(resultat: Resultat, magasins_visibles) -> Resultat:
+    """La réponse d'une bascule, **projetée sur les magasins que l'appelant détient**.
+
+    Ajouté le 2026-09-17, au point de contrôle du plan 03-14, et c'est une correction de
+    divulgation. `03-UI-SPEC.md` 7.7 dit qu'un gérant-gestionnaire ne voit **que**
+    l'intersection de ses propres droits et magasins. Le catalogue offrable (plan 03-09)
+    et la fiche (plan 03-14) la tenaient déjà ; la réponse d'ÉCRITURE, elle, servait
+    `magasins_accordes` et `lignes[].magasins` entiers — donc un gérant d'Anfa qui
+    basculait un droit chez un collègue apprenait, dans la réponse, l'existence et le
+    code de Maârif. La même énumération, par la porte de service.
+
+    **C'est une projection de réponse, pas une amputation de l'écriture.** Le service a
+    écrit ce qu'il devait écrire ; seul l'appelant voit moins. L'état est recalculé par
+    `etat_de` sur les ensembles réduits, sinon l'écran lirait « Personnalisé : 1 magasin
+    sur 1 », qui n'est pas un état que 7.5 définit.
+
+    `code` et `cascade` ne sont **pas** filtrés : `_verifier_le_pouvoir` refuse déjà toute
+    bascule dont un code de la fermeture échappe à l'appelant, donc aucun code ne peut
+    sortir d'ici sans que l'appelant le détienne.
+    """
+    visibles = set(magasins_visibles)
+    accordes = tuple(m for m in resultat.magasins_accordes if m in visibles)
+    lignes = []
+    for ligne in resultat.lignes:
+        detenus = tuple(m for m in ligne.magasins if m in visibles)
+        lignes.append(
+            LigneDeDroit(
+                code=ligne.code, etat=etat_de(detenus, accordes), magasins=detenus
+            )
+        )
+    return replace(
+        resultat,
+        lignes=tuple(lignes),
+        magasins_accordes=accordes,
+        magasins_etendus=tuple(
+            m for m in resultat.magasins_etendus if m in visibles
+        ),
+    )
 
 
 def magasins_accordes(cible) -> list[str]:
@@ -223,13 +281,11 @@ def ligne_de(cible, code: str, accordes: list[str] | None = None) -> LigneDeDroi
     """
     accordes = magasins_accordes(cible) if accordes is None else accordes
     detenus = _detenus(cible, code)
-    if not detenus:
-        etat = ETAT_INACTIF
-    elif detenus >= set(accordes) and accordes:
-        etat = ETAT_ACTIF
-    else:
-        etat = ETAT_MIXTE
-    return LigneDeDroit(code=str(code), etat=etat, magasins=tuple(sorted(detenus)))
+    return LigneDeDroit(
+        code=str(code),
+        etat=etat_de(detenus, accordes),
+        magasins=tuple(sorted(detenus)),
+    )
 
 
 def etat_des_droits(
@@ -272,13 +328,13 @@ def etat_des_droits(
     lignes = []
     for code in codes:
         detenus = codes_de(acces.magasins_pour(code))
-        if not detenus:
-            etat = ETAT_INACTIF
-        elif accordes and set(detenus) >= set(accordes):
-            etat = ETAT_ACTIF
-        else:
-            etat = ETAT_MIXTE
-        lignes.append(LigneDeDroit(code=str(code), etat=etat, magasins=tuple(detenus)))
+        lignes.append(
+            LigneDeDroit(
+                code=str(code),
+                etat=etat_de(detenus, accordes),
+                magasins=tuple(detenus),
+            )
+        )
     return accordes, lignes
 
 

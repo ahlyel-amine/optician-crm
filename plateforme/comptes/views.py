@@ -696,6 +696,24 @@ class VueComptes(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Gene
     # de gestion d'onboarding et pour l'inscription en libre service de la phase 12, qui
     # n'ont pas de requête HTTP.
 
+    def _resultat_visible(self, request, resultat) -> dict:
+        """La réponse d'une bascule, **intersectée avant de partir sur le fil**.
+
+        Ajouté le 2026-09-17 au point de contrôle du plan 03-14, et c'est le même
+        raisonnement qu'au reste de l'écran (`03-UI-SPEC.md` 7.7) : le catalogue
+        offrable et la fiche n'énumèrent pas à un gérant d'Anfa les magasins qu'il n'a
+        pas, donc la réponse d'écriture ne le doit pas non plus. Elle le faisait — par
+        `magasins_accordes`, le dénominateur de « Personnalisé : 2 magasins sur 3 », et
+        par `lignes[].magasins`, son numérateur.
+
+        Les magasins viennent d'ici et pas d'un second calcul : `_magasins(acces)` est
+        déjà la source du sélecteur (5.4), de la colonne `Magasins` (7.2) et de
+        l'intersection de la fiche.
+        """
+        acces = acces_de_la_requete(request)
+        visibles = [magasin.code for magasin in _magasins(acces)]
+        return charge_utile_resultat(services.intersecter(resultat, visibles))
+
     @extend_schema(
         request=BasculeDroitSerializer,
         responses={200: ResultatOctroiSerializer},
@@ -719,7 +737,7 @@ class VueComptes(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Gene
             resultat = operation(
                 cible, donnees["code"], donnees.get("magasins"), par=request.user
             )
-        return Response(charge_utile_resultat(resultat))
+        return Response(self._resultat_visible(request, resultat))
 
     @extend_schema(
         request=UniformisationSerializer,
@@ -744,7 +762,7 @@ class VueComptes(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Gene
                 formulaire.validated_data["accorde"],
                 par=request.user,
             )
-        return Response(charge_utile_resultat(resultat))
+        return Response(self._resultat_visible(request, resultat))
 
     @extend_schema(
         request=BasculeMagasinSerializer,
@@ -770,7 +788,7 @@ class VueComptes(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Gene
         )
         with _erreurs_de_service():
             resultat = operation(cible, donnees["magasin_code"], par=request.user)
-        return Response(charge_utile_resultat(resultat))
+        return Response(self._resultat_visible(request, resultat))
 
 
     @extend_schema(
