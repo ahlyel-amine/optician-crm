@@ -232,6 +232,56 @@ def ligne_de(cible, code: str, accordes: list[str] | None = None) -> LigneDeDroi
     return LigneDeDroit(code=str(code), etat=etat, magasins=tuple(sorted(detenus)))
 
 
+def etat_des_droits(
+    cible, codes, magasins_visibles=None
+) -> tuple[list[str], list[LigneDeDroit]]:
+    """L'état de chaque code pour `cible`, **calculé depuis `acces_pour`** (7.3 C).
+
+    C'est la moitié LECTURE de l'écran de droits, et elle passe délibérément par la
+    résolution plutôt que par `ligne_de` — qui lit, lui, les lignes brutes.
+
+    La raison tient en un cas : le **propriétaire**. Son accès est matérialisé au plan
+    03-05 et sa table `DroitAccorde` est vide. `resume_des_droits`, qui alimente la liste,
+    passe déjà par `acces_pour` et annonce donc 21 droits. Une fiche lue depuis les lignes
+    brutes dirait « aucun droit » sur la même personne, dans le même écran, à deux clics
+    d'écart. Une seule vérité, un seul chemin, pas de branche `if est_proprietaire`.
+
+    `ligne_de` reste ce qu'il est — le point de vue du RÉDACTEUR, celui qui doit savoir
+    quelles lignes existent pour décider lesquelles écrire ou retirer. Les deux coexistent
+    parce qu'ils répondent à deux questions, et la règle d'état (`03-UI-SPEC.md` 7.5) est
+    la même des deux côtés : *uniforme* veut dire que tous les magasins accordés sont
+    d'accord, donc `actif` et `inactif` sont uniformes et `mixte` est l'unique état
+    personnalisé.
+
+    `magasins_visibles` **intersecte le résultat avec ce que l'appelant détient**. Sans
+    lui, `magasins_accordes` — le dénominateur de « Personnalisé : 2 magasins sur 3 » —
+    énumérerait à un gérant d'Anfa les magasins qu'il n'a pas, ce que le catalogue du plan
+    03-09 refuse déjà de faire pour les mêmes raisons (7.7).
+    """
+    acces = acces_pour(cible)
+    par_id = magasins_actifs_par_id()
+    visibles = None if magasins_visibles is None else set(magasins_visibles)
+
+    def codes_de(identifiants) -> list[str]:
+        noms = [par_id[i].code for i in identifiants if i in par_id]
+        if visibles is not None:
+            noms = [nom for nom in noms if nom in visibles]
+        return sorted(noms)
+
+    accordes = codes_de(acces.magasins_ids)
+    lignes = []
+    for code in codes:
+        detenus = codes_de(acces.magasins_pour(code))
+        if not detenus:
+            etat = ETAT_INACTIF
+        elif accordes and set(detenus) >= set(accordes):
+            etat = ETAT_ACTIF
+        else:
+            etat = ETAT_MIXTE
+        lignes.append(LigneDeDroit(code=str(code), etat=etat, magasins=tuple(detenus)))
+    return accordes, lignes
+
+
 # --------------------------------------------------------------------------------------
 # Les refus — l'appelant ne donne que ce qu'il détient
 # --------------------------------------------------------------------------------------

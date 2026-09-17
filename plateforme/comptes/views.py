@@ -61,6 +61,7 @@ from plateforme.comptes.serializers import (
     CatalogueOffrableSerializer,
     ChangementMotDePasseSerializer,
     CompteCreeSerializer,
+    CompteDetailSerializer,
     CompteSerializer,
     ConnexionSerializer,
     CreationCompteSerializer,
@@ -463,7 +464,7 @@ def _erreurs_de_service():
         summary="Les comptes de l'affaire",
     ),
     retrieve=extend_schema(
-        responses={200: CompteSerializer}, summary="La fiche d'un compte"
+        responses={200: CompteDetailSerializer}, summary="La fiche d'un compte"
     ),
 )
 class VueComptes(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
@@ -498,15 +499,50 @@ class VueComptes(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Gene
             "-est_proprietaire", "nom_complet"
         )
 
+    def get_serializer_class(self):
+        """La fiche porte l'état des 21 droits ; la liste ne le paie pas.
+
+        Vingt et un états par ligne de tableau est exactement le coût que
+        `resume_des_droits` existe pour éviter (`03-UI-SPEC.md` 7.2). La fiche, elle,
+        est seule à l'écran et en a besoin pour dessiner chaque interrupteur.
+        """
+        if self.action == "retrieve":
+            return CompteDetailSerializer
+        return CompteSerializer
+
     def get_serializer_context(self):
         contexte = super().get_serializer_context()
         acces = acces_de_la_requete(self.request)
         # Le générateur de schéma n'a aucun locataire lié : lire `Magasin` ici lèverait
         # `NoTenantBound` pendant `manage.py spectacular`. Même court-circuit qu'au
         # plan 03-07, à l'endroit où la lecture est écrite.
+        #
+        # **Les magasins de l'APPELANT, pas ceux de l'affaire** (plan 03-14). La colonne
+        # `Magasins` de 7.2 et la section B de 7.3 se lisent depuis cette table ; la
+        # construire sur `magasins_actifs_par_id()` nommait à un gérant d'Anfa les
+        # magasins d'un collègue qu'il ne détient pas — la même énumération que
+        # `_magasins` refuse déjà de servir au sélecteur de la barre supérieure, par le
+        # même raisonnement (7.7).
         contexte["magasins_par_id"] = (
-            {} if acces.pour_le_schema else magasins_actifs_par_id()
+            {}
+            if acces.pour_le_schema
+            else {magasin.pk: magasin for magasin in _magasins(acces)}
         )
+
+        # L'intersection de la fiche vient du MÊME `catalogue_offrable` qui sert le
+        # catalogue, et pas d'un second calcul : deux intersections écrites séparément
+        # divergent, et celle qui divergerait ici servirait l'état d'un code que le
+        # catalogue a retiré. `peut_quelque_part` n'est donc appelé qu'une fois, à son
+        # unique emplacement sanctionné (plan 03-09).
+        if self.action == "retrieve" and not acces.pour_le_schema:
+            magasins = _magasins(acces)
+            catalogue = catalogue_offrable(acces, magasins)
+            contexte["codes_offrables"] = [
+                droit["code"]
+                for section in catalogue["sections"]
+                for droit in section["droits"]
+            ]
+            contexte["magasins_offrables"] = [magasin.code for magasin in magasins]
         return contexte
 
     @extend_schema(

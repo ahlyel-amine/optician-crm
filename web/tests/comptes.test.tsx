@@ -442,3 +442,211 @@ describe("la liste des comptes", () => {
     expect(appels.some((appel) => appel.chemin === "/api/comptes/")).toBe(false);
   });
 });
+
+/* =========================================================================
+ * 7.3, 7.4 et 7.7 — la fiche, les magasins, et la liste des droits
+ * ======================================================================= */
+
+/** La fiche d'un compte, avec son etat de droits et le catalogue de l'appelant. */
+function rendreLaFiche(options: {
+  compte?: Record<string, unknown>;
+  droits?: { code: string; etat: string; magasins: string[] }[];
+  magasinsAccordes?: string[];
+  catalogue?: unknown;
+  amorcage?: unknown;
+  surDroits?: (requete: Request) => Response | Promise<Response>;
+  surMagasins?: (requete: Request) => Response | Promise<Response>;
+  surUniformiser?: (requete: Request) => Response | Promise<Response>;
+  surStatut?: (requete: Request) => Response | Promise<Response>;
+  surJournal?: (requete: Request) => Response | Promise<Response>;
+} = {}) {
+  const compte = options.compte ?? ligneKarim();
+  const table: Table = {
+    "/api/comptes/2/": () =>
+      json({
+        ...compte,
+        droits: options.droits ?? [],
+        magasins_accordes: options.magasinsAccordes ?? ["ANFA", "MAARIF"],
+      }),
+    "/api/comptes/catalogue/": () => json(options.catalogue ?? catalogueOffrable()),
+  };
+  if (options.surDroits) {
+    table["POST /api/comptes/2/droits/"] = options.surDroits;
+  }
+  if (options.surUniformiser) {
+    table["POST /api/comptes/2/droits/uniformiser/"] = options.surUniformiser;
+  }
+  if (options.surMagasins) {
+    table["POST /api/comptes/2/magasins/"] = options.surMagasins;
+  }
+  if (options.surStatut) {
+    table["POST /api/comptes/2/statut/"] = options.surStatut;
+  }
+  table["/api/comptes/2/journal/"] = options.surJournal ?? (() => json([]));
+  return rendre(table, "/parametres/comptes/2", options.amorcage ?? PROPRIETAIRE);
+}
+
+describe("la fiche d'un compte", () => {
+  it("place les magasins AVANT les droits, et l'historique en dernier", async () => {
+    // L'ordre est porteur, pas esthetique : un droit sans magasin n'accorde
+    // rien. Poser les droits d'abord produit l'appel « je lui ai tout donne et
+    // il ne voit rien », qui est le plus cher des appels evitables.
+    rendreLaFiche();
+
+    await screen.findByRole("region", { name: "Droits" });
+    expect(
+      screen.getAllByRole("heading", { level: 2 }).map((titre) => titre.textContent),
+    ).toEqual(["Identité", "Magasins", "Droits", "Historique des droits"]);
+  });
+
+  it("rend une ligne statique, et aucune case, pour une entreprise mono-magasin", async () => {
+    // Zero decision la ou une seule reponse est possible. C'est la plus grosse
+    // simplification disponible et elle couvre tout le palier `Essentiel`.
+    rendreLaFiche({
+      catalogue: catalogueOffrable([ANFA]),
+      magasinsAccordes: ["ANFA"],
+      compte: ligneKarim({ magasins: [ANFA] }),
+    });
+
+    expect(await screen.findByText("Magasin : Anfa")).toBeTruthy();
+    expect(
+      screen.getByText("Ce compte a accès au seul magasin de l'entreprise."),
+    ).toBeTruthy();
+    expect(screen.queryByRole("checkbox")).toBeNull();
+  });
+
+  it("refuse en ligne de decocher le dernier magasin, et propose la desactivation", async () => {
+    rendreLaFiche({
+      magasinsAccordes: ["ANFA"],
+      compte: ligneKarim({ magasins: [ANFA] }),
+    });
+
+    const anfa = await screen.findByRole("checkbox", { name: /Anfa/ });
+    fireEvent.click(anfa);
+
+    expect(
+      screen.getByText(/Un compte doit avoir accès à au moins un magasin\./),
+    ).toBeTruthy();
+    // La derniere proposition est un LIEN qui ouvre le dialogue de
+    // desactivation : une phrase qui dit « desactivez plutot » sans donner le
+    // moyen de le faire renvoie l'utilisateur chercher le bouton lui-meme.
+    expect(
+      screen.getByRole("button", { name: "Désactivez plutôt le compte." }),
+    ).toBeTruthy();
+    // Et rien n'est parti sur le fil : le refus est cote interface parce que le
+    // serveur, lui, accepte zero magasin (un compte neuf en a zero).
+    expect(appels.some((appel) => appel.chemin === "/api/comptes/2/magasins/")).toBe(false);
+  });
+
+  it("rend les sections et les libelles du catalogue SERVEUR, dans son ordre", async () => {
+    // Les libelles, les explications, les sections et les prerequis viennent
+    // tous du serveur. Un code ajoute en phase 8 apparait ici sans changement
+    // cote SPA, et un libelle ne peut jamais deriver de son code.
+    rendreLaFiche();
+
+    await screen.findByRole("region", { name: "Droits" });
+    const droits = screen.getByRole("region", { name: "Droits" });
+    expect(
+      within(droits)
+        .getAllByRole("heading", { level: 3 })
+        .map((titre) => titre.textContent),
+    ).toEqual(["Stock", "Caisse", "Comptes"]);
+    expect(within(droits).getByText("Ajuster le stock / inventaire")).toBeTruthy();
+  });
+
+  it("ne rend aucune ligne absente du catalogue, sans branche cliente", async () => {
+    // Le test d'absence, et il porte sur la SPA : rendue avec un catalogue
+    // tronque, elle rend un ecran tronque. Une liste de codes ecrite cote
+    // client produirait ici des lignes que le serveur n'a pas servies.
+    rendreLaFiche({
+      catalogue: {
+        sections: [
+          {
+            titre: "Stock",
+            droits: [
+              {
+                code: "stock.voir",
+                libelle: "Consulter le stock",
+                explication: "Voir les articles et les quantités disponibles.",
+              },
+            ],
+          },
+        ],
+        prerequis: {},
+        magasins: [ANFA, MAARIF],
+      },
+    });
+
+    await screen.findByRole("switch", { name: "Consulter le stock" });
+    expect(screen.queryByText("Saisir en caisse")).toBeNull();
+    expect(screen.queryByText("Ajuster le stock / inventaire")).toBeNull();
+    expect(screen.getAllByRole("switch")).toHaveLength(1);
+  });
+
+  it("affiche l'explication de chaque ligne en texte visible, jamais en infobulle", async () => {
+    // Une infobulle est invisible a qui balaie l'ecran, et cette ligne EST le
+    // levier de cout de support de l'ecran : elle nomme la consequence.
+    rendreLaFiche();
+
+    const explication = await screen.findByText(
+      "Corriger une quantité après un inventaire.",
+    );
+    expect(explication.getAttribute("title")).toBeNull();
+    expect(explication.closest("[role='tooltip']")).toBeNull();
+  });
+
+  it("n'offre aucun preset, aucun palier, aucune copie de droits", async () => {
+    // CLAUDE.md #6 : les permissions sont accordees individuellement, comme des
+    // donnees, jamais par paliers de role. `Tout cocher`, `Gerant standard` et
+    // `Copier les droits de` sont les trois memes paliers sous un nom
+    // sympathique. Point de revue explicite, pas affaire de gout.
+    rendreLaFiche();
+
+    await screen.findByRole("region", { name: "Droits" });
+    for (const interdit of [/tout cocher/i, /gérant standard/i, /copier les droits/i]) {
+      expect(screen.queryByText(interdit)).toBeNull();
+    }
+  });
+
+  it("annonce qu'un compte neuf ne verra rien, en le nommant", async () => {
+    rendreLaFiche({
+      droits: [],
+      magasinsAccordes: [],
+      compte: ligneKarim({ nombre_de_droits: 0, magasins: [] }),
+    });
+
+    expect(
+      await screen.findByText(
+        "Ce compte n'a encore aucun droit. Karim pourra se connecter, mais ne verra rien.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("porte la ligne de temporalite en permanence au pied de la section", async () => {
+    // Elle repond a la question de support la plus previsible de l'ecran, et
+    // elle est VRAIE : les droits sont relus depuis le plan de controle a
+    // chaque requete (plan 03-05).
+    rendreLaFiche({
+      droits: [{ code: "stock.voir", etat: "actif", magasins: ["ANFA", "MAARIF"] }],
+    });
+
+    expect(
+      await screen.findByText(
+        "Les changements prennent effet immédiatement, dès l'action suivante de l'utilisateur. Il n'a pas besoin de se reconnecter.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("nomme les magasins de portee plutot que de les compter, jusqu'a quatre", async () => {
+    rendreLaFiche({
+      magasinsAccordes: ["ANFA", "MAARIF"],
+      compte: ligneKarim({ magasins: [ANFA, MAARIF] }),
+    });
+
+    expect(
+      await screen.findByText(
+        "Ces droits s'appliquent à tous les magasins de ce compte (Anfa, Maârif).",
+      ),
+    ).toBeTruthy();
+  });
+});

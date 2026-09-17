@@ -552,6 +552,46 @@ export interface components {
             readonly mot_de_passe_provisoire: string;
         };
         /**
+         * @description La fiche (`03-UI-SPEC.md` 7.3), qui porte en plus **l'état de chaque droit**.
+         *
+         *     Un sérialiseur distinct de celui de la liste, et c'est le point : vingt et un états
+         *     par ligne de tableau est précisément le coût que `resume_des_droits` existe pour
+         *     éviter (7.2). La liste affiche un nombre et un badge ; la fiche a besoin de chaque
+         *     interrupteur, et elle est seule à l'écran.
+         *
+         *     `droits` et `magasins_accordes` sont **déjà intersectés** avec ce que l'appelant peut
+         *     accorder : les codes viennent du même `catalogue_offrable` qui sert le catalogue, et
+         *     les magasins de son propre `Acces`. Un état servi pour un code hors catalogue le
+         *     réintroduirait par la porte de service, et le grisage que 7.7 refuse serait alors
+         *     fait par la SPA faute de mieux.
+         */
+        CompteDetail: {
+            readonly id: number;
+            readonly nom_complet: string;
+            /**
+             * Adresse e-mail
+             * Format: email
+             * @description L'identifiant de connexion. Unique sur toute la flotte, donc une adresse e-mail plutôt qu'un nom d'utilisateur : une collision sur « karim » révélerait l'existence du compte d'une autre affaire.
+             */
+            readonly email: string;
+            /**
+             * Est propriétaire
+             * @description L'opticien qui détient l'affaire. Un seul par client.
+             */
+            readonly est_proprietaire: boolean;
+            readonly actif: boolean;
+            /** Doit changer son mot de passe */
+            readonly doit_changer_mot_de_passe: boolean;
+            /** Format: date-time */
+            readonly derniere_connexion: string | null;
+            readonly magasins: components["schemas"]["Magasin"][];
+            readonly nombre_de_droits: number;
+            /** @description Vrai dès qu'un octroi n'est pas uniforme sur les magasins accordés (7.5). */
+            readonly personnalise: boolean;
+            readonly droits: components["schemas"]["LigneDeDroit"][];
+            readonly magasins_accordes: string[];
+        };
+        /**
          * @description Les identifiants soumis. **Aucune validation métier ici, et c'est délibéré.**
          *
          *     Un `validate()` qui appellerait `authenticate()` produirait une `ValidationError`
@@ -867,7 +907,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Compte"];
+                    "application/json": components["schemas"]["CompteDetail"];
                 };
             };
         };

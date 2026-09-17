@@ -600,6 +600,54 @@ def charge_utile_resultat(resultat) -> dict:
     }
 
 
+class CompteDetailSerializer(CompteSerializer):
+    """La fiche (`03-UI-SPEC.md` 7.3), qui porte en plus **l'état de chaque droit**.
+
+    Un sérialiseur distinct de celui de la liste, et c'est le point : vingt et un états
+    par ligne de tableau est précisément le coût que `resume_des_droits` existe pour
+    éviter (7.2). La liste affiche un nombre et un badge ; la fiche a besoin de chaque
+    interrupteur, et elle est seule à l'écran.
+
+    `droits` et `magasins_accordes` sont **déjà intersectés** avec ce que l'appelant peut
+    accorder : les codes viennent du même `catalogue_offrable` qui sert le catalogue, et
+    les magasins de son propre `Acces`. Un état servi pour un code hors catalogue le
+    réintroduirait par la porte de service, et le grisage que 7.7 refuse serait alors
+    fait par la SPA faute de mieux.
+    """
+
+    droits = serializers.SerializerMethodField()
+    magasins_accordes = serializers.SerializerMethodField()
+
+    class Meta(CompteSerializer.Meta):
+        fields = [*CompteSerializer.Meta.fields, "droits", "magasins_accordes"]
+
+    def _etat(self, compte):
+        """Résolu une fois par réponse : les deux champs le lisent."""
+        from plateforme.comptes.services import etat_des_droits
+
+        cache = self.context.setdefault("_etats", {})
+        if compte.pk not in cache:
+            cache[compte.pk] = etat_des_droits(
+                compte,
+                self.context.get("codes_offrables") or (),
+                self.context.get("magasins_offrables"),
+            )
+        return cache[compte.pk]
+
+    @extend_schema_field(LigneDeDroitSerializer(many=True))
+    def get_droits(self, compte):
+        _accordes, lignes = self._etat(compte)
+        return [
+            {"code": ligne.code, "etat": ligne.etat, "magasins": list(ligne.magasins)}
+            for ligne in lignes
+        ]
+
+    @extend_schema_field(serializers.ListField(child=serializers.CharField()))
+    def get_magasins_accordes(self, compte):
+        accordes, _lignes = self._etat(compte)
+        return accordes
+
+
 # ======================================================================================
 # PERM-06 — le catalogue **offrable**, intersecté avant sérialisation (plan 03-09)
 # ======================================================================================

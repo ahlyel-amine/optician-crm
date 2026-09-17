@@ -207,7 +207,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Compte'
+                $ref: '#/components/schemas/CompteDetail'
           description: ''
     patch:
       operationId: comptes_partial_update
@@ -815,6 +815,89 @@ components:
       required:
       - compte
       - mot_de_passe_provisoire
+    CompteDetail:
+      type: object
+      description: |-
+        La fiche (`03-UI-SPEC.md` 7.3), qui porte en plus **l'état de chaque droit**.
+
+        Un sérialiseur distinct de celui de la liste, et c'est le point : vingt et un états
+        par ligne de tableau est précisément le coût que `resume_des_droits` existe pour
+        éviter (7.2). La liste affiche un nombre et un badge ; la fiche a besoin de chaque
+        interrupteur, et elle est seule à l'écran.
+
+        `droits` et `magasins_accordes` sont **déjà intersectés** avec ce que l'appelant peut
+        accorder : les codes viennent du même `catalogue_offrable` qui sert le catalogue, et
+        les magasins de son propre `Acces`. Un état servi pour un code hors catalogue le
+        réintroduirait par la porte de service, et le grisage que 7.7 refuse serait alors
+        fait par la SPA faute de mieux.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        nom_complet:
+          type: string
+          readOnly: true
+        email:
+          type: string
+          format: email
+          readOnly: true
+          title: Adresse e-mail
+          description: 'L''identifiant de connexion. Unique sur toute la flotte, donc
+            une adresse e-mail plutôt qu''un nom d''utilisateur : une collision sur
+            « karim » révélerait l''existence du compte d''une autre affaire.'
+        est_proprietaire:
+          type: boolean
+          readOnly: true
+          title: Est propriétaire
+          description: L'opticien qui détient l'affaire. Un seul par client.
+        actif:
+          type: boolean
+          readOnly: true
+        doit_changer_mot_de_passe:
+          type: boolean
+          readOnly: true
+          title: Doit changer son mot de passe
+        derniere_connexion:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        magasins:
+          type: array
+          items:
+            $ref: '#/components/schemas/Magasin'
+          readOnly: true
+        nombre_de_droits:
+          type: integer
+          readOnly: true
+        personnalise:
+          type: boolean
+          description: Vrai dès qu'un octroi n'est pas uniforme sur les magasins accordés
+            (7.5).
+          readOnly: true
+        droits:
+          type: array
+          items:
+            $ref: '#/components/schemas/LigneDeDroit'
+          readOnly: true
+        magasins_accordes:
+          type: array
+          items:
+            type: string
+          readOnly: true
+      required:
+      - actif
+      - derniere_connexion
+      - doit_changer_mot_de_passe
+      - droits
+      - email
+      - est_proprietaire
+      - id
+      - magasins
+      - magasins_accordes
+      - nom_complet
+      - nombre_de_droits
+      - personnalise
     Connexion:
       type: object
       description: |-
