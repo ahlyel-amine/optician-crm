@@ -1264,6 +1264,121 @@ def test_perm03_un_magasin_ajoute_etend_les_lignes_uniformes_et_pas_les_personna
     assert set(services.magasins_accordes(karim)) == {maarif.code, californie.code}
 
 
+def test_perm03_un_magasin_ajoute_vierge_n_herite_d_aucun_droit(db_all, deux_magasins):
+    """PERM-03 / CONTEXT 03.1 décision 2 — « démarrer vierge » veut dire *vierge*.
+
+    Le propriétaire n'a jamais été interrogé sur l'extension : le service l'appliquait
+    d'office. La décision 2 en fait un choix, et ce test tient le mode de défaillance de
+    ce choix (menace T-03.1-01) : le choix perdu en route entre le corps de la requête et
+    le service. Perdu, il ne casse rien de visible — le magasin est bien ajouté, et
+    l'écran affiche un compte plausible. Ce qui a changé, c'est que le propriétaire a
+    demandé un magasin sans droits et en a reçu un peuplé, sans jamais l'apprendre.
+
+    Rouge dans un sens, ce test dirait que `reappliquer=False` n'atteint pas la boucle
+    d'extension : une ligne uniforme s'étend malgré le refus, et c'est une élévation
+    silencieuse causée par un choix ignoré. Rouge dans l'autre — la dernière assertion —
+    il dirait que `reappliquer=False` a été lu comme « ne pas accorder le magasin »
+    (menace T-03.1-08) : c'est le **droit** qui varie, jamais l'`AccesMagasin`. Sans cette
+    assertion, l'implémentation qui n'ajoute simplement pas le magasin passerait.
+
+    Le montage est celui de son voisin, délibérément : une ligne uniforme **et** une ligne
+    personnalisée. La ligne uniforme est ce qui donne du mordant à l'assertion « zéro » —
+    elle se serait étendue sous le défaut.
+    """
+    from plateforme.comptes import services
+    from plateforme.comptes.models import DroitAccorde, JournalDroit
+    from plateforme.comptes.permissions_catalogue import Permission
+    from tests.factories import MagasinFactory, ProprietaireFactory
+
+    anfa, _maarif = deux_magasins
+    proprietaire = ProprietaireFactory()
+    karim = _cible(proprietaire, deux_magasins)
+
+    services.accorder(karim, Permission.CLIENT_VOIR, par=proprietaire)  # uniforme
+    services.accorder(
+        karim, Permission.CAISSE_VOIR, [anfa.code], par=proprietaire
+    )  # personnalisée
+    assert services.ligne_de(karim, Permission.CAISSE_VOIR).etat == services.ETAT_MIXTE
+
+    californie = MagasinFactory(code="CALIFORNIE", nom="Optique Californie", actif=True)
+    journal_avant = set(JournalDroit.objects.values_list("pk", flat=True))
+
+    resultat = services.accorder_magasin(
+        karim, californie.code, par=proprietaire, reappliquer=False
+    )
+
+    lignes = DroitAccorde.objects.filter(
+        utilisateur=karim, magasin_code=californie.code
+    )
+    assert lignes.count() == 0, (
+        "Le propriétaire a demandé un magasin sans droits et en a reçu "
+        f"{lignes.count()} : {sorted(lignes.values_list('code', flat=True))}. "
+        "Le choix n'a pas atteint le service."
+    )
+    assert resultat.magasins_etendus == ()
+    assert californie.code in services.magasins_accordes(karim), (
+        "Le magasin n'a pas été accordé du tout. `reappliquer=False` porte sur les "
+        "droits, jamais sur l'accès."
+    )
+
+    # Le journal dit exactement ce qui a été écrit : l'accès au magasin, et rien d'autre.
+    neuves = JournalDroit.objects.exclude(pk__in=journal_avant)
+    assert sorted(entree.cible for entree in neuves) == [californie.code], (
+        "Des entrées de journal portant un code de permission ont été écrites pour un "
+        f"magasin demandé vierge : {sorted(entree.cible for entree in neuves)}."
+    )
+
+
+@pytest.mark.parametrize("reappliquer", [True, False])
+def test_perm03_une_ligne_personnalisee_ne_s_etend_sous_aucun_des_deux_choix(
+    db_all, deux_magasins, reappliquer
+):
+    """PERM-03 / menace T-03-62 — deux questions distinctes, et ce test le dit.
+
+    `reappliquer` décide du sort des lignes **uniformes**, et de rien d'autre. Une ligne
+    réglée magasin par magasin ne s'étend sous aucune des deux valeurs : l'étendre
+    distribuerait dans le magasin ajouté une permission que le propriétaire n'a jamais
+    accordée, à l'occasion d'une action sans rapport.
+
+    **Pourquoi ce test malgré son voisin.** Le voisin couvre la valeur par défaut, et il
+    resterait vert si quelqu'un « simplifiait » un jour la garde en écrivant « quand le
+    propriétaire demande de réappliquer, étendre tout ce qui est détenu quelque part ».
+    Le paramétrage est ce qui empêche le sens du nouveau choix de déborder sur la règle de
+    personnalisation — le nom « réappliquer les droits existants » invite précisément à
+    cette mauvaise lecture.
+
+    Rouge, ce test dit qu'un des deux chemins étend une ligne mixte.
+    """
+    from plateforme.comptes import services
+    from plateforme.comptes.models import DroitAccorde
+    from plateforme.comptes.permissions_catalogue import Permission
+    from tests.factories import MagasinFactory, ProprietaireFactory
+
+    anfa, _maarif = deux_magasins
+    proprietaire = ProprietaireFactory()
+    karim = _cible(proprietaire, deux_magasins)
+
+    services.accorder(karim, Permission.CLIENT_VOIR, par=proprietaire)  # uniforme
+    services.accorder(
+        karim, Permission.CAISSE_VOIR, [anfa.code], par=proprietaire
+    )  # personnalisée
+
+    californie = MagasinFactory(code="CALIFORNIE", nom="Optique Californie", actif=True)
+    services.accorder_magasin(
+        karim, californie.code, par=proprietaire, reappliquer=reappliquer
+    )
+
+    assert not DroitAccorde.objects.filter(
+        utilisateur=karim,
+        magasin_code=californie.code,
+        code=Permission.CAISSE_VOIR,
+    ).exists(), (
+        f"Avec reappliquer={reappliquer}, une ligne réglée magasin par magasin s'est "
+        "étendue au magasin ajouté. Le propriétaire avait refusé ce droit à Maârif ; il "
+        "vient de l'accorder à Californie sans le savoir."
+    )
+
+
 def test_perm03_un_gerant_gestionnaire_ne_donne_que_ce_quil_detient(db_all, deux_magasins):
     """PERM-03 / `03-UI-SPEC.md` 7.7 — l'intersection est une règle de serveur, pas d'écran.
 
