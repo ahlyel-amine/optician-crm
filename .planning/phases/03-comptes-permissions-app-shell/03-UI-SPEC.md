@@ -417,6 +417,14 @@ something an optician looks for.
 > **The UI permission filter is convenience, never enforcement.** The server queryset scope and the
 > projection layer are the control. No plan task may be written as "hide X in the UI" and marked done.
 
+**`disponible` stays the gate — re-affirmed 2026-09-17 at the plan 03-13 checkpoint.** Seeing the
+shell with only the built entries raises the obvious question of whether the rule should be relaxed
+so the product looks complete. It should not: a production build must never ship a nav entry leading
+to an empty placeholder, and an optician who clicks `Caisse` in Phase 4 and lands on nothing has been
+told the product is broken. Entries appear as each phase lands. `VITE_NAV_COMPLET` stays exactly what
+it is — a density-review tool that must keep compiling to a constant `false` in a production build,
+never a feature flag anyone ships enabled.
+
 ### 5.4 The magasin selector
 
 Top bar, immediately right of the shop name. Phases 5, 6, 7, 8 and 10 all depend on this piece.
@@ -1015,19 +1023,49 @@ never appear.
 | Screen | Title | Section headings | Key labels |
 |---|---|---|---|
 | `/connexion` | product name | — | `Adresse e-mail`, `Mot de passe`, `Se connecter`, `Mot de passe oublié ? Contactez le propriétaire de votre magasin.` |
-| `/mot-de-passe` | `Choisissez votre mot de passe` | — | `Mot de passe actuel`, `Nouveau mot de passe`, `Confirmer`, `Enregistrer` |
+| `/mot-de-passe` — **forcé** | `Choisissez votre mot de passe` | — | `Nouveau mot de passe`, `Confirmer`, `Enregistrer` |
+| `/mot-de-passe` — **volontaire** | `Changer mon mot de passe` | — | `Mot de passe actuel`, `Nouveau mot de passe`, `Confirmer`, `Enregistrer`, `Retour` |
 | Shell — top bar | — | — | `Tous les magasins`, `Recherche`, `Mon compte`, `Changer mon mot de passe`, `Se déconnecter` |
 | Shell — nav | — | — | `Tableau de bord`, `Clients`, `Stock`, `Ventes`, `Caisse`, `Achats`, `Rappels`, `Paramètres` |
 | `/parametres/comptes` | `Comptes et droits` | — | `Nom`, `Adresse e-mail`, `Magasins`, `Droits`, `Statut`, `Dernière connexion`, `Actif`, `Désactivé`, `Jamais connecté`, `Propriétaire`, `Personnalisé` |
 | `/parametres/comptes/:id` | the person's name | `Identité`, `Magasins`, `Droits`, `Historique des droits` | `Réinitialiser le mot de passe`, `Par magasin`, `Uniformiser`, `Personnalisé : 2 magasins sur 3` |
 
-**`Mot de passe actuel` on `/mot-de-passe` is deliberate and settled — do not remove it.** This row
-originally listed only the three fields below it; the field was added here on 2026-09-16 at the plan
-03-12 checkpoint, after the screen was built. `POST /api/auth/mot-de-passe/` (plan 03-08) requires
-`mot_de_passe_actuel`, and that requirement is the one thing standing between an unlocked workstation
-— or a successful CSRF — yielding a *session* rather than the *account, permanently*. The owner chose
-to amend this spec rather than weaken the endpoint. **Phase 9 must not reopen this**: the extra field
-is not copy drift and not an oversight by whoever built the screen.
+**`/mot-de-passe` is one route with two paths, and they do not ask for the same thing. Settled — do
+not collapse them back into one.**
+
+| | Reached by | Fields | Way out |
+|---|---|---|---|
+| **Forced** | `RequireAuth` redirect while `doit_changer_mot_de_passe` is true | `Nouveau mot de passe`, `Confirmer` | none — the page is inescapable by design |
+| **Voluntary** | `Changer mon mot de passe` in the user menu (§9.4, shell row) | `Mot de passe actuel`, `Nouveau mot de passe`, `Confirmer` | `Retour` |
+
+`POST /api/auth/mot-de-passe/` mirrors this exactly: `mot_de_passe_actuel` is **required**, except on
+an account carrying `doit_changer_mot_de_passe`. The carve-out is in
+`ChangementMotDePasseSerializer.validate()`, not in the client, so omitting the field on the
+voluntary path is a 400 rather than a client-side convention. Supplied on the forced path, it is
+still checked.
+
+**Why the voluntary path keeps the field.** It is the one thing standing between an unlocked
+workstation — or a successful CSRF — yielding a *session* rather than the *account, permanently*.
+That guarantee, set by plan 03-08, is untouched for every account that is not in the forced state.
+
+**Why the forced path drops it.** The person typed that exact password seconds earlier to open the
+session carrying the request; asking again makes them repeat themselves on the most constrained
+screen in the product. And the guarantee protects nothing there: a forced-change account's password
+was *issued by the owner or the operator*, so it is known to a third party by construction — which is
+precisely why the flag is raised.
+
+**Decision history — revisited once, and now settled.** This row originally listed three fields and
+no current-password field. On **2026-09-16, at the plan 03-12 checkpoint**, the field was added to
+the screen and this spec was amended to match the endpoint; that paragraph is **superseded by this
+one**. On **2026-09-17, at the plan 03-13 checkpoint**, the owner revisited it on the reasoning above
+and split the two paths, which is what ships. The first amendment was not wrong about the risk — it
+was written before the voluntary path existed in the UI, so there was only one path to describe, and
+it took the safe reading. **Phase 9 must not reopen either half**: neither the extra field on the
+voluntary path nor its absence on the forced one is copy drift.
+
+Two named tests hold the two halves, and the second is the one that matters — it is what stops the
+carve-out from widening: `test_perm01_un_changement_force_n_exige_pas_le_mot_de_passe_actuel` and
+`test_perm01_un_compte_ordinaire_reste_refuse_sans_le_mot_de_passe_actuel`.
 
 ---
 
