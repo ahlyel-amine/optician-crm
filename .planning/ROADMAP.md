@@ -14,7 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [ ] **Phase 1: Legal & Compliance Track** - Calendar-driven filings started day one, running in parallel with every build phase
 - [ ] **Phase 2: Tenancy Foundation & Control Plane** - Database-per-client provisioning, fail-closed resolution, migration fan-out, manual onboarding
-- [ ] **Phase 3: Comptes, Permissions & App Shell** - Owner/gérant logins, per-gérant permissions, and the single projection layer, inside a French web shell
+- [x] **Phase 3: Comptes, Permissions & App Shell** - Owner/gérant logins, per-gérant permissions, and the single projection layer, inside a French web shell (completed 2026-09-17)
 - [ ] **Phase 4: Clients & Ordonnances** - Client records and structured, versioned, validated ordonnances
 - [ ] **Phase 5: Stock & Catalogue** - Per-magasin articles with an append-only movement ledger, scanner-ready search, suivi de commande, inventaire physique
 - [ ] **Phase 6: Vente & Facturation** - The fiscal core: devis → facture → avoir as one document model, gapless server-issued legal number, remise, idempotent submission
@@ -92,7 +92,13 @@ Plans:
 - [x] 03-11-PLAN.md — Formatage client et registre de colonnes filtré par présence, moitié cliente de PERM-06 (APP-03, PERM-06)
 - [x] 03-12-PLAN.md — Client API généré, `AuthProvider`, `/connexion`, `/mot-de-passe`, états globaux (PERM-01, APP-01)
 - [x] 03-13-PLAN.md — App shell : navigation déclarative, sélecteur de magasin, recherche, `print.css` (PERM-04, APP-01, APP-03)
-- [ ] 03-14-PLAN.md — Écrans Comptes et droits : liste, détail, checklist 21 droits, surcharge par magasin (PERM-02, PERM-03, PERM-04)
+- [x] 03-14-PLAN.md — Écrans Comptes et droits : liste, détail, checklist 21 droits, surcharge par magasin (PERM-02, PERM-03, PERM-04)
+
+> **Complète côté code, pas côté vérification.** Les 14 plans sont écrits et leurs suites sont vertes
+> (backend 184 / 30 deselected, web 119, build 0, `spectacular --fail-on-warn` 0, `migrate_all --check`
+> 0 behind). **24 vérifications manuelles au navigateur restent en attente** et n'ont jamais été
+> effectuées : 7 du point de contrôle 03-12, 1 du quick 260917-04r, 8 du 03-13 et 8 du 03-14. Elles se
+> font en une seule passe à la vérification de phase. Détail dans `STATE.md` → Blockers/Concerns.
 
 ### Phase 4: Clients & Ordonnances
 **Goal**: A client's record and their prescription history are captured in structured form, versioned and never overwritten, ready to drive lens orders and reminders
@@ -249,7 +255,7 @@ Phase 1 is a parallel calendar track: it starts first and stays open across late
 |-------|----------------|--------|-----------|
 | 1. Legal & Compliance Track | 0/TBD | Not started | - |
 | 2. Tenancy Foundation & Control Plane | 7/7 | Complete | 2026-09-13 |
-| 3. Comptes, Permissions & App Shell | 12/14 | In Progress|  |
+| 3. Comptes, Permissions & App Shell | 14/14 | Complete   | 2026-09-17 |
 | 4. Clients & Ordonnances | 0/TBD | Not started | - |
 | 5. Stock & Catalogue | 0/TBD | Not started | - |
 | 6. Vente & Facturation | 0/TBD | Not started | - |

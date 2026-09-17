@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: "Completed 03-13-PLAN.md (app shell). Les six decisions du point de controle sont appliquees ; la traversee manuelle des huit etapes du shell est COMMENCEE mais NON TERMINEE et aucune etape n'est approuvee. Suivant : 03-14"
-last_updated: "2026-09-17T10:31:46.867Z"
+stopped_at: "Completed 03-14-PLAN.md (comptes et droits). La phase 3 est complete cote CODE : 14 plans, 14 summaries. Le point de controle a releve un BLOCAGE — l'ecran etait inatteignable par l'interface, corrige — et rendu trois decisions, toutes appliquees. AUCUNE des huit etapes de verification humaine n'est approuvee : l'etape 1 est re-activee mais non rejouee. Suivant : la verification de phase 3, dont la passe manuelle au navigateur (24 verifications accumulees depuis 03-12)"
+last_updated: "2026-09-17T13:19:18.273Z"
 last_activity: 2026-09-17
 progress:
   total_phases: 12
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 21
-  completed_plans: 20
-  percent: 95
+  completed_plans: 21
+  percent: 100
 ---
 
 # Project State
@@ -26,11 +26,17 @@ See: .planning/PROJECT.md (updated 2026-09-09)
 ## Current Position
 
 Phase: 3 of 12 (Comptes, Permissions & App Shell)
-Plan: 13 of 14 complete in current phase (03-01 à 03-13) ; l'**app shell** existe et a remplacé `ContenuProtege` : la navigation vient d'un seul tableau déclaratif de huit entrées (plafond dur à neuf), une entrée dont le droit manque ne produit **aucun nœud DOM**, le sélecteur de magasin disparaît entièrement pour un mono-magasin et une route à portée magasin **demande** lequel plutôt que de deviner, la recherche réserve ses 480px sans rien normaliser côté client, et `print.css` pose la géométrie A4 que la phase 9 étendra (85 tests frontend, 182 backend / 30 deselected, build à 0). Le point de contrôle a rendu **six décisions**, toutes appliquées, dont la révision du champ `Mot de passe actuel` qui amende les plans 03-08 et 03-12. Il reste 03-14 (l'écran des comptes et des droits)
+Plan: **14 of 14 complete in current phase (03-01 à 03-14) — la phase 3 est complète côté CODE, pas côté vérification.** L'écran `Comptes et droits` existe : les 21 droits en sept sections venus du catalogue serveur (la SPA ne code aucun libellé), la surcharge par magasin qui n'apparaît qu'à la demande avec son tri-état `aria-checked="mixed"`, aucun preset ni palier nulle part, les deux dialogues destructifs qui énoncent **ce qui survit**, et l'historique de `JournalDroit`. Une entreprise mono-magasin ne rencontre aucun contrôle.
+
+**Le point de contrôle a relevé un blocage, pas un écart de copie : l'écran entier était inatteignable par l'interface.** `Paramètres` menait au titre d'attente et rien dans le produit ne liait vers `/parametres/comptes` — 32 tests frontend étaient verts parce qu'ils montaient tous l'écran à sa propre route. La navigation de second niveau de `03-UI-SPEC.md` 5.3 est construite, l'accueil des paramètres redirige vers sa première entrée visible, et un test part de la racine et **clique**. Trois décisions du propriétaire appliquées : l'intersection de la réponse d'une bascule (qui amende le contrat du plan 03-09), l'abandon de la mise en évidence de 2 secondes, et une seconde affaire mono-magasin en développement.
+
+Suites : backend **184 passed / 30 deselected**, web **119 passed**, build 0, `spectacular --fail-on-warn` 0 avec diff de schéma vide, `migrate_all --check` 2 ok / 0 behind.
+
+Suivant : la **vérification de phase 3**, dont la passe manuelle au navigateur — 24 vérifications accumulées et aucune effectuée.
 Status: Executing
 Last activity: 2026-09-17
 
-Progress: [██████████] 95%
+Progress: [██████████] 100% (14/14 plans de la phase 3 écrits ; la vérification de phase reste à faire)
 
 ## Performance Metrics
 
@@ -67,6 +73,7 @@ Progress: [██████████] 95%
 | Phase 03 P10 | ~30m | 3 tasks | 8 files |
 | Phase 03 P12 | ~45m | 4 tasks | 18 files |
 | Phase 03 P13 | ~55m | 4 tasks | 24 files |
+| Phase 03 P14 | ~100m | 4 tasks | 25 files |
 
 ## Quick Tasks Completed
 
@@ -168,6 +175,12 @@ Recent decisions affecting current work:
 - [Phase 03]: 03-13: /mot-de-passe est UNE route et DEUX chemins — le changement force rend deux champs, le volontaire trois, avec sa propre copie et une issue `Retour` (`Annuler` est reserve a l'annulation d'une modification enregistree)
 - [Phase 03]: 03-13: le changement FORCE n'exige pas `mot_de_passe_actuel` — derogation conditionnee a `doit_changer_mot_de_passe` COTE SERVEUR, pas cote client. REVIENT sur la decision du point de controle 03-12 et amende les plans 03-08 et 03-12. Le garde-fou est `test_perm01_un_compte_ordinaire_reste_refuse_sans_le_mot_de_passe_actuel`, qui rougit le jour ou la derogation s'elargit
 - [Phase 03]: 03-13: le plafond de navigation est de neuf entrees, huit prises et une reservee — un dixieme module entre dans une section existante ou en remplace une. Et toute route declare `portee: magasin|multi` : une route a portee magasin DEMANDE lequel plutot que de deviner
+- [Phase 03]: 03-14: la navigation de second niveau de 03-UI-SPEC 5.3 n'avait jamais ete construite — `/parametres/comptes` n'etait atteignable qu'en TAPANT son adresse, et 32 tests frontend etaient verts parce qu'ils montaient tous l'ecran a sa propre route. Le second niveau vit desormais dans `NAV[].sousEntrees`, sous le meme predicat de visibilite que le premier. Regle qui en sort : au moins un test par surface doit y arriver comme une personne y arrive — monter a la racine, cliquer, assertir
+- [Phase 03]: 03-14: l'accueil d'une section de parametres REDIRIGE vers sa premiere entree visible ; aucune entree visible rend la 403 pleine page SANS nommer de droit, parce qu'aucun droit unique ne possede `/parametres` et que la phase 9 y ajoutera un ecran sous un autre code
+- [Phase 03]: 03-14: la reponse d'une BASCULE est intersectee avec les magasins de l'appelant (`services.intersecter`), etat recalcule sur les ensembles reduits. AMENDE le contrat fige par le plan 03-09 et son test nomme `test_perm03_les_trois_bascules_repondent_le_contrat_de_lecran_de_droits`. La forme et le schema OpenAPI sont inchanges. Regle generale : toute reponse portant un code de magasin ou de droit passe par l'intersection, en ECRITURE comme en lecture
+- [Phase 03]: 03-14: la regle d'etat de 7.5 est ecrite UNE fois, dans `services.etat_de`, lue par `ligne_de`, `etat_des_droits` et `intersecter` — trois ecritures divergent, et la divergence serait un interrupteur qui ment sur l'etat reel
+- [Phase 03]: 03-14: la mise en evidence de la nouvelle ligne pendant 2 secondes est SUPERSEDEE dans 03-UI-SPEC 7.2 — la navigation vers le detail demonte la liste dans le meme tick, donc elle se jouerait sur un ecran que personne ne regarde. Aucune ligne de code n'a change, elle n'avait jamais ete implementee
+- [Phase 03]: 03-14: la base de developpement porte desormais DEUX affaires — `rabat` (Optique Rabat, un seul magasin AGDAL, proprietaire hind@optiquerabat.ma, gerant youssef@optiquerabat.ma, mot de passe rabat-dev-2026). Donnee de developpement, aucune fixture commitee dans un chemin de production
 
 ### Pending Todos
 
@@ -178,12 +191,21 @@ None yet.
 - [Phase 6] Four open questions block the facturation schema and need a Moroccan comptable, not research: TVA rate on optical goods after the 2026 reform, série per magasin vs per company, TVA treatment of the acompte, and whether the facture is issued at commande or délivrance. Start these during Phase 1.
 - [Phase 1] CNDP prior authorization is reported at 2-4 months and the Moroccan merchant contract at weeks to months. Both must be in flight from day one or they become the launch critical path.
 - [Phase 12] Recurring card-on-file on Moroccan rails is a vendor claim and needs sandbox proof; if false, billing falls back to invoice plus payment link per period.
-- [Phase 3] **Les sept vérifications manuelles au navigateur du point de contrôle 03-12 n'ont pas été effectuées.** Le propriétaire a approuvé sur la preuve automatisée (50 tests frontend, 179 backend, build à 0) et a explicitement dit ne pas les avoir exécutées. Restent ouvertes : connexion sans clignotement, stabilité de la carte à l'erreur, compte à rebours à la onzième tentative, atterrissage forcé sans issue, traversée au clavier seul, lecture en français contre `03-UI-SPEC.md` 9.3 (la vérification manuelle nommée dans `03-VALIDATION.md`), bannière de connexion perdue. À reprendre à la vérification de phase — vitest rend dans jsdom et ne voit ni clignotement, ni saut de mise en page réel, ni anneau de focus, ni si une phrase se lit comme du français. Détail : `.planning/phases/03-comptes-permissions-app-shell/03-12-SUMMARY.md`. **S'y ajoute la confirmation au navigateur du quick 260917-04r** (connexion réussie depuis `http://localhost:5173/connexion`, et `Host: localhost:5173` dans les en-têtes reçus par Django) : le correctif est prouvé par reproduction HTTP, pas par un humain devant l'écran. Les huit vérifications se font en une seule passe. **S'y ajoutent les huit étapes du point de contrôle 03-13** (les huit entrées en propriétaire, la densité sous `VITE_NAV_COMPLET=1`, l'application visiblement plus petite d'un gérant, l'absence totale de contrôle en mono-magasin, le changement de portée sans changement de route, la traversée au clavier seul puis sous VoiceOver — la vérification manuelle nommée dans `03-VALIDATION.md` —, `Ctrl+P`, et le zoom à 200 %). Le propriétaire a **commencé** cette traversée, y a découvert le défaut du changement de mot de passe forcé, et **n'a rendu aucun verdict sur le reste** : aucune des huit étapes n'est approuvée ni déclarée passée. Trois des six décisions du point de contrôle repeignent ou redimensionnent le shell (accent `#2563EB`, retrait de `Ctrl+B`, borne du tiroir à 1024px), donc la passe doit se faire **après** elles — c'est le cas. Détail : `.planning/phases/03-comptes-permissions-app-shell/03-13-SUMMARY.md`.
+- [Phase 3] **Les sept vérifications manuelles au navigateur du point de contrôle 03-12 n'ont pas été effectuées.** Le propriétaire a approuvé sur la preuve automatisée (50 tests frontend, 179 backend, build à 0) et a explicitement dit ne pas les avoir exécutées. Restent ouvertes : connexion sans clignotement, stabilité de la carte à l'erreur, compte à rebours à la onzième tentative, atterrissage forcé sans issue, traversée au clavier seul, lecture en français contre `03-UI-SPEC.md` 9.3 (la vérification manuelle nommée dans `03-VALIDATION.md`), bannière de connexion perdue. À reprendre à la vérification de phase — vitest rend dans jsdom et ne voit ni clignotement, ni saut de mise en page réel, ni anneau de focus, ni si une phrase se lit comme du français. Détail : `.planning/phases/03-comptes-permissions-app-shell/03-12-SUMMARY.md`. **S'y ajoute la confirmation au navigateur du quick 260917-04r** (connexion réussie depuis `http://localhost:5173/connexion`, et `Host: localhost:5173` dans les en-têtes reçus par Django) : le correctif est prouvé par reproduction HTTP, pas par un humain devant l'écran. Les huit vérifications se font en une seule passe. **S'y ajoutent les huit étapes du point de contrôle 03-13** (les huit entrées en propriétaire, la densité sous `VITE_NAV_COMPLET=1`, l'application visiblement plus petite d'un gérant, l'absence totale de contrôle en mono-magasin, le changement de portée sans changement de route, la traversée au clavier seul puis sous VoiceOver — la vérification manuelle nommée dans `03-VALIDATION.md` —, `Ctrl+P`, et le zoom à 200 %). Le propriétaire a **commencé** cette traversée, y a découvert le défaut du changement de mot de passe forcé, et **n'a rendu aucun verdict sur le reste** : aucune des huit étapes n'est approuvée ni déclarée passée. Trois des six décisions du point de contrôle repeignent ou redimensionnent le shell (accent `#2563EB`, retrait de `Ctrl+B`, borne du tiroir à 1024px), donc la passe doit se faire **après** elles — c'est le cas. Détail : `.planning/phases/03-comptes-permissions-app-shell/03-13-SUMMARY.md`. **S'y ajoutent enfin les huit étapes du point de contrôle 03-14** (créer un gérant et voir la bannière « aucun droit », la cascade de prérequis dans les deux sens avec **un seul** `Annuler`, l'état mixte et `Uniformiser`, un compte mono-magasin sans aucun `Par magasin`, le dialogue de désactivation et l'absence du mot « supprimer », l'absence d'un code **dans l'onglet réseau** en gérant-gestionnaire, la traversée au clavier puis sous VoiceOver, et la relecture contre le lexique de 9.3). Le propriétaire s'est arrêté à **l'étape 1, qui était bloquée** : l'écran n'était pas atteignable. **Aucune des huit n'est approuvée ni déclarée passée ; l'étape 1 a été ré-activée par le correctif mais n'a pas été rejouée par une personne.** L'étape 4 est désormais réellement vérifiable : l'affaire `rabat` (un seul magasin) existe en développement. Détail : `.planning/phases/03-comptes-permissions-app-shell/03-14-SUMMARY.md`. **Total : 24 vérifications manuelles en attente, à faire en une seule passe à la vérification de phase 3.**
 
 ## Session Continuity
 
-Last session: 2026-09-17T10:31:46.865Z
-Stopped at: Completed 03-13-PLAN.md (app shell). Les six decisions du point de controle sont appliquees ; la traversee manuelle des huit etapes du shell est COMMENCEE mais NON TERMINEE et aucune etape n'est approuvee. Suivant : 03-14
+Last session: 2026-09-17T13:19:18.270Z
+Stopped at: Completed 03-14-PLAN.md (comptes et droits). La phase 3 est complete cote CODE : 14 plans, 14 summaries. Le point de controle a releve un BLOCAGE — l'ecran etait inatteignable par l'interface, corrige — et rendu trois decisions, toutes appliquees. AUCUNE des huit etapes de verification humaine n'est approuvee : l'etape 1 est re-activee mais non rejouee. Suivant : la verification de phase 3, dont la passe manuelle au navigateur (24 verifications accumulees depuis 03-12)
 Resume file: None
 
-Serveurs de developpement laisses TOURNANTS : Vite sur 5173 (navigation filtree, l'etat livre) et sur 5174 (`VITE_NAV_COMPLET=1`, la densite a huit entrees), Django sur 127.0.0.1:8010 — le proprietaire peut reprendre la traversee des huit etapes du shell.
+Serveurs de developpement laisses TOURNANTS : Vite sur 5173 (navigation filtree, l'etat livre) et sur 5174 (`VITE_NAV_COMPLET=1`, la densite a huit entrees), Django sur 127.0.0.1:8010 — le proprietaire peut reprendre la traversee, celle du shell (03-13) comme celle de l'ecran des droits (03-14).
+
+Deux affaires en base de developpement, et c'est la forme a deux locataires que le projet exige partout ailleurs :
+
+| Affaire | Magasins | Proprietaire | Gerant | Mot de passe |
+|---|---|---|---|---|
+| `anfa` — Optique Anfa | ANFA, MAARIF | `amine@optiqueanfa.ma` | `karim@optiqueanfa.ma`, `nadia@optiqueanfa.ma`, `salma@optiqueanfa.ma` | inchange |
+| `rabat` — Optique Rabat | **AGDAL seul** | `hind@optiquerabat.ma` | `youssef@optiquerabat.ma` | `rabat-dev-2026` |
+
+L'affaire `rabat` sert l'etape 4 du point de controle 03-14 — « un compte a un seul magasin ne voit ni `Par magasin` ni case a cocher ». Donnee de developpement : aucune fixture ne la cree dans un chemin de production.

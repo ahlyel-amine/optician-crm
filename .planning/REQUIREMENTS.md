@@ -44,8 +44,8 @@ Calendar-driven work. Starts day one and runs in parallel with build — no amou
 ### Accounts & Permissions (PERM)
 
 - [x] **PERM-01**: An optician (owner) can sign in and stays signed in across sessions
-- [ ] **PERM-02**: An owner can create a gérant account for their business and deactivate it later
-- [ ] **PERM-03**: An owner can grant or revoke individual permissions for a specific gérant, without those permissions being fixed to a role tier
+- [x] **PERM-02**: An owner can create a gérant account for their business and deactivate it later
+- [x] **PERM-03**: An owner can grant or revoke individual permissions for a specific gérant, without those permissions being fixed to a role tier
 - [x] **PERM-04**: A gérant sees only the magasins and data the owner has granted them
 - [ ] **PERM-05**: Prix d'achat, margin and business-wide revenue are hidden from a gérant unless the owner explicitly grants access
 - [ ] **PERM-06**: A single projection layer enforces field-level permissions for the API, exports and printed documents alike
