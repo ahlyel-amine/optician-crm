@@ -48,6 +48,32 @@ import {
  */
 export type PorteeRoute = "magasin" | "multi";
 
+/**
+ * Une entree de SECOND niveau, rendue dans la zone de contenu (03-UI-SPEC.md 5.3).
+ *
+ * **Jamais en accordeon de barre laterale.** A cette taille un accordeon
+ * devient un arbre que l'utilisateur renavigue a chaque visite, et il ferait
+ * grossir la barre a chaque phase — ce que le plafond de neuf entrees existe
+ * precisement pour empecher.
+ *
+ * Le second niveau vit dans le MEME tableau que le premier, pour la meme raison
+ * qu'il n'existe qu'une liste de routes de premier niveau : une phase qui
+ * ajoute un ecran de parametres ajoute une DONNEE ici, et n'ecrit ni JSX ni
+ * route ailleurs. La phase 9 (Personnalisation) et la phase 12 (Abonnement)
+ * sont deja nommees par 5.3.
+ */
+export type SousEntreeNav = {
+  /** Le code de droit qui conditionne l'entree, ou `null` pour tout authentifie. */
+  code: string | null;
+  libelle: string;
+  /** Le chemin COMPLET, pour que rien n'ait a le recomposer. */
+  route: string;
+  /** `false` tant que le module n'est pas construit, comme au premier niveau. */
+  disponible: boolean;
+  /** Le proprietaire garde l'entree meme si le serveur ne lui liste pas le code. */
+  proprietaireToujours?: true;
+};
+
 export type EntreeNav = {
   /**
    * Le code de droit qui conditionne l'entree, ou `null` quand tout utilisateur
@@ -75,6 +101,11 @@ export type EntreeNav = {
    * main, et se la fermer serait irrattrapable depuis l'interface.
    */
   proprietaireToujours?: true;
+  /**
+   * La navigation de second niveau de cette entree, rendue dans la zone de
+   * contenu. Absente veut dire « cette entree n'a pas de second niveau ».
+   */
+  sousEntrees?: readonly SousEntreeNav[];
 };
 
 /** Le plafond dur. Neuf, emplacement reserve compris. */
@@ -149,6 +180,18 @@ export const NAV: readonly EntreeNav[] = [
     disponible: true,
     portee: "multi",
     proprietaireToujours: true,
+    // 5.3, colonne « Second level » : Comptes et droits (phase 3), Magasins,
+    // Personnalisation (phase 9), Abonnement (phase 12). Une phase ajoute la
+    // sienne ICI, en donnee, et `NavSecondaire` la rend sans changer d'une ligne.
+    sousEntrees: [
+      {
+        code: "compte.gerer",
+        libelle: "Comptes et droits",
+        route: "/parametres/comptes",
+        disponible: true,
+        proprietaireToujours: true,
+      },
+    ],
   },
 ];
 
@@ -182,18 +225,42 @@ export type ContexteNav = {
  */
 export function entreesVisibles(contexte: ContexteNav): EntreeNav[] {
   const complet = contexte.complet ?? navCompletActif();
-  return NAV.filter((entree) => {
-    if (!entree.disponible && !complet) {
-      return false;
-    }
-    if (entree.code === null) {
-      return true;
-    }
-    if (contexte.proprietaire && entree.proprietaireToujours) {
-      return true;
-    }
-    return contexte.permissions.includes(entree.code);
-  });
+  return NAV.filter((entree) => _visible(entree, contexte, complet));
+}
+
+/**
+ * Les entrees de second niveau a rendre pour `entree`. **La seule source d'un
+ * lien de second niveau**, exactement comme `entreesVisibles` l'est du premier.
+ *
+ * La regle est la MEME, ecrite une seule fois : une entree dont le code n'est
+ * pas detenu est RETIREE, pas desactivee. Pas de cadenas, pas de gris, pas
+ * d'infobulle. Deux filtres ecrits separement divergeraient, et celui qui
+ * divergerait ici afficherait un lien menant a la 403 pleine page.
+ */
+export function sousEntreesVisibles(
+  entree: EntreeNav,
+  contexte: ContexteNav,
+): SousEntreeNav[] {
+  const complet = contexte.complet ?? navCompletActif();
+  return (entree.sousEntrees ?? []).filter((sous) => _visible(sous, contexte, complet));
+}
+
+/** Le predicat de visibilite, partage par les deux niveaux. */
+function _visible(
+  entree: EntreeNav | SousEntreeNav,
+  contexte: ContexteNav,
+  complet: boolean,
+): boolean {
+  if (!entree.disponible && !complet) {
+    return false;
+  }
+  if (entree.code === null) {
+    return true;
+  }
+  if (contexte.proprietaire && entree.proprietaireToujours) {
+    return true;
+  }
+  return contexte.permissions.includes(entree.code);
 }
 
 /**

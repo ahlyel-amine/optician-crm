@@ -5,9 +5,11 @@ import { RequireAuth } from "@/auth/RequireAuth";
 import { RequireDroit } from "@/auth/RequireDroit";
 import { Toaster } from "@/components/ui/sonner";
 import { BanniereDeLien } from "@/etats/BanniereDeLien";
+import { PageInterdite } from "@/etats/PageInterdite";
 import { PageIntrouvable } from "@/etats/PageIntrouvable";
 import { AppShell } from "@/layout/AppShell";
-import { NAV, type EntreeNav } from "@/layout/nav";
+import { NavSecondaire } from "@/layout/NavSecondaire";
+import { NAV, sousEntreesVisibles, type EntreeNav } from "@/layout/nav";
 import { Connexion } from "@/pages/Connexion";
 import { MotDePasse } from "@/pages/MotDePasse";
 import { DetailCompte } from "@/pages/comptes/DetailCompte";
@@ -146,37 +148,70 @@ const SOUS_ROUTES: Record<string, (entree: EntreeNav) => React.ReactNode> = {
 };
 
 /**
- * La navigation de second niveau des parametres (03-UI-SPEC.md 5.3).
+ * Les parametres, et leur navigation de second niveau (03-UI-SPEC.md 5.3).
  *
- * Dans la zone de contenu, **jamais en accordeon de barre laterale** : la
- * phase 9 (Personnalisation) et la phase 12 (Abonnement) y ajoutent leurs
- * ecrans sans que la barre laterale grossisse.
+ * La rangee de liens est rendue DANS la zone de contenu, **jamais en accordeon
+ * de barre laterale** : la phase 9 (Personnalisation) et la phase 12
+ * (Abonnement) y ajoutent leurs ecrans sans que la barre laterale grossisse.
+ * Elle vient de `sousEntrees` dans `nav.ts`, donc ajouter un ecran de
+ * parametres est ajouter une donnee, pas ecrire du JSX.
  *
- * L'index reste `PageEnAttente` : l'accueil des parametres n'a pas encore de
- * contenu propre, et le dire par le meme titre d'attente que les sept autres
- * modules vaut mieux que d'inventer une page vide qui aurait l'air finie.
+ * **L'accueil redirige vers la premiere entree visible, il ne rend plus le
+ * titre d'attente.** C'est le defaut releve au point de controle du plan
+ * 03-14 : `PageEnAttente` deposait l'opticien sur un titre et un chemin, et
+ * comme rien dans le produit ne liait vers `/parametres/comptes`, l'ecran
+ * n'etait atteignable qu'en tapant son adresse. Rediriger est l'inverse du
+ * probleme : un clic sur `Parametres` arrive sur du contenu reel.
+ *
+ * **Aucune entree visible n'est pas non plus une impasse.** Le cas ne s'atteint
+ * qu'en tapant l'adresse — la barre laterale retire deja `Parametres` a qui n'a
+ * pas le droit — et il obtient la 403 pleine page de 8.6, qui a une issue. Le
+ * droit n'y est PAS nomme, faute d'un droit unique qui possederait
+ * `/parametres` : la phase 9 y ajoutera un ecran sous un autre code, et nommer
+ * `compte.gerer` enverrait alors demander le mauvais droit.
  */
 function Parametres({ entree }: { entree: EntreeNav }) {
+  const { permissions, utilisateur } = useAuth();
+  const premiere = sousEntreesVisibles(entree, {
+    permissions,
+    proprietaire: utilisateur?.est_proprietaire ?? false,
+  })[0];
+
   return (
-    <Routes>
-      <Route
-        path="comptes"
-        element={
-          <RequireDroit code="compte.gerer" proprietaireToujours>
-            <ListeComptes />
-          </RequireDroit>
-        }
-      />
-      <Route
-        path="comptes/:id"
-        element={
-          <RequireDroit code="compte.gerer" proprietaireToujours>
-            <DetailCompte />
-          </RequireDroit>
-        }
-      />
-      <Route path="*" element={<PageEnAttente entree={entree} />} />
-    </Routes>
+    <>
+      <NavSecondaire entree={entree} />
+      <Routes>
+        <Route
+          index
+          element={
+            premiere ? <Navigate to={premiere.route} replace /> : <PageInterdite />
+          }
+        />
+        <Route
+          path="comptes"
+          element={
+            <RequireDroit code="compte.gerer" proprietaireToujours>
+              <ListeComptes />
+            </RequireDroit>
+          }
+        />
+        <Route
+          path="comptes/:id"
+          element={
+            <RequireDroit code="compte.gerer" proprietaireToujours>
+              <DetailCompte />
+            </RequireDroit>
+          }
+        />
+        {/*
+          Une adresse de parametres qui n'existe pas est un 404, pas un titre
+          d'attente : `/parametres/nimportequoi` n'est pas un module a venir.
+          Le `*` de `ContenuDuShell` ne l'attrape pas — cette branche de routes
+          a deja gagne le filtrage.
+        */}
+        <Route path="*" element={<PageIntrouvable />} />
+      </Routes>
+    </>
   );
 }
 
