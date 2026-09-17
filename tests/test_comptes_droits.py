@@ -938,6 +938,13 @@ def test_perm03_les_trois_bascules_repondent_le_contrat_de_lecran_de_droits(affa
 
     Les trois routes sont jouées sur une vraie session, dans l'ordre où l'écran les
     déclenche : une bascule personnalisée, un `Uniformiser`, un retrait de magasin.
+
+    **Amendé le 2026-09-17, au point de contrôle du plan 03-14.** La forme fixée par le
+    plan 03-09 servait `magasins_accordes` et `lignes[].magasins` **entiers**, donc une
+    bascule jouée par un gérant-gestionnaire d'Anfa lui énumérait les magasins de la
+    cible qu'il ne détient pas — la même divulgation que le catalogue offrable et la
+    fiche refusent déjà (7.7), rouverte par la porte de la réponse d'écriture. Le
+    dernier acte de ce test est ce trou, et il porte sur les **octets**.
     """
     from plateforme.comptes.permissions_catalogue import Permission
     from tests.factories import AccesMagasinFactory, GerantFactory, ProprietaireFactory
@@ -1000,6 +1007,65 @@ def test_perm03_les_trois_bascules_repondent_le_contrat_de_lecran_de_droits(affa
     assert fiche.data["nombre_de_droits"] == 2
     assert fiche.data["personnalise"] is False
     assert [m["code"] for m in fiche.data["magasins"]] == [anfa.code]
+
+    # -- la réponse est INTERSECTÉE, comme le catalogue et comme la fiche --------------
+    #
+    # Karim retrouve ses deux magasins, et `caisse.voir` lui est accordé à Maârif
+    # seulement. Un gérant-gestionnaire d'Anfa bascule ensuite `caisse.saisir` sur Anfa :
+    # la cascade rallume `caisse.voir`, dont la ligne recalculée porte {Anfa, Maârif}.
+    # C'est là que Maârif partait sur le fil.
+    AccesMagasinFactory(
+        utilisateur=karim, magasin_code=maarif.code, accorde_par=proprietaire
+    )
+    for corps in (
+        {"code": Permission.CAISSE_VOIR.value, "accorde": False, "magasins": [anfa.code]},
+        {"code": Permission.CAISSE_VOIR.value, "accorde": True, "magasins": [maarif.code]},
+    ):
+        remise = api.post(_droits(karim), corps, format="json")
+        assert remise.status_code == 200, remise.data
+
+    gestionnaire = _gerant_gestionnaire(
+        affaire_reelle,
+        [anfa.code],
+        [Permission.CAISSE_VOIR, Permission.CAISSE_SAISIR],
+    )
+    vue = _connecter(_client_api(), gestionnaire).post(
+        _droits(karim),
+        {
+            "code": Permission.CAISSE_SAISIR.value,
+            "accorde": True,
+            "magasins": [anfa.code],
+        },
+        format="json",
+    )
+    assert vue.status_code == 200, vue.data
+
+    assert maarif.code.encode() not in vue.content, (
+        "Maârif part sur le fil vers un gérant d'Anfa dans la réponse d'une bascule. "
+        "Le catalogue (03-09) et la fiche (03-14) l'intersectent déjà ; une réponse "
+        "d'écriture qui ne le fait pas rouvre la même énumération par la porte de "
+        f"service. Reçu : {vue.content!r}"
+    )
+    assert vue.data["magasins_accordes"] == [anfa.code]
+    assert vue.data["cascade"] == [Permission.CAISSE_VOIR.value]
+    par_code = {ligne["code"]: ligne for ligne in vue.data["lignes"]}
+    assert par_code[Permission.CAISSE_SAISIR.value]["magasins"] == [anfa.code]
+    assert par_code[Permission.CAISSE_VOIR.value]["magasins"] == [anfa.code]
+    # L'état suit l'intersection, sinon l'écran dirait « Personnalisé : 1 magasin sur 1 »,
+    # ce qui n'est pas un état que 7.5 définit. `caisse.voir` est détenu partout où cet
+    # appelant peut voir : pour lui, la ligne est uniforme.
+    assert par_code[Permission.CAISSE_VOIR.value]["etat"] == "actif"
+    assert par_code[Permission.CAISSE_SAISIR.value]["etat"] == "actif"
+
+    # Et la vérité complète est intacte : l'intersection est une PROJECTION de réponse,
+    # pas une amputation de ce qui a été écrit. Le propriétaire, qui voit les deux
+    # magasins, relit exactement ce que le gérant d'Anfa vient de faire, Maârif compris.
+    relu = api.get(_detail(karim))
+    assert relu.status_code == 200, relu.data
+    assert relu.data["magasins_accordes"] == sorted([anfa.code, maarif.code])
+    assert {
+        ligne["code"]: tuple(ligne["magasins"]) for ligne in relu.data["droits"]
+    }[Permission.CAISSE_VOIR.value] == tuple(sorted([anfa.code, maarif.code]))
 
 
 # --------------------------------------------------------------------------------------
