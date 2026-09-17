@@ -289,6 +289,12 @@ export interface paths {
          *     personnalisées où elles sont ; retirer emporte les droits qui visaient ce
          *     magasin. Les deux effets sont annoncés par l'interface avant d'être appliqués
          *     (7.5 et 7.9), et appliqués ici que l'interface les ait annoncés ou non.
+         *
+         *     **L'extension est désormais un choix du propriétaire**, énoncé par l'écran avant
+         *     d'être appliqué, et par défaut celui de 7.5. Cette vue ne le prend pas : elle
+         *     valide le booléen et le passe au service, où vit toute la logique d'octroi. Le
+         *     retrait, lui, ne le reçoit pas — d'où la branche explicite plutôt qu'une table
+         *     d'opérations, qui obligerait à passer l'argument à une fonction qui n'en veut pas.
          */
         post: operations["comptes_magasins_create"];
         delete?: never;
@@ -425,14 +431,25 @@ export interface components {
             magasins?: string[];
         };
         /**
-         * @description `{magasin_code, accorde}` — l'accès à un magasin (`03-UI-SPEC.md` 7.3 B).
+         * @description `{magasin_code, accorde, reappliquer?}` — l'accès à un magasin (7.3 B).
          *
          *     Le code métier, jamais l'identifiant : c'est ce que stocke `AccesMagasin`, et c'est
          *     ce qui survit à une restauration là où un `id` est réattribué (TENANT-09).
+         *
+         *     `reappliquer` est le choix que l'écran pose au propriétaire avant d'ajouter un
+         *     magasin (contexte de la phase 03.1, décision 2). C'est un champ de **corps** et non
+         *     un paramètre de requête : il décide d'une écriture, il voyage donc avec elle, et
+         *     `PARAMETRES_RESERVES` n'a pas à le connaître. Facultatif et défaut `True`, pour que
+         *     la règle d'aujourd'hui reste la règle pour tout appelant qui ne dit rien.
          */
         BasculeMagasin: {
             magasin_code: string;
             accorde: boolean;
+            /**
+             * @description À l'ajout d'un magasin : étendre au nouveau magasin les droits accordés uniformément dans tous les autres. Les droits réglés magasin par magasin ne s'étendent jamais, quelle que soit la valeur. Sans effet au retrait.
+             * @default true
+             */
+            reappliquer?: boolean;
         };
         /** @description Le catalogue servi à la SPA : les sections, et la carte des prérequis (7.6). */
         Catalogue: {

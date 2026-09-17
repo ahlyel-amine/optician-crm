@@ -31,6 +31,20 @@ Puis, si le client typé est régénéré dans la foulée :
 cd web && npm run api:types
 ```
 
+### Le drapeau `--default-non-nullable=false`, et pourquoi il est là (2026-09-17)
+
+Le script `api:types` porte ce drapeau depuis le plan `03.1-02`, qui a ajouté le premier
+champ de corps **facultatif avec valeur par défaut** du contrat. Sans lui,
+`openapi-typescript` lit un `default:` comme « cette propriété est toujours présente » et
+génère `champ: boolean` — c'est-à-dire qu'il rend **obligatoire dans le type exactement le
+champ que le défaut existe pour permettre d'omettre**, alors que le YAML ne le liste pas
+dans `required`. Le client cesse de compiler, et il faudrait envoyer le champ jusque dans
+les appels où il n'a aucun sens.
+
+Le drapeau ne touche pas au schéma : il change la lecture d'un `default:` par le
+générateur, et `required:` redevient la seule source de l'optionalité. Ne pas le retirer
+sans régénérer et rebâtir.
+
 ## La porte de CI
 
 Deux lignes, à poser dans le job backend une fois que la CI existe (il n'y a pas encore de
