@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: "Completed 03-14-PLAN.md (comptes et droits). La phase 3 est complete cote CODE : 14 plans, 14 summaries. Le point de controle a releve un BLOCAGE — l'ecran etait inatteignable par l'interface, corrige — et rendu trois decisions, toutes appliquees. AUCUNE des huit etapes de verification humaine n'est approuvee : l'etape 1 est re-activee mais non rejouee. Suivant : la verification de phase 3, dont la passe manuelle au navigateur (24 verifications accumulees depuis 03-12)"
-last_updated: "2026-09-17T15:40:00.000Z"
+stopped_at: "Completed 03.1-01-PLAN.md — le selecteur de magasin remplace l'ouverture ligne par ligne. `Par magasin`, sa sous-liste, l'etat `deplie` et `Uniformiser` sont supprimes ; `LigneDroit` est sans etat ; le selecteur ouvre sur `Tous les magasins de ce compte` et CLAUDE.md #13 n'est pas amende. Web 128 passed (base 126 : -3 caducs, +5 net, 7 neufs dont 2 reecrits sur place), backend 184/30 inchange, build 0, audit:format muet. Reste de la vague 1 : rien. Vague 2 : 03.1-02 et 03.1-03, puis le point de controle humain 03.1-04."
+last_updated: "2026-09-17T18:57:46.121Z"
 last_activity: 2026-09-17
 progress:
-  total_phases: 12
+  total_phases: 13
   completed_phases: 2
-  total_plans: 21
-  completed_plans: 21
-  percent: 100
+  total_plans: 25
+  completed_plans: 22
+  percent: 88
 ---
 
 # Project State
@@ -74,6 +74,7 @@ Progress: [██████████] 100% (14/14 plans de la phase 3 écri
 | Phase 03 P12 | ~45m | 4 tasks | 18 files |
 | Phase 03 P13 | ~55m | 4 tasks | 24 files |
 | Phase 03 P14 | ~100m | 4 tasks | 25 files |
+| Phase 03.1 P01 | 11m | 3 tasks | 7 files |
 
 ## Quick Tasks Completed
 
@@ -187,6 +188,8 @@ Recent decisions affecting current work:
 - [Phase 03]: 03-14: la regle d'etat de 7.5 est ecrite UNE fois, dans `services.etat_de`, lue par `ligne_de`, `etat_des_droits` et `intersecter` — trois ecritures divergent, et la divergence serait un interrupteur qui ment sur l'etat reel
 - [Phase 03]: 03-14: la mise en evidence de la nouvelle ligne pendant 2 secondes est SUPERSEDEE dans 03-UI-SPEC 7.2 — la navigation vers le detail demonte la liste dans le meme tick, donc elle se jouerait sur un ecran que personne ne regarde. Aucune ligne de code n'a change, elle n'avait jamais ete implementee
 - [Phase 03]: 03-14: la base de developpement porte desormais DEUX affaires — `rabat` (Optique Rabat, un seul magasin AGDAL, proprietaire hind@optiquerabat.ma, gerant youssef@optiquerabat.ma, mot de passe rabat-dev-2026). Donnee de developpement, aucune fixture commitee dans un chemin de production
+- [Phase 03.1]: Le selecteur de magasin des droits ouvre sur `Tous les magasins de ce compte` — CLAUDE.md #13 n'est PAS amende. Le choix du proprietaire est interprete comme portant sur le mecanisme, pas sur l'etat initial : ouvrir sur un magasin nomme ferait de chaque premier clic un sous-octroi silencieux. La contre-option tient dans la constante `MODE_PAR_DEFAUT` et lui est reposee a l'etape 2 du plan 03.1-04.
+- [Phase 03.1]: `POST /api/comptes/{id}/droits/uniformiser/` et `services.uniformiser` sont CONSERVEES et desormais SANS AUCUN APPELANT WEB — supprimer couterait une regeneration de schema et de client pour retirer du vert. A reexaminer a la phase 11 : si le mobile ne l'appelle pas non plus, elle se supprime alors.
 
 ### Pending Todos
 
@@ -202,8 +205,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-17T13:19:18.270Z
-Stopped at: Completed 03-14-PLAN.md (comptes et droits). La phase 3 est complete cote CODE : 14 plans, 14 summaries. Le point de controle a releve un BLOCAGE — l'ecran etait inatteignable par l'interface, corrige — et rendu trois decisions, toutes appliquees. AUCUNE des huit etapes de verification humaine n'est approuvee : l'etape 1 est re-activee mais non rejouee. Suivant : la verification de phase 3, dont la passe manuelle au navigateur (24 verifications accumulees depuis 03-12)
+Last session: 2026-09-17T18:57:46.118Z
+Stopped at: Completed 03.1-01-PLAN.md — le selecteur de magasin remplace l'ouverture ligne par ligne. `Par magasin`, sa sous-liste, l'etat `deplie` et `Uniformiser` sont supprimes ; `LigneDroit` est sans etat ; le selecteur ouvre sur `Tous les magasins de ce compte` et CLAUDE.md #13 n'est pas amende. Web 128 passed (base 126 : -3 caducs, +5 net, 7 neufs dont 2 reecrits sur place), backend 184/30 inchange, build 0, audit:format muet. Reste de la vague 1 : rien. Vague 2 : 03.1-02 et 03.1-03, puis le point de controle humain 03.1-04.
 Resume file: None
 
 Serveurs de developpement laisses TOURNANTS : Vite sur 5173 (navigation filtree, l'etat livre) et sur 5174 (`VITE_NAV_COMPLET=1`, la densite a huit entrees), Django sur 127.0.0.1:8010 — le proprietaire peut reprendre la traversee, celle du shell (03-13) comme celle de l'ecran des droits (03-14).

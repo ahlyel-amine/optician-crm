@@ -118,7 +118,7 @@ Plans:
 **Research needed**: non — délibérément sauté, le CONTEXT porte l'analyse technique, les fichiers touchés, le contrat de réponse figé et la menace
 
 Plans:
-- [ ] 03.1-01-PLAN.md — Le sélecteur de magasin remplace l'ouverture ligne par ligne, et la question `Tous` contre magasin nommé est tranchée par écrit (PERM-03, PERM-04)
+- [x] 03.1-01-PLAN.md — Le sélecteur de magasin remplace l'ouverture ligne par ligne, et la question `Tous` contre magasin nommé est tranchée par écrit (PERM-03, PERM-04)
 - [ ] 03.1-02-PLAN.md — `accorder_magasin(..., reappliquer=True)` : le choix voyage en paramètre du service, schéma et client régénérés (PERM-03, PERM-04)
 - [ ] 03.1-03-PLAN.md — `DialogueAjoutMagasin` : demander plutôt que subir, en chiffrant les deux moitiés (PERM-03, PERM-04)
 - [ ] 03.1-04-PLAN.md — Les quatre portes mécaniques, les cinq gardes, et la passe humaine en six étapes
