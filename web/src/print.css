@@ -1,0 +1,108 @@
+/* ===========================================================================
+ * La feuille d'impression — ecrite en phase 3 pour que la phase 9 l'ETENDE.
+ *
+ * Ce qui est livre ici est la COUTURE, pas le document. La phase 3 rend du HTML
+ * et non du PDF (03-RESEARCH.md correction 4) ; la phase 6 possede le modele de
+ * document ; la phase 9 enveloppe le meme HTML dans WeasyPrint et ajoute la
+ * marque du client.
+ *
+ * **La phase 9 ne devrait pas avoir a toucher la mise en page de page de ce
+ * fichier.** Le format A4, les marges, le masquage du chrome et la repetition
+ * des en-tetes de tableau sont decides ici, une fois. Ce qu'il lui reste a
+ * ajouter, c'est l'en-tete de marque et le pied de page legal — pas une
+ * geometrie de page, qui est la partie qu'on redecouvre a chaque reecriture.
+ *
+ * Trois regles portent loin :
+ *
+ *   1. **Aucun gabarit de document ici.** Pas de mise en forme d'un document
+ *      commercial, pas de bloc d'adresse, pas de tableau de lignes. Ce fichier
+ *      ne connait que le shell et les elements generiques.
+ *   2. **Aucune dependance PDF dans cette phase.** Ni WeasyPrint cote client,
+ *      ni sidecar, ni bibliotheque d'impression. `window.print()` suffit.
+ *   3. **La monnaie s'imprime par le MEME formateur qu'a l'ecran** —
+ *      `src/format/montant.ts`, pinne sur `tests/fixtures/formats_mad.json`.
+ *      C'est tout l'interet de la fixture partagee : un montant imprime et un
+ *      montant affiche ne peuvent pas diverger. Aucune regle de ce fichier ne
+ *      reformate un nombre, et aucune ne le doit jamais.
+ * ======================================================================== */
+
+@page {
+  size: A4;
+  margin: 15mm;
+}
+
+@media print {
+  /* Noir sur blanc. `print-color-adjust: exact` n'est pose sur RIEN, et ce
+   * n'est pas un oubli : un document sort d'une imprimante de boutique, et le
+   * budget toner d'un opticien est un cout reel. Un aplat de couleur imprime
+   * sur chaque page en est un autre. */
+  html,
+  body {
+    background: #fff;
+    color: #000;
+    font-size: 11pt;
+  }
+
+  /* Le chrome du shell ne s'imprime pas. Un document remis a un client ne porte
+   * ni la navigation de celui qui l'a edite, ni sa portee de magasin, ni ses
+   * notifications (T-03-94). */
+  header,
+  nav,
+  [data-slot="sidebar"],
+  [data-slot="sidebar-gap"],
+  [data-slot="sidebar-container"],
+  [data-sonner-toaster],
+  [role="status"],
+  [data-testid="emplacement-recherche"],
+  a[href="#contenu"] {
+    display: none;
+  }
+
+  /* La zone de contenu devient la page. Les 24px de remplissage a l'ecran
+   * s'ajouteraient aux 15mm de marge de page. */
+  main,
+  #contenu {
+    padding: 0;
+    margin: 0;
+    width: auto;
+  }
+
+  /* Un tableau qui deborde sur une deuxieme page emporte ses en-tetes avec lui.
+   * Sans cela, la page 2 d'un tableau de lignes est une colonne de nombres sans
+   * legende — illisible, et litigieux face a un client. */
+  thead {
+    display: table-header-group;
+  }
+
+  tfoot {
+    display: table-footer-group;
+  }
+
+  tr,
+  img {
+    break-inside: avoid;
+  }
+
+  /* Les titres n'orphelinent pas leur contenu. */
+  h1,
+  h2,
+  h3 {
+    break-after: avoid;
+  }
+
+  /* L'anneau de focus n'est pas RETIRE — il est rendu transparent le temps de
+   * l'impression. La distinction compte : la regle « l'anneau de focus n'est
+   * jamais supprime » (03-UI-SPEC.md section 10) reste vraie a l'ecran, et
+   * aucune declaration de ce fichier ne peut fuir hors du media `print`. */
+  *:focus,
+  *:focus-visible {
+    outline-color: transparent;
+  }
+
+  /* Les liens s'impriment comme du texte : une URL entre parentheses derriere
+   * chaque lien alourdit un document sans rien lui apporter sur papier. */
+  a[href] {
+    color: inherit;
+    text-decoration: none;
+  }
+}

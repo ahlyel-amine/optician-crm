@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
@@ -553,5 +556,53 @@ describe("l'emplacement de recherche", () => {
     } finally {
       retirer();
     }
+  });
+});
+
+/* =========================================================================
+ * La feuille d'impression (03-UI-SPEC.md 8.4)
+ *
+ * Elle se verifie en lisant le fichier : jsdom ne met pas en page, ne pagine
+ * pas et n'a pas de media `print`. Ce qui EST verifiable — et ce que la phase 9
+ * heritera — c'est que la geometrie de page existe, que le chrome est masque,
+ * et qu'aucun gabarit de document ne s'est glisse ici.
+ * ======================================================================= */
+
+describe("la feuille d'impression", () => {
+  // `process.cwd()` et non `import.meta.url` : sous vitest, l'URL d'un module
+  // est une URL http servie par vite, que `node:fs` ne sait pas lire. Meme
+  // motif que tests/format.test.ts.
+  const feuille = readFileSync(resolve(process.cwd(), "src/print.css"), "utf8");
+
+  it("pose la geometrie A4 et repete les en-tetes de tableau", () => {
+    expect(feuille).toContain("@page");
+    expect(feuille).toContain("size: A4");
+    expect(feuille).toContain("margin: 15mm");
+    // Sans cela, la page 2 d'un tableau est une colonne de nombres sans
+    // legende.
+    expect(feuille).toContain("display: table-header-group");
+  });
+
+  it("masque le chrome du shell", () => {
+    for (const repere of ["header", "nav", '[data-slot="sidebar"]', '[data-sonner-toaster]']) {
+      expect(feuille).toContain(repere);
+    }
+  });
+
+  it("ne contient aucun gabarit de document ni ressource externe", () => {
+    // La phase 6 possede le modele de document, la phase 9 l'impression. Ce qui
+    // est livre ici est la COUTURE : aucune mise en forme d'un document
+    // commercial, aucun bloc d'adresse, aucun tableau de lignes.
+    expect(feuille.toLowerCase()).not.toMatch(/factur|devis|avoir\s*:/);
+    // Aucune ressource externe : une police ou une image telechargee a
+    // l'impression ne se charge pas toujours, et le document sort faux.
+    expect(feuille).not.toContain("url(");
+  });
+
+  it("n'imprime rien en couleur de fond, et ne retire aucun anneau de focus", () => {
+    // `print-color-adjust: exact` n'est declare nulle part : les documents sont
+    // noirs sur blanc pour que le budget toner d'une boutique survive.
+    expect(feuille).not.toMatch(/^\s*print-color-adjust/m);
+    expect(feuille).not.toMatch(/outline:\s*none/);
   });
 });

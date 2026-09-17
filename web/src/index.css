@@ -1,6 +1,13 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+/* La feuille d'impression, importee ici pour qu'elle parte dans la MEME
+ * construction que le reste : une feuille d'impression livree separement est
+ * une feuille d'impression qu'on oublie de livrer. Ses regles sont HORS COUCHE
+ * et gagnent donc sur les utilitaires Tailwind, ce qu'il faut pour masquer un
+ * chrome qui porte des classes utilitaires. Voir src/print.css. */
+@import "./print.css";
+
 /* ---------------------------------------------------------------------------
  * Theme shadcn/ui — preset epingle : style new-york, baseColor zinc,
  * cssVariables true (03-UI-SPEC.md section 1).
