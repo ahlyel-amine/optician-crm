@@ -659,3 +659,317 @@ describe("la fiche d'un compte", () => {
     ).toBeTruthy();
   });
 });
+
+/* =========================================================================
+ * 7.5, 7.8, 7.9 et 7.10 — surcharge par magasin, annulation, dialogues
+ * ======================================================================= */
+
+const CALIFORNIE = { id: 3, code: "CALIFORNIE", nom: "Californie" };
+
+/** Karim a deux magasins ; `caisse.saisir` n'est detenu qu'a Anfa : mixte. */
+const DROITS_MIXTES = [
+  { code: "stock.voir", etat: "actif", magasins: ["ANFA", "MAARIF"] },
+  { code: "caisse.voir", etat: "actif", magasins: ["ANFA", "MAARIF"] },
+  { code: "caisse.saisir", etat: "mixte", magasins: ["ANFA"] },
+];
+
+function resultat(surcharge: Record<string, unknown> = {}) {
+  return {
+    code: "caisse.saisir",
+    action: "accorde",
+    lignes: [],
+    cascade: [],
+    magasins_accordes: ["ANFA", "MAARIF"],
+    magasins_etendus: [],
+    ...surcharge,
+  };
+}
+
+describe("la surcharge par magasin", () => {
+  it("n'offre `Par magasin` qu'a partir de deux magasins", async () => {
+    rendreLaFiche({
+      catalogue: catalogueOffrable([ANFA]),
+      magasinsAccordes: ["ANFA"],
+      droits: [{ code: "stock.voir", etat: "actif", magasins: ["ANFA"] }],
+    });
+
+    await screen.findByRole("switch", { name: "Consulter le stock" });
+    // Invisible pour toute entreprise mono-magasin : la grille n'existe que la
+    // ou le proprietaire l'a demandee, et il ne peut pas la demander ici.
+    expect(screen.queryByRole("button", { name: "Par magasin" })).toBeNull();
+  });
+
+  it("annonce le tri-etat plutot que de seulement le dessiner", async () => {
+    rendreLaFiche({ droits: DROITS_MIXTES });
+
+    const parent = await screen.findByRole("switch", { name: "Saisir en caisse" });
+    expect(parent.getAttribute("aria-checked")).toBe("mixed");
+    expect(screen.getByText("Personnalisé : 1 magasin sur 2")).toBeTruthy();
+  });
+
+  it("deplie une seule ligne, et nomme le magasin dans chaque sous-interrupteur", async () => {
+    rendreLaFiche({ droits: DROITS_MIXTES });
+
+    await screen.findByRole("switch", { name: "Saisir en caisse" });
+    // Une ligne personnalisee est depliee d'emblee ; dans le cas attendu —
+    // aucune personnalisation — zero ligne l'est.
+    expect(screen.getByRole("switch", { name: "Saisir en caisse — Anfa" })).toBeTruthy();
+    expect(screen.getByRole("switch", { name: "Saisir en caisse — Maârif" })).toBeTruthy();
+    expect(screen.queryByRole("switch", { name: "Consulter le stock — Anfa" })).toBeNull();
+  });
+
+  it("garde le badge `Personnalise` une fois la ligne repliee", async () => {
+    rendreLaFiche({ droits: DROITS_MIXTES });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Uniformiser" }));
+    // Le dialogue s'interpose ; on revient en arriere, la ligne se replie.
+    fireEvent.click(screen.getByRole("button", { name: "Retour" }));
+
+    expect(screen.queryByRole("switch", { name: "Saisir en caisse — Anfa" })).toBeNull();
+    expect(screen.getByText("Personnalisé")).toBeTruthy();
+  });
+
+  it("allume TOUS les magasins au clic sur un parent mixte, et le toast le dit", async () => {
+    rendreLaFiche({
+      droits: DROITS_MIXTES,
+      surDroits: () =>
+        json(
+          resultat({
+            lignes: [
+              { code: "caisse.saisir", etat: "actif", magasins: ["ANFA", "MAARIF"] },
+            ],
+          }),
+        ),
+    });
+
+    fireEvent.click(await screen.findByRole("switch", { name: "Saisir en caisse" }));
+
+    await waitFor(() => {
+      const envoi = appels.find(
+        (appel) => appel.chemin === "/api/comptes/2/droits/" && appel.methode === "POST",
+      );
+      expect(envoi?.corps).toEqual({
+        code: "caisse.saisir",
+        accorde: true,
+        magasins: ["ANFA", "MAARIF"],
+      });
+    });
+    expect(
+      await screen.findByText("Droit accordé dans tous les magasins : « Saisir en caisse »."),
+    ).toBeTruthy();
+  });
+
+  it("demande avant d'uniformiser une ligne dont les magasins divergent", async () => {
+    rendreLaFiche({ droits: DROITS_MIXTES });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Uniformiser" }));
+
+    expect(
+      screen.getByRole("heading", { name: "Appliquer le même droit à tous les magasins ?" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Les réglages par magasin de « Saisir en caisse » seront remplacés. Karim aura ce droit dans les 2 magasins.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retour" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Annuler" })).toBeNull();
+  });
+
+  it("etend les lignes uniformes a un magasin ajoute, et pas les personnalisees", async () => {
+    // L'extension silencieuse d'une ligne personnalisee distribuerait une
+    // permission que le proprietaire avait deliberement refusee, a l'occasion
+    // d'une action sans rapport (menace T-03-62). La regle est appliquee par le
+    // serveur ; l'interface la RACONTE, et c'est la note qui evite qu'elle
+    // passe inapercue.
+    rendreLaFiche({
+      catalogue: catalogueOffrable([ANFA, MAARIF, CALIFORNIE]),
+      droits: [
+        { code: "stock.voir", etat: "actif", magasins: ["ANFA", "MAARIF"] },
+        { code: "caisse.voir", etat: "mixte", magasins: ["ANFA"] },
+        { code: "caisse.saisir", etat: "mixte", magasins: ["ANFA"] },
+      ],
+      surMagasins: () =>
+        json(
+          resultat({
+            code: "CALIFORNIE",
+            lignes: [
+              {
+                code: "stock.voir",
+                etat: "actif",
+                magasins: ["ANFA", "CALIFORNIE", "MAARIF"],
+              },
+            ],
+            magasins_accordes: ["ANFA", "CALIFORNIE", "MAARIF"],
+            magasins_etendus: ["stock.voir"],
+          }),
+        ),
+    });
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: /Californie/ }));
+
+    expect(
+      await screen.findByText(
+        "Californie a été ajouté. Vérifiez les 2 droits personnalisés par magasin.",
+      ),
+    ).toBeTruthy();
+    // La ligne personnalisee n'a pas bouge : toujours mixte, toujours le seul Anfa.
+    expect(
+      screen.getByRole("switch", { name: "Saisir en caisse" }).getAttribute("aria-checked"),
+    ).toBe("mixed");
+  });
+});
+
+describe("l'annulation, les echecs et les dialogues", () => {
+  it("offre `Annuler` sur un toast de revocation, et un seul pour toute la cascade", async () => {
+    let appelsDroits = 0;
+    rendreLaFiche({
+      droits: [
+        { code: "stock.voir", etat: "actif", magasins: ["ANFA", "MAARIF"] },
+        { code: "stock.ajuster", etat: "actif", magasins: ["ANFA", "MAARIF"] },
+      ],
+      surDroits: () => {
+        appelsDroits += 1;
+        return json(
+          resultat({
+            code: "stock.voir",
+            action: "revoque",
+            lignes: [
+              { code: "stock.voir", etat: "inactif", magasins: [] },
+              { code: "stock.ajuster", etat: "inactif", magasins: [] },
+            ],
+            cascade: ["stock.ajuster"],
+          }),
+        );
+      },
+    });
+
+    fireEvent.click(await screen.findByRole("switch", { name: "Consulter le stock" }));
+
+    expect(
+      await screen.findByText('Droit retiré : « Consulter le stock ».'),
+    ).toBeTruthy();
+    // La note symetrique de la cascade, en ligne sous la ligne emportee (7.6).
+    expect(
+      screen.getByText(
+        '« Ajuster le stock / inventaire » a été retiré : il dépend de « Consulter le stock ».',
+      ),
+    ).toBeTruthy();
+    // UN SEUL toast, et donc un seul `Annuler`, pour toute la cascade.
+    expect(screen.getAllByRole("button", { name: "Annuler" })).toHaveLength(1);
+    expect(appelsDroits).toBe(1);
+  });
+
+  it("affiche l'echec d'un octroi SUR LA LIGNE, jamais en toast", async () => {
+    // Un toast d'echec se rate en regardant ailleurs, et ce qui reste alors a
+    // l'ecran est un interrupteur qui ment sur l'etat reel (menace T-03-101).
+    rendreLaFiche({
+      droits: [{ code: "stock.voir", etat: "inactif", magasins: [] }],
+      surDroits: () =>
+        json(
+          { detail: "Vous ne pouvez accorder qu'un droit que vous détenez vous-même." },
+          403,
+        ),
+    });
+
+    const interrupteur = await screen.findByRole("switch", { name: "Consulter le stock" });
+    fireEvent.click(interrupteur);
+
+    const message = await screen.findByText(
+      "Vous ne pouvez accorder qu'un droit que vous détenez vous-même.",
+    );
+    // Sur la ligne, donc dans le meme `li` que l'interrupteur.
+    expect(message.closest("li")).toBe(interrupteur.closest("li"));
+    // Et l'interrupteur est revenu en arriere.
+    await waitFor(() => {
+      expect(
+        screen.getByRole("switch", { name: "Consulter le stock" }).getAttribute("aria-checked"),
+      ).toBe("false");
+    });
+  });
+
+  it("porte la copie exacte du dialogue de desactivation, seconde phrase comprise", async () => {
+    rendreLaFiche({ droits: DROITS_MIXTES });
+
+    const statut = await screen.findByLabelText("Statut");
+    fireEvent.change(statut, { target: { value: "inactif" } });
+
+    expect(
+      screen.getByRole("heading", { name: "Désactiver le compte de Karim Benali ?" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Il sera déconnecté dès sa prochaine action. Ses ventes et ses saisies restent enregistrées à son nom. Vous pourrez réactiver ce compte plus tard.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retour" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Désactiver le compte" })).toBeTruthy();
+    // `Annuler` ne veut JAMAIS dire « fermer ce dialogue » (7.10).
+    expect(screen.queryByRole("button", { name: "Annuler" })).toBeNull();
+  });
+
+  it("porte la copie exacte du dialogue de retrait d'un magasin", async () => {
+    rendreLaFiche({
+      droits: [
+        { code: "caisse.voir", etat: "mixte", magasins: ["MAARIF"] },
+        { code: "caisse.saisir", etat: "mixte", magasins: ["MAARIF"] },
+      ],
+    });
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: /Maârif/ }));
+
+    expect(
+      screen.getByRole("heading", { name: "Retirer l'accès au magasin Maârif ?" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Karim ne verra plus les clients, le stock, les ventes ni la caisse de Maârif. Les réglages par magasin de 2 droits pour ce magasin seront supprimés.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retour" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retirer l'accès" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Annuler" })).toBeNull();
+    // Rien n'est parti avant la confirmation.
+    expect(appels.some((appel) => appel.chemin === "/api/comptes/2/magasins/")).toBe(false);
+  });
+
+  it("deroule l'historique du plus recent au plus ancien, a l'ouverture seulement", async () => {
+    rendreLaFiche({
+      droits: DROITS_MIXTES,
+      surJournal: () =>
+        json([
+          {
+            le: "2026-09-14T08:14:00Z",
+            action: "accorde",
+            nature: "droit",
+            cible: "caisse.saisir",
+            libelle: "Saisir en caisse",
+            par: "Amine El Fassi",
+          },
+          {
+            le: "2026-09-13T15:02:00Z",
+            action: "revoque",
+            nature: "magasin",
+            cible: "MAARIF",
+            libelle: "Maârif",
+            par: "Amine El Fassi",
+          },
+        ]),
+    });
+
+    await screen.findByRole("region", { name: "Historique des droits" });
+    // Ferme par defaut : un repli ferme qui charge quand meme fait payer a
+    // chaque fiche un aller-retour que presque personne ne demande.
+    expect(appels.some((appel) => appel.chemin === "/api/comptes/2/journal/")).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Afficher l'historique" }));
+
+    const premiere = await screen.findByText(/Saisir en caisse/, { selector: "li" });
+    expect(premiere.textContent).toBe(
+      "14/09/2026 à 09:14 — Amine El Fassi a accordé « Saisir en caisse »",
+    );
+    expect(
+      screen.getByText(/Maârif/, { selector: "li" }).textContent,
+    ).toBe("13/09/2026 à 16:02 — Amine El Fassi a retiré l'accès au magasin Maârif");
+  });
+});
