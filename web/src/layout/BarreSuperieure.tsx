@@ -14,6 +14,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 
+import { Recherche } from "./Recherche";
+import { SelecteurMagasin } from "./SelecteurMagasin";
+
 /**
  * La barre superieure, 56px, fixe (03-UI-SPEC.md 5.1 et 5.2).
  *
@@ -41,8 +44,9 @@ export function BarreSuperieure() {
         </span>
       </div>
 
-      {/* Le selecteur de portee et l'emplacement de recherche arrivent a la
-          tache 2 de ce plan, exactement ici. */}
+      <SelecteurMagasin />
+
+      <Recherche />
 
       <div className="ml-auto">
         <DropdownMenu>

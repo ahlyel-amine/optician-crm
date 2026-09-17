@@ -7,6 +7,8 @@ import { Sidebar, SidebarContent, SidebarProvider } from "@/components/ui/sideba
 
 import { BarreSuperieure } from "./BarreSuperieure";
 import { NavLaterale } from "./NavLaterale";
+import { InviteChoixMagasin } from "./SelecteurMagasin";
+import { entreePourChemin } from "./nav";
 
 /**
  * L'app shell — l'artefact a plus fort effet de levier de la phase.
@@ -80,9 +82,21 @@ function useRailAutomatique(): boolean {
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const { utilisateur } = useAuth();
+  const { utilisateur, magasinSelectionne } = useAuth();
   const emplacement = useLocation();
   const railAutomatique = useRailAutomatique();
+
+  /**
+   * La declaration de portee de route, appliquee (03-UI-SPEC.md 5.4).
+   *
+   * Quand la portee active est « Tous les magasins » et que la route en exige
+   * un, la zone de contenu rend l'invite de choix — **jamais** le contenu du
+   * premier magasin. Un solde de caisse affiche pour un magasin que personne
+   * n'a designe est un nombre faux sans erreur, et c'est la categorie de panne
+   * la plus couteuse de ce produit.
+   */
+  const entree = entreePourChemin(emplacement.pathname);
+  const porteeManquante = entree?.portee === "magasin" && magasinSelectionne === null;
 
   const [depliee, setDepliee] = useState(() => lireEtatDeLaBarre(utilisateur?.id));
   const [annonce, setAnnonce] = useState("");
@@ -171,7 +185,11 @@ export function AppShell({ children }: { children: ReactNode }) {
         */}
         <div className="flex min-w-0 flex-1 flex-col">
           <main id="contenu" className="flex-1 p-6">
-            {children}
+            {porteeManquante ? (
+              <InviteChoixMagasin explication={entree?.explicationPortee} />
+            ) : (
+              children
+            )}
           </main>
         </div>
       </div>
