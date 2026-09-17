@@ -100,6 +100,16 @@ Plans:
 > effectuées : 7 du point de contrôle 03-12, 1 du quick 260917-04r, 8 du 03-13 et 8 du 03-14. Elles se
 > font en une seule passe à la vérification de phase. Détail dans `STATE.md` → Blockers/Concerns.
 
+### Phase 03.1: Assignation des droits par magasin (INSERTED)
+
+**Goal:** [Urgent work - to be planned]
+**Requirements**: TBD
+**Depends on:** Phase 3
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 03.1 to break down)
+
 ### Phase 4: Clients & Ordonnances
 **Goal**: A client's record and their prescription history are captured in structured form, versioned and never overwritten, ready to drive lens orders and reminders
 **Depends on**: Phase 3

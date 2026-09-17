@@ -85,6 +85,10 @@ Progress: [██████████] 100% (14/14 plans de la phase 3 écri
 
 ## Accumulated Context
 
+### Roadmap Evolution
+
+- Phase 03.1 inserted after Phase 3: Assignation des droits par magasin (URGENT) — raised by the owner on 2026-09-17 while walking the `Comptes et droits` screen in a browser
+
 ### Decisions
 
 Decisions are logged in PROJECT.md Key Decisions table.
