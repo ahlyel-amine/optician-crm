@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: "Completed 03.1-02-PLAN.md — `accorder_magasin(cible, magasin_code, *, par, reappliquer=True)`, le champ de CORPS `reappliquer` (facultatif, defaut `True`, avec help_text), la branche explicite de la vue, et le schema + client TS regeneres dans le meme commit. Backend 187 passed / 30 deselected (base 184, +3 : deux tests neufs dont un parametre x2), web 128 passed inchange, build 0, `spectacular --fail-on-warn` 0 et diff vide. Deviation : `api:types` porte `--default-non-nullable=false`, sans quoi `reappliquer` sortait obligatoire dans types.gen.ts et le build cassait. `PARAMETRES_RESERVES` volontairement non touche (champ de corps). Reste de la vague 2 : 03.1-03 (le dialogue qui appelle cette route), puis le point de controle humain 03.1-04."
-last_updated: "2026-09-17T19:09:06.676Z"
+stopped_at: "Completed 03.1-03-PLAN.md — `DialogueAjoutMagasin` : cocher un magasin n'ecrit plus rien, il ouvre une confirmation qui propose `Reappliquer les droits existants` PRESELECTIONNE et chiffre les deux moities (ce qui s'etend, ce qui ne s'etendra jamais, la seconde phrase omise a zero). `reappliquer` part explicitement dans le corps dans les deux sens ; la note de section disparait quand le magasin demarre vierge (T-03.1-13). Web 133 passed (base 128, +5 : le test 3 du plan a ete livre en jumeau, un `it` par valeur — l'attendu du VALIDATION etait 134, ecart -1 justifie dans le SUMMARY), backend 187/30 inchange, build 0, audit:format muet. Le test `etend les lignes uniformes…` a ete reecrit SUR PLACE : `git show --numstat` rend `185 0`, zero suppression. Deviations : une troisieme variante de copie pour `uniformes === 0` (le cas frequent, un compte neuf n'ayant aucun droit), et le bloc de tete de `dialogues.tsx` qui comptait encore trois confirmations. Reste de la phase : le point de controle humain 03.1-04, dont l'etape 5 porte sur ce dialogue."
+last_updated: "2026-09-17T19:22:35.889Z"
 last_activity: 2026-09-17
 progress:
   total_phases: 13
   completed_phases: 2
   total_plans: 25
-  completed_plans: 23
-  percent: 92
+  completed_plans: 24
+  percent: 96
 ---
 
 # Project State
@@ -76,6 +76,7 @@ Progress: [██████████] 100% (14/14 plans de la phase 3 écri
 | Phase 03 P14 | ~100m | 4 tasks | 25 files |
 | Phase 03.1 P01 | 11m | 3 tasks | 7 files |
 | Phase 03.1 P02 | 6min | 3 tasks | 8 files |
+| Phase 03.1 P03 | 13min | 3 tasks | 6 files |
 
 ## Quick Tasks Completed
 
@@ -193,6 +194,9 @@ Recent decisions affecting current work:
 - [Phase 03.1]: `POST /api/comptes/{id}/droits/uniformiser/` et `services.uniformiser` sont CONSERVEES et desormais SANS AUCUN APPELANT WEB — supprimer couterait une regeneration de schema et de client pour retirer du vert. A reexaminer a la phase 11 : si le mobile ne l'appelle pas non plus, elle se supprime alors.
 - [Phase 03.1]: 03.1-02 : le choix « reappliquer ou demarrer vierge » voyage en PARAMETRE de `accorder_magasin` (defaut `True`), pas en second appel de l'ecran — un seul appel atomique, donc aucune fenetre ou des droits refuses existent en base. La garde T-03-62 reste en amont du choix : une ligne personnalisee ne s'etend sous aucune des deux valeurs, prouve par un test parametre.
 - [Phase 03.1]: 03.1-02 : `api:types` porte desormais `--default-non-nullable=false`. openapi-typescript lisait un `default:` comme « toujours present » et rendait obligatoire dans le type le champ meme que le defaut existe pour permettre d'omettre ; le `build` echouait, y compris sur l'appel de retrait. Raison ecrite dans `docs/ci-schema.md`.
+- [Phase 03.1]: DialogueAjoutMagasin offre le choix par une radio presélectionnée, jamais par un troisième bouton de pied
+- [Phase 03.1]: reappliquer part explicitement dans le corps même à true : un choix invisible sur le fil est indébogable
+- [Phase 03.1]: La note de section disparaît quand le magasin démarre vierge, et rien ne la remplace (T-03.1-13)
 
 ### Pending Todos
 
@@ -208,8 +212,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-17T19:09:06.673Z
-Stopped at: Completed 03.1-02-PLAN.md — `accorder_magasin(cible, magasin_code, *, par, reappliquer=True)`, le champ de CORPS `reappliquer` (facultatif, defaut `True`, avec help_text), la branche explicite de la vue, et le schema + client TS regeneres dans le meme commit. Backend 187 passed / 30 deselected (base 184, +3 : deux tests neufs dont un parametre x2), web 128 passed inchange, build 0, `spectacular --fail-on-warn` 0 et diff vide. Deviation : `api:types` porte `--default-non-nullable=false`, sans quoi `reappliquer` sortait obligatoire dans types.gen.ts et le build cassait. `PARAMETRES_RESERVES` volontairement non touche (champ de corps). Reste de la vague 2 : 03.1-03 (le dialogue qui appelle cette route), puis le point de controle humain 03.1-04.
+Last session: 2026-09-17T19:22:35.886Z
+Stopped at: Completed 03.1-03-PLAN.md
 Resume file: None
 
 Serveurs de developpement laisses TOURNANTS : Vite sur 5173 (navigation filtree, l'etat livre) et sur 5174 (`VITE_NAV_COMPLET=1`, la densite a huit entrees), Django sur 127.0.0.1:8010 — le proprietaire peut reprendre la traversee, celle du shell (03-13) comme celle de l'ecran des droits (03-14).
