@@ -199,16 +199,33 @@
  * selectionnee d'une palette. Pas les liens de tableau, pas les icones en
  * general, pas « les elements interactifs » comme categorie.
  *
- * ECART CONNU, a trancher et non a oublier : le preset zinc installe au plan
- * 03-03 donne un --primary quasi noir, donc le bouton primaire n'est PAS
- * #2563EB aujourd'hui. L'anneau de focus, lui, est pose ici a la valeur de la
- * specification. Aligner --primary sur --accent-produit rendrait le produit
- * conforme d'un seul coup, mais repeindrait des ecrans deja valides : c'est une
- * decision de revue, pas un effet de bord de ce plan.
+ * ECART TRANCHE au point de controle du plan 03-13, le 2026-09-17. Le preset
+ * zinc installe au plan 03-03 laissait --primary quasi noir, donc le bouton
+ * primaire n'etait PAS celui de la specification, alors que l'anneau de focus
+ * l'etait : le produit contredisait son propre document de reference. On aligne
+ * --primary sur l'accent, ici et non dans le bloc du preset, pour que le bloc
+ * vendu reste reinstallable tel quel.
+ *
+ * Consequence ASSUMEE, et non une regression : le bouton « Se connecter » de
+ * /connexion, deja revu, passe du presque-noir au bleu. C'est le choix du
+ * proprietaire — le produit doit ressembler a sa specification.
+ *
+ * Contraste mesure de #FFFFFF sur #2563EB : 5,17:1 (luminance relative
+ * 0,1532), soit au-dessus du plancher AA de 4,5:1 pour du texte normal — la
+ * table de la section 4 annonce 4,5:1, valeur prudente. AAA texte normal
+ * (7:1) n'est pas atteint, ce qui n'est pas exige. Les boutons restent en
+ * graisse 600.
  * ------------------------------------------------------------------------- */
 :root {
   --accent-produit: #2563eb;
   --anneau-focus: var(--accent-produit);
+
+  /* Pose APRES le bloc du preset, donc c'est cette valeur qui gagne la
+   * cascade. La phase 9 continue de personnaliser en posant --primary sur
+   * :root a l'execution (style en ligne sur <html>), qui l'emporte sur toute
+   * regle de feuille de style : l'accroche de marque est intacte. */
+  --primary: var(--accent-produit);
+  --primary-foreground: #ffffff;
 }
 
 @layer base {

@@ -28,7 +28,25 @@ const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
 const SIDEBAR_WIDTH = "16rem"
 const SIDEBAR_WIDTH_MOBILE = "18rem"
 const SIDEBAR_WIDTH_ICON = "3rem"
-const SIDEBAR_KEYBOARD_SHORTCUT = "b"
+
+// FICHIER VENDU, MODIFIE — point de controle du plan 03-13, 2026-09-17.
+//
+// Le bloc officiel declare ici une constante de raccourci clavier valant « b »
+// et installe un ecouteur global qui replie la navigation sur Ctrl/Cmd+B. `03-UI-SPEC.md` 5.7
+// interdit tout raccourci accorde ou mnemonique en v1, Ctrl+K pour la recherche
+// etant l'unique exception : le temps de support est le cout dominant par
+// client, et un schema de raccourcis indecouvrable est un cout de formation
+// sans economie en face. Ctrl+B est par ailleurs le gras dans tout autre
+// logiciel utilise au comptoir, donc il replie la navigation par surprise.
+//
+// La constante ET son `useEffect` sont donc supprimes. `toggleSidebar` reste :
+// c'est ce que `SidebarTrigger` appelle, et le bouton, lui, est decouvrable.
+//
+// Une reinstallation du bloc (`shadcn add sidebar`) ramenerait le raccourci.
+// Ce qui le rattrape est le test nomme « aucun raccourci accorde ne replie la
+// barre laterale » de web/tests/shell.test.tsx, qui verifie aussi que le nom
+// de la constante d'origine n'est nulle part dans ce fichier — c'est pourquoi
+// ce commentaire ne l'ecrit pas.
 
 type SidebarContextProps = {
   state: "expanded" | "collapsed"
@@ -90,22 +108,6 @@ function SidebarProvider({
   const toggleSidebar = React.useCallback(() => {
     return isMobile ? setOpenMobile((open) => !open) : setOpen((open) => !open)
   }, [isMobile, setOpen, setOpenMobile])
-
-  // Adds a keyboard shortcut to toggle the sidebar.
-  React.useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (
-        event.key === SIDEBAR_KEYBOARD_SHORTCUT &&
-        (event.metaKey || event.ctrlKey)
-      ) {
-        event.preventDefault()
-        toggleSidebar()
-      }
-    }
-
-    window.addEventListener("keydown", handleKeyDown)
-    return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [toggleSidebar])
 
   // We add a state so that we can do data-state="expanded" or "collapsed".
   // This makes it easier to style the sidebar with Tailwind classes.
