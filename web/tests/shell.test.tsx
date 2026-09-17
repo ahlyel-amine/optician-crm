@@ -6,6 +6,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "@/App";
 import { reinitialiserLeClient } from "@/api/client";
 import { NAV, PLAFOND_NAV, entreesVisibles, navCompletActif } from "@/layout/nav";
+import {
+  MAX_PAR_GROUPE,
+  enregistrerFournisseurDeRecherche,
+  grouperResultats,
+  resultatExact,
+} from "@/layout/Recherche";
 
 /* ---------------------------------------------------------------------------
  * L'app shell — l'artefact a plus fort effet de levier de la phase 3.
@@ -331,5 +337,221 @@ describe("la mise en page et le clavier", () => {
     await waitFor(() => {
       expect(screen.getByTestId("annonce-de-route").textContent).toBe("Paramètres");
     });
+  });
+});
+
+/* =========================================================================
+ * Le selecteur de magasin — un filtre de portee, jamais un contexte de
+ * connexion (03-UI-SPEC.md 5.4)
+ * ======================================================================= */
+
+function declencheurDePortee(): HTMLElement {
+  return screen.getByRole("combobox");
+}
+
+async function ouvrirLeSelecteur(): Promise<void> {
+  fireEvent.click(declencheurDePortee());
+  await screen.findByRole("option", { name: "Anfa" });
+}
+
+describe("le selecteur de magasin", () => {
+  it("test_perm04_les_options_viennent_des_magasins_accordes_et_de_rien_dautre", async () => {
+    // Le serveur a deja restreint `acces.magasins` (plan 03-08). L'interface ne
+    // doit JAMAIS offrir une portee que le serveur refusera : une option
+    // Californie ici serait une divulgation (T-03-88) doublee d'une impasse.
+    rendreShell(amorcageDe({ proprietaire: true, magasins: [ANFA, MAARIF] }));
+    await screen.findByRole("navigation", { name: "Navigation principale" });
+    await ouvrirLeSelecteur();
+
+    const options = screen.getAllByRole("option").map((option) => option.textContent);
+    expect(options).toEqual(["Tous les magasins", "Anfa", "Maârif"]);
+    expect(document.body.textContent).not.toContain("Californie");
+  });
+
+  it("un utilisateur a UN SEUL magasin ne voit aucun controle, seulement un libelle", async () => {
+    rendreShell(amorcageDe({ magasins: [ANFA] }));
+    await screen.findByRole("navigation", { name: "Navigation principale" });
+
+    const portee = screen.getByTestId("portee-magasin");
+    expect(portee.textContent).toContain("Anfa");
+    // Il n'y a pas de decision, donc il n'y a pas de commande. Ni liste
+    // deroulante desactivee, ni menu a une option : cela couvre tout le palier
+    // Essentiel et la plupart des gerants, qui ne rencontrent jamais ce
+    // controle.
+    expect(portee.querySelector("button")).toBeNull();
+    expect(portee.querySelector("select")).toBeNull();
+    expect(portee.querySelector('[role="combobox"]')).toBeNull();
+    expect(screen.queryByRole("combobox")).toBeNull();
+    expect(screen.queryByText("Tous les magasins")).toBeNull();
+  });
+
+  it("« Tous les magasins » n'apparait qu'a partir de deux magasins detenus", async () => {
+    rendreShell(amorcageDe({ proprietaire: true, magasins: [ANFA, MAARIF] }));
+    await screen.findByRole("navigation", { name: "Navigation principale" });
+    await ouvrirLeSelecteur();
+
+    expect(screen.getByRole("option", { name: "Tous les magasins" })).toBeTruthy();
+  });
+
+  it("changer de portee invalide les requetes du magasin, l'annonce, et NE CHANGE PAS de route", async () => {
+    const { requetes } = rendreShell(amorcageDe({ proprietaire: true }), "/parametres/comptes");
+    await screen.findByRole("navigation", { name: "Navigation principale" });
+
+    const clePortante = ["/api/caisse/journal/", { magasin: "ANFA" }];
+    const cleNeutre = ["/api/comptes/"];
+    requetes.setQueryData(clePortante, { solde: "0,00" });
+    requetes.setQueryData(cleNeutre, []);
+
+    const routeAvant = screen.getByTestId("destination").textContent;
+
+    await ouvrirLeSelecteur();
+    fireEvent.click(screen.getByRole("option", { name: "Anfa" }));
+
+    await waitFor(() => {
+      expect(requetes.getQueryState(clePortante)?.isInvalidated).toBe(true);
+    });
+    // Une requete sans magasin dans sa cle n'a aucune raison d'etre rejouee :
+    // tout invalider ferait clignoter l'ecran entier a chaque changement de
+    // portee.
+    expect(requetes.getQueryState(cleNeutre)?.isInvalidated).toBe(false);
+
+    // La portee est un FILTRE. Elle ne navigue pas, elle ne reauthentifie pas.
+    expect(screen.getByTestId("destination").textContent).toBe(routeAvant);
+    await waitFor(() => {
+      expect(screen.getByTestId("annonce-magasin").textContent).toBe("Magasin : Anfa");
+    });
+  });
+
+  it("l'URL l'emporte sur la preference memorisee au chargement", async () => {
+    // Un lien partage doit ouvrir le magasin qu'il nomme, pas celui que le
+    // navigateur du destinataire avait retenu. C'est ce qui rend un lien
+    // reellement partageable et un rechargement stable.
+    localStorage.setItem("optique.magasin.7", "ANFA");
+    rendreShell(amorcageDe({ proprietaire: true }), "/caisse?magasin=MAARIF");
+    await screen.findByRole("navigation", { name: "Navigation principale" });
+
+    await waitFor(() => {
+      expect(declencheurDePortee().textContent).toContain("Maârif");
+    });
+  });
+});
+
+/* =========================================================================
+ * La portee de route — demander, jamais deviner (03-UI-SPEC.md 5.4)
+ * ======================================================================= */
+
+describe("la portee de route", () => {
+  it("une route a portee magasin DEMANDE lequel au lieu de deviner", async () => {
+    // Choisir silencieusement le premier magasin et afficher son solde de
+    // caisse est le « nombre faux sans erreur » que la couche ORM refuse deja
+    // (T-03-89). L'interface le refuse aussi.
+    rendreShell(amorcageDe({ proprietaire: true }), "/caisse");
+    await screen.findByRole("navigation", { name: "Navigation principale" });
+
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
+      "Choisissez un magasin",
+    );
+    expect(screen.queryByTestId("destination")).toBeNull();
+    expect(screen.getByRole("button", { name: "Anfa" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Maârif" })).toBeTruthy();
+  });
+
+  it("choisir dans l'invite rend enfin le contenu de la route", async () => {
+    rendreShell(amorcageDe({ proprietaire: true }), "/caisse");
+    await screen.findByRole("navigation", { name: "Navigation principale" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Anfa" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Caisse");
+    });
+    expect(screen.getByTestId("destination").textContent).toBe("/caisse");
+  });
+
+  it("une route a portee multi ne demande rien", async () => {
+    rendreShell(amorcageDe({ proprietaire: true }), "/parametres");
+    await screen.findByRole("navigation", { name: "Navigation principale" });
+
+    expect(screen.queryByText("Choisissez un magasin")).toBeNull();
+    expect(screen.getByTestId("destination").textContent).toBe("/parametres");
+  });
+});
+
+/* =========================================================================
+ * L'emplacement de recherche (03-UI-SPEC.md 5.5)
+ * ======================================================================= */
+
+describe("l'emplacement de recherche", () => {
+  it("conserve ses 480px sans fournisseur enregistre, et ne rend aucun champ", async () => {
+    rendreShell();
+    await screen.findByRole("navigation", { name: "Navigation principale" });
+
+    // La phase 3 n'a rien a chercher. L'emplacement existe quand meme, pour que
+    // la barre superieure ne se reflue pas quand la phase 4 enregistre son
+    // premier fournisseur.
+    const emplacement = screen.getByTestId("emplacement-recherche");
+    expect(emplacement.className).toContain("480");
+    expect(emplacement.querySelector("input")).toBeNull();
+    expect(emplacement.querySelector("button")).toBeNull();
+  });
+
+  it("regroupe par type et n'en garde que cinq par groupe", () => {
+    const beaucoup = Array.from({ length: 8 }, (_, rang) => ({
+      id: `c${rang}`,
+      groupe: "Clients",
+      libelle: `Client ${rang}`,
+      route: `/clients/${rang}`,
+    }));
+    const groupes = grouperResultats([
+      ...beaucoup,
+      { id: "a1", groupe: "Articles", libelle: "Monture", route: "/stock/1" },
+    ]);
+
+    expect(groupes.map((groupe) => groupe.nom)).toEqual(["Clients", "Articles"]);
+    expect(groupes[0].resultats).toHaveLength(MAX_PAR_GROUPE);
+    expect(MAX_PAR_GROUPE).toBe(5);
+  });
+
+  it("un resultat marque exact court-circuite la liste", () => {
+    const resultats = [
+      { id: "a1", groupe: "Articles", libelle: "Autre", route: "/stock/1" },
+      {
+        id: "a2",
+        groupe: "Articles",
+        libelle: "REF-4471",
+        route: "/stock/2",
+        correspondance_exacte: true,
+      },
+    ];
+    // Une douchette clavier tape une reference puis envoie Entree. Cela doit
+    // atterrir sur l'article, sans liste intermediaire (STOCK-07, phase 5).
+    expect(resultatExact(resultats)?.route).toBe("/stock/2");
+    expect(resultatExact(resultats.slice(0, 1))).toBeUndefined();
+  });
+
+  it("la requete part BRUTE : aucune normalisation cliente", async () => {
+    const recues: string[] = [];
+    const retirer = enregistrerFournisseurDeRecherche({
+      nom: "Clients",
+      chercher: async (requete) => {
+        recues.push(requete);
+        return [];
+      },
+    });
+    try {
+      rendreShell();
+      await screen.findByRole("navigation", { name: "Navigation principale" });
+
+      fireEvent.click(screen.getByRole("button", { name: "Recherche" }));
+      const champ = await screen.findByPlaceholderText("Recherche");
+      // Arabe, accents, casse : la normalisation est cote serveur (CLIENT-10).
+      // Un `toLowerCase` ou un retrait d'accent ici altererait une saisie arabe
+      // ou une reference de douchette (T-03-92).
+      fireEvent.change(champ, { target: { value: "Bénali محمد" } });
+
+      await waitFor(() => expect(recues).toContain("Bénali محمد"), { timeout: 2000 });
+    } finally {
+      retirer();
+    }
   });
 });
