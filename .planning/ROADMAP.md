@@ -102,13 +102,26 @@ Plans:
 
 ### Phase 03.1: Assignation des droits par magasin (INSERTED)
 
-**Goal:** [Urgent work - to be planned]
-**Requirements**: TBD
-**Depends on:** Phase 3
-**Plans:** 0 plans
+**Goal**: Le propriétaire bascule de magasin en tête de la section des droits et règle les droits de ce magasin — une seule façon de faire, pas deux — et l'ajout d'un magasin à un compte lui **demande** s'il faut réappliquer les droits existants au lieu de lui appliquer une règle qu'on ne lui a jamais dite
+**Depends on**: Phase 3
+**Requirements**: PERM-03, PERM-04
+**Success Criteria** (what must be TRUE):
+  1. Un sélecteur en tête de la section `Droits` remplace entièrement l'ouverture ligne par ligne : le bouton `Par magasin`, sa sous-liste, son état `déplié` et le bouton `Uniformiser` ont disparu, et rien ne les remplace par ligne
+  2. Le sélecteur ouvre sur `Tous les magasins de ce compte` — CLAUDE.md #13 n'est pas amendé, et la raison est écrite dans `03-UI-SPEC.md` 7.5, datée
+  3. En mode « un magasin », une ligne est binaire et n'annonce jamais `aria-checked="mixed"` ; la règle d'état de 7.5 reste écrite une seule fois dans `services.etat_de`
+  4. Cocher un magasin ouvre une confirmation qui propose la règle d'aujourd'hui **par défaut** et chiffre ce qui sera réappliqué **et** ce qui ne le sera pas ; rien ne part sur le fil avant la réponse
+  5. Une ligne personnalisée ne s'étend à un magasin ajouté sous **aucun** des deux choix — T-03-62 reste fermée, tenue par un test serveur paramétré
+  6. La forme de stockage `(gérant, magasin, permission)` ne bouge pas : aucune migration
+  7. Une affaire mono-magasin ne rencontre ni sélecteur ni dialogue — elle n'a rien gagné en complexité
+**Plans**: 4 plans in 3 waves
+**UI hint**: yes — amende `03-UI-SPEC.md` §5.3/§7.3/§7.4/§7.5/§7.9/§9.4, aucun second contrat
+**Research needed**: non — délibérément sauté, le CONTEXT porte l'analyse technique, les fichiers touchés, le contrat de réponse figé et la menace
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 03.1 to break down)
+- [ ] 03.1-01-PLAN.md — Le sélecteur de magasin remplace l'ouverture ligne par ligne, et la question `Tous` contre magasin nommé est tranchée par écrit (PERM-03, PERM-04)
+- [ ] 03.1-02-PLAN.md — `accorder_magasin(..., reappliquer=True)` : le choix voyage en paramètre du service, schéma et client régénérés (PERM-03, PERM-04)
+- [ ] 03.1-03-PLAN.md — `DialogueAjoutMagasin` : demander plutôt que subir, en chiffrant les deux moitiés (PERM-03, PERM-04)
+- [ ] 03.1-04-PLAN.md — Les quatre portes mécaniques, les cinq gardes, et la passe humaine en six étapes
 
 ### Phase 4: Clients & Ordonnances
 **Goal**: A client's record and their prescription history are captured in structured form, versioned and never overwritten, ready to drive lens orders and reminders
