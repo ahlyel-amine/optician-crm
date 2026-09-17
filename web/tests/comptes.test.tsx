@@ -1047,6 +1047,11 @@ describe("le sélecteur de magasin des droits (PERM-03, PERM-04)", () => {
     // d'une action sans rapport (menace T-03-62). La regle est appliquee par le
     // serveur ; l'interface la RACONTE, et c'est la note qui evite qu'elle
     // passe inapercue.
+    //
+    // Depuis la phase 03.1 une confirmation s'interpose : on coche, on
+    // confirme avec l'option PAR DEFAUT — qui est exactement cette regle-la —
+    // et la note est la meme, mot pour mot. Ce que ce test prouve n'a pas
+    // change ; seul le geste a change.
     rendreLaFiche({
       catalogue: catalogueOffrable([ANFA, MAARIF, CALIFORNIE]),
       droits: [
@@ -1072,6 +1077,7 @@ describe("le sélecteur de magasin des droits (PERM-03, PERM-04)", () => {
     });
 
     fireEvent.click(await screen.findByRole("checkbox", { name: /Californie/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Ajouter le magasin" }));
 
     expect(
       await screen.findByText(
@@ -1196,6 +1202,185 @@ describe("l'annulation, les echecs et les dialogues", () => {
     expect(screen.queryByRole("button", { name: "Annuler" })).toBeNull();
     // Rien n'est parti avant la confirmation.
     expect(appels.some((appel) => appel.chemin === "/api/comptes/2/magasins/")).toBe(false);
+  });
+
+  /* -------------------------------------------------------------------------
+   * `DialogueAjoutMagasin` — decision 2 du CONTEXT de la phase 03.1.
+   *
+   * L'ecran appliquait la regle d'extension de 7.5 en silence et la racontait
+   * APRES COUP par une note. Le proprietaire veut etre interroge. Ces cinq
+   * tests tiennent les trois choses qui font la difference entre demander et
+   * faire semblant : le fil reste muet avant la reponse, l'option par defaut
+   * est la regle d'hier, et le dialogue chiffre les DEUX moities.
+   * ----------------------------------------------------------------------- */
+
+  /** Le montage commun des tests du dialogue : 3 lignes uniformes, 2 personnalisees. */
+  const DROITS_TROIS_UNIFORMES_DEUX_PERSONNALISEES = [
+    { code: "stock.voir", etat: "actif", magasins: ["ANFA", "MAARIF"] },
+    { code: "stock.ajuster", etat: "actif", magasins: ["ANFA", "MAARIF"] },
+    { code: "caisse.voir", etat: "actif", magasins: ["ANFA", "MAARIF"] },
+    { code: "caisse.saisir", etat: "mixte", magasins: ["ANFA"] },
+    { code: "compte.gerer", etat: "mixte", magasins: ["MAARIF"] },
+  ];
+
+  it("demande avant d'ajouter un magasin, et n'envoie rien tant qu'on n'a pas repondu (PERM-04)", async () => {
+    rendreLaFiche({
+      catalogue: catalogueOffrable([ANFA, MAARIF, CALIFORNIE]),
+      droits: DROITS_TROIS_UNIFORMES_DEUX_PERSONNALISEES,
+      surMagasins: () => json(resultat({ code: "CALIFORNIE" })),
+    });
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: /Californie/ }));
+
+    expect(
+      screen.getByRole("heading", { name: /Ajouter le magasin Californie/ }),
+    ).toBeTruthy();
+
+    // **Vider la file avant d'affirmer l'absence.** `mutate()` rend la main
+    // AVANT d'appeler `fetch` : une assertion posee une ligne apres le clic
+    // est verte meme au-dessus du code fautif, qui envoie la requete sans
+    // rien demander. Un tour de boucle d'evenements suffit a la laisser
+    // partir si elle doit partir. Meme piege, meme remede qu'au dialogue de
+    // reinitialisation plus bas.
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(appels.some((appel) => appel.chemin === "/api/comptes/2/magasins/")).toBe(
+      false,
+    );
+  });
+
+  it("propose la regle d'aujourd'hui par defaut, et chiffre ce qui ne sera PAS reapplique", async () => {
+    // Menace T-03-62, moitie interface. La garde effective est serveur ; ici
+    // se ferme l'ECART D'ATTENTE : sans la seconde phrase, « reappliquer les
+    // droits existants » se lit comme « tous les droits », et le proprietaire
+    // attendrait du produit une elevation que le serveur refuse. D'ou
+    // l'assertion au texte exact plutot que sur une sous-chaine vague — c'est
+    // une copie de dialogue qui distribue des permissions.
+    rendreLaFiche({
+      catalogue: catalogueOffrable([ANFA, MAARIF, CALIFORNIE]),
+      droits: DROITS_TROIS_UNIFORMES_DEUX_PERSONNALISEES,
+      surMagasins: () => json(resultat({ code: "CALIFORNIE" })),
+    });
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: /Californie/ }));
+
+    const reappliquer = screen.getByRole("radio", {
+      name: /Réappliquer les droits existants/,
+    }) as HTMLInputElement;
+    const vierge = screen.getByRole("radio", {
+      name: /Démarrer sans aucun droit/,
+    }) as HTMLInputElement;
+    expect(reappliquer.checked).toBe(true);
+    expect(vierge.checked).toBe(false);
+
+    expect(
+      screen.getByText(
+        "Les 3 droits accordés dans tous ses magasins le seront aussi à Californie.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Les 2 droits réglés magasin par magasin ne le seront pas : Californie démarre sans eux.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Karim verra Californie, mais n'y aura aucun droit. Vous les accorderez ensuite.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("envoie reappliquer=false quand le proprietaire demande un magasin vierge", async () => {
+    rendreLaFiche({
+      catalogue: catalogueOffrable([ANFA, MAARIF, CALIFORNIE]),
+      droits: DROITS_TROIS_UNIFORMES_DEUX_PERSONNALISEES,
+      // Sous `reappliquer=false` le serveur rend `lignes` et `magasins_etendus`
+      // VIDES. Ce n'est pas un echec, c'est le contrat du plan `03.1-02`.
+      surMagasins: () =>
+        json(
+          resultat({
+            code: "CALIFORNIE",
+            magasins_accordes: ["ANFA", "CALIFORNIE", "MAARIF"],
+          }),
+        ),
+    });
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: /Californie/ }));
+    fireEvent.click(screen.getByRole("radio", { name: /Démarrer sans aucun droit/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Ajouter le magasin" }));
+
+    await waitFor(() => {
+      expect(appels.some((appel) => appel.chemin === "/api/comptes/2/magasins/")).toBe(
+        true,
+      );
+    });
+    expect(
+      appels.find((appel) => appel.chemin === "/api/comptes/2/magasins/")?.corps,
+    ).toEqual({ magasin_code: "CALIFORNIE", accorde: true, reappliquer: false });
+
+    // T-03.1-13 : la note « Verifiez les N droits personnalises » designerait
+    // une PARTIE du travail alors que tout est a faire. Elle disparait, et
+    // rien ne la remplace — le dialogue vient de le dire, il y a deux secondes.
+    await waitFor(() => {
+      expect(screen.queryByText(/Californie a été ajouté/)).toBeNull();
+    });
+  });
+
+  it("envoie reappliquer=true EXPLICITEMENT quand l'option par defaut est confirmee", async () => {
+    // Le jumeau du precedent. S'appuyer sur le defaut serveur rendrait le
+    // choix du proprietaire invisible sur le fil et indebogable dans un
+    // journal d'acces — alors que le rendre explicite est precisement ce que
+    // cette phase existe pour faire.
+    rendreLaFiche({
+      catalogue: catalogueOffrable([ANFA, MAARIF, CALIFORNIE]),
+      droits: DROITS_TROIS_UNIFORMES_DEUX_PERSONNALISEES,
+      surMagasins: () =>
+        json(
+          resultat({
+            code: "CALIFORNIE",
+            magasins_accordes: ["ANFA", "CALIFORNIE", "MAARIF"],
+          }),
+        ),
+    });
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: /Californie/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Ajouter le magasin" }));
+
+    await waitFor(() => {
+      expect(appels.some((appel) => appel.chemin === "/api/comptes/2/magasins/")).toBe(
+        true,
+      );
+    });
+    expect(
+      appels.find((appel) => appel.chemin === "/api/comptes/2/magasins/")?.corps,
+    ).toEqual({ magasin_code: "CALIFORNIE", accorde: true, reappliquer: true });
+  });
+
+  it("se ferme par « Retour », qui laisse la case decochee et le compte intact (PERM-04)", async () => {
+    rendreLaFiche({
+      catalogue: catalogueOffrable([ANFA, MAARIF, CALIFORNIE]),
+      droits: DROITS_TROIS_UNIFORMES_DEUX_PERSONNALISEES,
+      surMagasins: () => json(resultat({ code: "CALIFORNIE" })),
+    });
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: /Californie/ }));
+
+    // `Annuler` ne veut JAMAIS dire « fermer ce dialogue » (7.10).
+    expect(screen.queryByRole("button", { name: "Annuler" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retour" }));
+
+    // Encore un tour de boucle avant d'affirmer l'absence — meme raison.
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(appels.some((appel) => appel.chemin === "/api/comptes/2/magasins/")).toBe(
+      false,
+    );
+    // La case est pilotee par `accordes`, qui ne bouge qu'a la reponse du
+    // serveur : aucune reponse, aucune coche.
+    expect(
+      screen.getByRole("checkbox", { name: /Californie/ }).getAttribute("aria-checked"),
+    ).toBe("false");
   });
 
   it("ne reinitialise aucun mot de passe avant confirmation, et le `Retour` laisse le compte intact (PERM-02)", async () => {
