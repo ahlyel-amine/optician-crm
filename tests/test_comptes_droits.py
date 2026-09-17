@@ -1368,3 +1368,120 @@ def test_perm03_un_proprietaire_ne_peut_pas_accorder_a_un_utilisateur_dun_autre_
     sien = _cible(proprietaire, [anfa])
     services.accorder(sien, Permission.CAISSE_VOIR, [anfa.code], par=proprietaire)
     assert DroitAccorde.objects.filter(utilisateur=sien).count() == 1
+
+
+# --------------------------------------------------------------------------------------
+# PERM-03 — la fiche porte l'état de chaque droit (plan 03-14)
+# --------------------------------------------------------------------------------------
+#
+# Le plan 03-09 a livré la surface d'ÉCRITURE et le catalogue offrable. Il manquait la
+# LECTURE de l'état : sans elle, l'écran de droits sait quelles cases dessiner mais pas
+# lesquelles sont cochées, et « sauvegarde immédiate par interrupteur » (`03-UI-SPEC.md`
+# 7.8) deviendrait « recharge la page », ce que 7.8 refuse nommément.
+
+
+def test_perm03_la_fiche_porte_letat_de_chaque_droit_deja_intersecte(affaire_reelle):
+    """PERM-03 / `03-UI-SPEC.md` 7.5 et 7.7 — l'état de chaque ligne, et rien de plus.
+
+    Trois garanties, et chacune échoue d'une façon différente si elle manque.
+
+    1. **L'état est celui de la résolution**, pas un comptage de lignes `DroitAccorde`.
+       La liste affiche déjà « 21 droits » pour un propriétaire dont la table d'octrois
+       est vide, parce que son accès est **matérialisé** au plan 03-05. Une fiche lue
+       depuis les lignes brutes dirait « aucun droit » sur la même personne, dans le
+       même écran, à deux clics d'écart.
+    2. **L'intersection**, au niveau du fil. Un gérant-gestionnaire qui ne détient pas
+       `article.voir_prix_achat` ne reçoit pas ce code — ni dans le catalogue (plan
+       03-09) ni ici. Un état servi pour un code absent du catalogue le réintroduirait
+       par la porte de service, et le grisage que 7.7 refuse serait alors fait par la
+       SPA faute de mieux.
+    3. **Les magasins aussi sont intersectés.** `magasins_accordes` est le dénominateur
+       de « Personnalisé : 2 magasins sur 3 » ; le servir entier à un gérant d'Anfa lui
+       énumère Maârif, ce qui est exactement ce que le test du catalogue interdit.
+
+    Et la liste, elle, ne porte PAS ces lignes : vingt et un `ligne_de` par ligne de
+    tableau est le coût que `resume_des_droits` existe pour éviter.
+    """
+    from plateforme.comptes.permissions_catalogue import Permission
+    from tests.factories import (
+        AccesMagasinFactory,
+        DroitAccordeFactory,
+        GerantFactory,
+        ProprietaireFactory,
+    )
+
+    anfa, maarif = affaire_reelle.magasins
+    proprietaire = ProprietaireFactory(client=affaire_reelle.client)
+    karim = GerantFactory(client=affaire_reelle.client)
+    for code_magasin in (anfa.code, maarif.code):
+        AccesMagasinFactory(utilisateur=karim, magasin_code=code_magasin)
+    # Uniforme sur les deux magasins…
+    for code_magasin in (anfa.code, maarif.code):
+        DroitAccordeFactory(
+            utilisateur=karim, magasin_code=code_magasin, code=Permission.STOCK_VOIR
+        )
+    # …et personnalisé sur un seul : le seul état que 7.5 appelle « mixte ».
+    DroitAccordeFactory(
+        utilisateur=karim, magasin_code=anfa.code, code=Permission.CAISSE_VOIR
+    )
+
+    api = _connecter(_client_api(), proprietaire)
+    reponse = api.get(_detail(karim))
+    assert reponse.status_code == 200, reponse.data
+
+    assert reponse.data["magasins_accordes"] == sorted([anfa.code, maarif.code])
+    par_code = {ligne["code"]: ligne for ligne in reponse.data["droits"]}
+    assert len(par_code) == 21, (
+        "Un propriétaire peut tout accorder, donc la fiche qu'il lit porte les 21 codes. "
+        f"Reçu : {len(par_code)}"
+    )
+    assert par_code[Permission.STOCK_VOIR.value]["etat"] == "actif"
+    assert par_code[Permission.STOCK_VOIR.value]["magasins"] == sorted(
+        [anfa.code, maarif.code]
+    )
+    assert par_code[Permission.CAISSE_VOIR.value]["etat"] == "mixte", (
+        "Un droit détenu dans un seul des deux magasins accordés est mixte, pas actif. "
+        "L'interrupteur parent le rend en tri-état, `aria-checked=\"mixed\"`."
+    )
+    assert par_code[Permission.CAISSE_VOIR.value]["magasins"] == [anfa.code]
+    assert par_code[Permission.VENTE_CREER.value]["etat"] == "inactif"
+
+    # -- 1. la fiche du propriétaire dit la même chose que sa ligne de liste ------------
+    sienne = api.get(_detail(proprietaire))
+    assert sienne.status_code == 200, sienne.data
+    assert {ligne["etat"] for ligne in sienne.data["droits"]} == {"actif"}, (
+        "La fiche du propriétaire le dit dépourvu de droits, alors que sa ligne de liste "
+        "en annonce 21. Les deux lisent la même personne à deux clics d'écart : l'état "
+        "vient de `acces_pour`, jamais d'un comptage de lignes d'octroi."
+    )
+    assert sienne.data["magasins_accordes"] == sorted([anfa.code, maarif.code])
+
+    # -- 2. et 3. l'intersection, sur les octets ---------------------------------------
+    gestionnaire = _gerant_gestionnaire(
+        affaire_reelle, [anfa.code], [Permission.STOCK_VOIR]
+    )
+    vue = _connecter(_client_api(), gestionnaire).get(_detail(karim))
+    assert vue.status_code == 200, vue.data
+
+    assert Permission.ARTICLE_VOIR_PRIX_ACHAT.value.encode() not in vue.content, (
+        "Le code `article.voir_prix_achat` part sur le fil vers un gérant qui ne le "
+        "détient pas. Absent veut dire absent du JSON, pas masqué par la SPA."
+    )
+    assert maarif.code.encode() not in vue.content, (
+        "Maârif est énuméré à un gérant d'Anfa par le dénominateur de « Personnalisé : "
+        "x magasins sur y »."
+    )
+    assert {ligne["code"] for ligne in vue.data["droits"]} == {
+        Permission.COMPTE_GERER.value,
+        Permission.STOCK_VOIR.value,
+    }
+    assert vue.data["magasins_accordes"] == [anfa.code]
+
+    # -- la liste ne paie pas ce calcul -------------------------------------------------
+    liste = api.get(COMPTES)
+    assert liste.status_code == 200, liste.data
+    assert all("droits" not in ligne for ligne in liste.data), (
+        "La liste porte l'état des 21 droits par ligne de tableau. `resume_des_droits` "
+        "existe précisément pour que le badge « Personnalisé par magasin » ne coûte pas "
+        "soixante-trois lectures par ligne (7.2)."
+    )
