@@ -33,7 +33,15 @@ export type ProprietesSectionMagasins = {
   magasinsOffrables: readonly Magasin[];
   /** Les codes de magasins deja accordes a ce compte. */
   accordes: readonly string[];
-  surAjout: (code: string) => void;
+  /**
+   * Cocher **demande**, et n'ecrit rien (decision 2 de la phase 03.1).
+   *
+   * Symetrique de `surRetrait`, qui demandait deja une confirmation. Le
+   * `Magasin` entier plutot que son code : le dialogue a besoin du nom, et
+   * aller le rechercher dans le catalogue au moment de l'afficher ferait deux
+   * sources pour un seul libelle.
+   */
+  surDemandeDajout: (magasin: Magasin) => void;
   surRetrait: (magasin: Magasin) => void;
   surDemandeDeDesactivation: () => void;
 };
@@ -41,7 +49,7 @@ export type ProprietesSectionMagasins = {
 export function SectionMagasins({
   magasinsOffrables,
   accordes,
-  surAjout,
+  surDemandeDajout,
   surRetrait,
   surDemandeDeDesactivation,
 }: ProprietesSectionMagasins) {
@@ -81,7 +89,14 @@ export function SectionMagasins({
                   onCheckedChange={() => {
                     if (!coche) {
                       setRefus(false);
-                      surAjout(magasin.code);
+                      /*
+                        La case reste **decochee** : elle est pilotee par
+                        `accordes`, qui ne bouge qu'a la reponse du serveur.
+                        Rien a faire pour cela, mais c'est ce qui rend le
+                        `Retour` du dialogue sans effet visible, donc c'est
+                        ecrit plutot que suppose.
+                      */
+                      surDemandeDajout(magasin);
                       return;
                     }
                     // Le dernier magasin : refus **en ligne**, pas un dialogue.

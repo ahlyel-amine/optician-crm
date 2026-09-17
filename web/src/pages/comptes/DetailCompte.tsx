@@ -19,6 +19,7 @@ import { SectionDroits } from "./SectionDroits";
 import { SectionMagasins } from "./SectionMagasins";
 import { MODE_PAR_DEFAUT } from "./SelecteurDeMagasinDesDroits";
 import {
+  DialogueAjoutMagasin,
   DialogueDesactivation,
   DialogueMotDePasse,
   DialogueReinitialisation,
@@ -80,8 +81,16 @@ type FicheCompte = {
   magasins_accordes: string[];
 };
 
+/**
+ * Les quatre confirmations de l'ecran, **une union et non quatre booleens**.
+ *
+ * Le motif a ete pose par la confirmation de reinitialisation : un booleen
+ * d'etat par dialogue rend representable l'etat « deux dialogues ouverts »,
+ * qui n'existe pas. L'union le rend impossible a ecrire.
+ */
 type Confirmation =
   | { quoi: "desactivation" }
+  | { quoi: "ajout-magasin"; magasin: Magasin }
   | { quoi: "retrait-magasin"; magasin: Magasin }
   | { quoi: "reinitialisation" };
 
@@ -299,25 +308,51 @@ export function DetailCompte() {
     );
   };
 
-  const ajouterUnMagasin = (magasinCode: string) => {
+  /**
+   * L'ajout d'un magasin, **derriere sa confirmation et porteur du choix**.
+   *
+   * `reappliquer` part TOUJOURS sur le fil, y compris quand il vaut `true` et
+   * qu'il coincide avec le defaut serveur. S'appuyer sur ce defaut rendrait le
+   * choix du proprietaire invisible sur le fil, donc indebogable dans un
+   * journal d'acces — alors que le rendre explicite est exactement ce que la
+   * decision 2 de la phase 03.1 existe pour faire.
+   *
+   * **Un seul appel, jamais deux.** Le choix voyage en parametre de
+   * `accorder_magasin`, qui est atomique : deux appels enchaines — accorder,
+   * puis retirer ce qui vient de s'etendre — ouvriraient une fenetre pendant
+   * laquelle des droits refuses existent en base, et un gerant qui agit dans
+   * cette fenetre agit avec eux.
+   */
+  const ajouterUnMagasin = (magasin: Magasin, reappliquer: boolean) => {
+    setConfirmation(null);
     setNotes({});
     basculeMagasin.mutate(
       {
         params: { path: { id: identifiant } },
-        body: { magasin_code: magasinCode, accorde: true },
+        body: { magasin_code: magasin.code, accorde: true, reappliquer },
       },
       {
         onSuccess: (resultat) => {
           const fusion = absorber(resultat);
+          if (!reappliquer) {
+            /*
+              **Aucune note quand le magasin demarre vierge**, et rien a la
+              place. « Verifiez les N droits personnalises » designerait une
+              PARTIE du travail alors que tout est a regler, ce qui est
+              trompeur ; et repeter que le magasin demarre sans droit serait
+              redire une phrase lue il y a deux secondes dans le dialogue.
+            */
+            setNoteDeSection(undefined);
+            return;
+          }
           // Les lignes uniformes se sont etendues, les personnalisees non.
           // La note existe pour que cette asymetrie — voulue, et qui evite une
           // elevation silencieuse — ne passe pas inapercue.
           const personnalisees = compterLesPersonnalisees(fusion);
-          const nom =
-            offrable.magasins.find((magasin) => magasin.code === magasinCode)?.nom ??
-            magasinCode;
           setNoteDeSection(
-            personnalisees === 0 ? undefined : noteDeMagasinAjoute(nom, personnalisees),
+            personnalisees === 0
+              ? undefined
+              : noteDeMagasinAjoute(magasin.nom, personnalisees),
           );
         },
       },
@@ -430,7 +465,9 @@ export function DetailCompte() {
           <SectionMagasins
             magasinsOffrables={offrable.magasins}
             accordes={accordes}
-            surAjout={ajouterUnMagasin}
+            surDemandeDajout={(magasin) =>
+              setConfirmation({ quoi: "ajout-magasin", magasin })
+            }
             surRetrait={(magasin) =>
               setConfirmation({ quoi: "retrait-magasin", magasin })
             }
@@ -459,6 +496,30 @@ export function DetailCompte() {
         nomComplet={compte.nom_complet}
         surRetour={() => setConfirmation(null)}
         surConfirmation={() => changerLeStatut(false)}
+      />
+
+      {/*
+        Les deux chiffres sont derives de `lignes`, **deja intersecte** aux
+        droits et magasins de l'appelant par le serveur (plan 03-09) : un
+        gerant-gestionnaire compte donc ce qu'il detient, et rien de plus.
+        Aucune source nouvelle, et surtout aucun point de terminaison de
+        simulation — l'apercu et l'effet seraient alors deux calculs libres de
+        diverger.
+      */}
+      <DialogueAjoutMagasin
+        ouvert={confirmation?.quoi === "ajout-magasin"}
+        nomDuMagasin={
+          confirmation?.quoi === "ajout-magasin" ? confirmation.magasin.nom : ""
+        }
+        prenom={prenom}
+        uniformes={Object.values(lignes).filter((ligne) => ligne.etat === "actif").length}
+        personnalisees={compterLesPersonnalisees(lignes)}
+        surRetour={() => setConfirmation(null)}
+        surConfirmation={(reappliquer) => {
+          if (confirmation?.quoi === "ajout-magasin") {
+            ajouterUnMagasin(confirmation.magasin, reappliquer);
+          }
+        }}
       />
 
       <DialogueRetraitMagasin
