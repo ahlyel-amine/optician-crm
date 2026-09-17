@@ -17,12 +17,12 @@ import { HistoriqueDroits } from "./HistoriqueDroits";
 import { toastDannulation } from "./LigneDroit";
 import { SectionDroits } from "./SectionDroits";
 import { SectionMagasins } from "./SectionMagasins";
+import { MODE_PAR_DEFAUT } from "./SelecteurDeMagasinDesDroits";
 import {
   DialogueDesactivation,
   DialogueMotDePasse,
   DialogueReinitialisation,
   DialogueRetraitMagasin,
-  DialogueUniformisation,
 } from "./dialogues";
 
 /**
@@ -83,7 +83,6 @@ type FicheCompte = {
 type Confirmation =
   | { quoi: "desactivation" }
   | { quoi: "retrait-magasin"; magasin: Magasin }
-  | { quoi: "uniformisation"; code: string; libelle: string }
   | { quoi: "reinitialisation" };
 
 export function DetailCompte() {
@@ -97,7 +96,6 @@ export function DetailCompte() {
   const catalogue = $api.useQuery("get", "/api/comptes/catalogue/");
 
   const bascule = $api.useMutation("post", "/api/comptes/{id}/droits/");
-  const uniformisation = $api.useMutation("post", "/api/comptes/{id}/droits/uniformiser/");
   const basculeMagasin = $api.useMutation("post", "/api/comptes/{id}/magasins/");
   const changementDeStatut = $api.useMutation("post", "/api/comptes/{id}/statut/");
   const reinitialisation = $api.useMutation("post", "/api/comptes/{id}/mot-de-passe/");
@@ -117,6 +115,14 @@ export function DetailCompte() {
   const [noteDeSection, setNoteDeSection] = useState<string | undefined>(undefined);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const [secret, setSecret] = useState<string | null>(null);
+  /**
+   * Le mode du selecteur de la section des droits. `null` === `Tous`.
+   *
+   * Il vit ICI, avec la fonction qui construit le corps de la requete : le mode
+   * affiche et la portee envoyee sur le fil doivent etre lus au meme endroit,
+   * sans quoi l'ecran peut montrer un magasin et en ecrire un autre.
+   */
+  const [magasinChoisi, setMagasinChoisi] = useState<string | null>(MODE_PAR_DEFAUT);
 
   const donnees = fiche.data as FicheCompte | undefined;
   useEffect(() => {
@@ -181,31 +187,66 @@ export function DetailCompte() {
     void fiche.refetch();
   };
 
+  /**
+   * **Le seul chemin d'ecriture d'un droit**, parametre par le mode du
+   * selecteur.
+   *
+   * Il y en avait deux — `basculerLeDroit` et `basculerUnMagasin` — qui ne
+   * differaient que par le corps envoye. En garder deux ferait vivre deux
+   * chemins pour un seul mecanisme, ce que la decision 1 de la phase 03.1
+   * supprime precisement.
+   */
   const basculerLeDroit = (code: string, accorde: boolean) => {
     const avant = lignes[code] ?? { code, etat: "inactif", magasins: [] };
     const etaitMixte = avant.etat === "mixte";
     setErreurs((precedent) => retirer(precedent, code));
     setNotes({});
     setNoteDeSection(undefined);
-    // Optimiste : l'interrupteur bouge tout de suite.
+
+    /*
+      **Les magasins sont nommes explicitement**, jamais omis. Omettre signifie
+      « tous les magasins accordes de la cible » (plan 03-09), ce qui est juste
+      pour un proprietaire et faux pour un gerant-gestionnaire : le serveur
+      refuserait l'octroi entier des que la cible detient un magasin que
+      l'appelant n'a pas. Envoyer la portee visible est le seul chemin qui
+      marche pour les deux — et cela vaut pour les deux modes du selecteur, le
+      mode nomme n'etant qu'une portee visible plus courte.
+    */
+    const magasinsVises = magasinChoisi === null ? [...accordes] : [magasinChoisi];
+
+    /*
+      L'optimisme suit le mode, lui aussi.
+
+      La version precedente ecrivait `magasins: accorde ? [...accordes] : []`,
+      ce qui n'a de sens qu'en mode `Tous` : en mode nomme, elle marquait
+      brievement la ligne comme detenue PARTOUT avant que `absorber` ne la
+      corrige. Le defaut se soignait tout seul en un aller-retour, mais il
+      montrait pendant ce temps l'exact contraire de ce que le clic allait
+      ecrire — et c'est ce que 7.8 achete en refusant le bouton Enregistrer.
+    */
+    const magasinsApres =
+      magasinChoisi === null
+        ? accorde
+          ? [...accordes]
+          : []
+        : accorde
+          ? [...new Set([...avant.magasins, magasinChoisi])]
+          : avant.magasins.filter((magasin) => magasin !== magasinChoisi);
+    const etatApres: LigneDeDroit["etat"] =
+      magasinsApres.length === 0
+        ? "inactif"
+        : magasinsApres.length >= accordes.length
+          ? "actif"
+          : "mixte";
     setLignes((precedent) => ({
       ...precedent,
-      [code]: {
-        code,
-        etat: accorde ? "actif" : "inactif",
-        magasins: accorde ? [...accordes] : [],
-      },
+      [code]: { code, etat: etatApres, magasins: magasinsApres },
     }));
+
     bascule.mutate(
       {
         params: { path: { id: identifiant } },
-        // **Les magasins sont nommes explicitement**, jamais omis. Omettre
-        // signifie « tous les magasins accordes de la cible » (plan 03-09), ce
-        // qui est juste pour un proprietaire et faux pour un
-        // gerant-gestionnaire : le serveur refuserait l'octroi entier des que
-        // la cible detient un magasin que l'appelant n'a pas. Envoyer la
-        // portee visible est le seul chemin qui marche pour les deux.
-        body: { code: code as never, accorde, magasins: [...accordes] },
+        body: { code: code as never, accorde, magasins: magasinsVises },
       },
       {
         onSuccess: (resultat) => {
@@ -218,13 +259,30 @@ export function DetailCompte() {
             ),
           ];
           const libelle = libelles.get(code) ?? code;
+          const nomDuMagasin =
+            magasinChoisi === null
+              ? null
+              : (offrable.magasins.find((magasin) => magasin.code === magasinChoisi)
+                  ?.nom ?? magasinChoisi);
           if (!accorde) {
-            toastDannulation(`Droit retiré : « ${libelle} ».`, () => void rejouer(etatAvant));
-          } else if (etaitMixte) {
+            /*
+              Le toast d'annulation de 7.8 couvre desormais les DEUX modes.
+              L'ancienne sous-liste n'en offrait aucun — une incoherence avec
+              7.8, qui se corrige ici parce que ce chemin devient le chemin
+              principal et non plus un recoin.
+            */
+            toastDannulation(
+              nomDuMagasin === null
+                ? `Droit retiré : « ${libelle} ».`
+                : `Droit retiré dans ${nomDuMagasin} : « ${libelle} ».`,
+              () => void rejouer(etatAvant),
+            );
+          } else if (magasinChoisi === null && etaitMixte) {
             // Cliquer un parent mixte allume TOUS les magasins, et le toast le
             // dit : sans cette phrase, l'action a l'air d'un simple « cocher »
             // alors qu'elle distribue le droit la ou il etait deliberement
-            // absent.
+            // absent. En mode nomme la phrase serait fausse — un seul magasin
+            // est touche — et la ligne n'y est de toute facon jamais mixte.
             toastDannulation(
               `Droit accordé dans tous les magasins : « ${libelle} ».`,
               () => void rejouer(etatAvant),
@@ -238,47 +296,6 @@ export function DetailCompte() {
           setErreurs((precedent) => ({ ...precedent, [code]: messageDechec(erreur) }));
         },
       },
-    );
-  };
-
-  /** La surcharge : un seul magasin d'une seule ligne. */
-  const basculerUnMagasin = (code: string, magasinCode: string, accorde: boolean) => {
-    setErreurs((precedent) => retirer(precedent, code));
-    bascule.mutate(
-      {
-        params: { path: { id: identifiant } },
-        body: { code: code as never, accorde, magasins: [magasinCode] },
-      },
-      {
-        onSuccess: absorber,
-        onError: (erreur) => {
-          setErreurs((precedent) => ({ ...precedent, [code]: messageDechec(erreur) }));
-        },
-      },
-    );
-  };
-
-  const demanderUniformisation = (code: string) => {
-    const ligne = lignes[code];
-    if (ligne?.etat !== "mixte") {
-      // Rien a remplacer : une ligne deja uniforme se replie sans rien demander.
-      return;
-    }
-    setConfirmation({
-      quoi: "uniformisation",
-      code,
-      libelle: libelles.get(code) ?? code,
-    });
-  };
-
-  const uniformiser = (code: string) => {
-    setConfirmation(null);
-    uniformisation.mutate(
-      {
-        params: { path: { id: identifiant } },
-        body: { code: code as never, accorde: true },
-      },
-      { onSuccess: absorber },
     );
   };
 
@@ -429,8 +446,8 @@ export function DetailCompte() {
             erreurs={erreurs}
             noteDeSection={noteDeSection}
             surBascule={basculerLeDroit}
-            surBasculeDunMagasin={basculerUnMagasin}
-            surUniformiser={demanderUniformisation}
+            magasinChoisi={magasinChoisi}
+            surChoixDeMagasin={setMagasinChoisi}
           />
 
           <HistoriqueDroits compteId={identifiant} />
@@ -459,21 +476,6 @@ export function DetailCompte() {
         surConfirmation={() => {
           if (confirmation?.quoi === "retrait-magasin") {
             retirerUnMagasin(confirmation.magasin);
-          }
-        }}
-      />
-
-      <DialogueUniformisation
-        ouvert={confirmation?.quoi === "uniformisation"}
-        libelleDuDroit={
-          confirmation?.quoi === "uniformisation" ? confirmation.libelle : ""
-        }
-        prenom={prenom}
-        nombreDeMagasins={accordes.length}
-        surRetour={() => setConfirmation(null)}
-        surConfirmation={() => {
-          if (confirmation?.quoi === "uniformisation") {
-            uniformiser(confirmation.code);
           }
         }}
       />

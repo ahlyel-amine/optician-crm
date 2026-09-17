@@ -1,6 +1,11 @@
 import type { CatalogueOffrable, LigneDeDroit } from "@/api/requetes";
 
-import { LigneDroit, type EtatInterrupteur } from "./LigneDroit";
+import {
+  LigneDroit,
+  aideDePersonnalisation,
+  type EtatInterrupteur,
+} from "./LigneDroit";
+import { SelecteurDeMagasinDesDroits } from "./SelecteurDeMagasinDesDroits";
 
 /**
  * `03-UI-SPEC.md` 7.4 — la liste des droits, le coeur de l'ecran.
@@ -60,10 +65,15 @@ export type ProprietesSectionDroits = {
   /** Les echecs de bascule, clees par code — **sur la ligne**, jamais en toast. */
   erreurs?: Readonly<Record<string, string>>;
   surBascule: (code: string, accorde: boolean) => void;
-  /** La bascule d'UN magasin sur UNE ligne — la surcharge de 7.5. */
-  surBasculeDunMagasin: (code: string, magasinCode: string, accorde: boolean) => void;
-  /** Ouvre la confirmation d'uniformisation, decidee par la fiche. */
-  surUniformiser: (code: string) => void;
+  /**
+   * Le magasin sur lequel les bascules portent. `null` === `Tous`.
+   *
+   * Il vit dans la fiche et non ici, parce que c'est la fiche qui construit le
+   * corps de la requete : le mode et la portee envoyee sur le fil doivent etre
+   * lus au meme endroit, sans quoi ils peuvent diverger (T-03.1-03).
+   */
+  magasinChoisi: string | null;
+  surChoixDeMagasin: (code: string | null) => void;
   /** La note d'un magasin ajoute plus tard (7.5). */
   noteDeSection?: string;
 };
@@ -76,8 +86,8 @@ export function SectionDroits({
   notes,
   erreurs,
   surBascule,
-  surBasculeDunMagasin,
-  surUniformiser,
+  magasinChoisi,
+  surChoixDeMagasin,
   noteDeSection,
 }: ProprietesSectionDroits) {
   const nomsParCode = new Map(
@@ -88,7 +98,17 @@ export function SectionDroits({
     code,
     nom: nomsParCode.get(code) ?? code,
   }));
-  const portee = phraseDePortee(noms);
+  const nomDuMagasinChoisi =
+    magasinChoisi === null ? null : (nomsParCode.get(magasinChoisi) ?? magasinChoisi);
+  /*
+    La phrase de portee SUIT le mode, par reemploi de `phraseDePortee` et sans
+    copie nouvelle : appelee avec un seul nom, elle rend deja
+    `Ces droits s'appliquent au magasin Anfa.` Une seconde phrase pour dire la
+    meme chose serait une seconde chose a garder juste.
+  */
+  const portee = phraseDePortee(
+    nomDuMagasinChoisi === null ? noms : [nomDuMagasinChoisi],
+  );
   const aucunDroit = Object.values(lignes).every((ligne) => ligne.etat === "inactif");
 
   return (
@@ -99,6 +119,17 @@ export function SectionDroits({
       {portee === null ? null : (
         <p className="mt-1 text-sm text-muted-foreground">{portee}</p>
       )}
+
+      {/*
+        Le selecteur est monte MEME a moins de deux magasins : il rend `null`
+        dans ce cas, mais son effet de revalidation doit continuer de tourner
+        pour faire retomber une selection perimee sur `Tous` (T-03.1-04).
+      */}
+      <SelecteurDeMagasinDesDroits
+        magasins={magasinsDuCompte}
+        choisi={magasinChoisi}
+        surChoix={surChoixDeMagasin}
+      />
 
       {aucunDroit ? (
         <p className="mt-3 rounded-md border border-border bg-muted/40 p-3 text-sm">
@@ -117,7 +148,40 @@ export function SectionDroits({
           <h3 className="text-sm font-semibold">{section.titre}</h3>
           <ul className="mt-2">
             {section.droits.map((droit) => {
-              const etat = (lignes[droit.code]?.etat ?? "inactif") as EtatInterrupteur;
+              const ligne = lignes[droit.code];
+              /*
+                Le badge suit l'etat SERVEUR, dans les deux modes : il dit
+                « ce droit n'est pas le meme partout », et cette phrase reste
+                vraie quand on n'en regarde qu'un.
+              */
+              const personnalise = ligne?.etat === "mixte";
+              /*
+                **En mode nomme, l'etat est une APPARTENANCE, pas un etat.**
+                `lignes[].magasins` porte deja l'ensemble des magasins ou le
+                droit est detenu ; consulter cet ensemble n'est pas calculer un
+                etat, donc cela n'ecrit PAS une quatrieme variante de
+                `services.etat_de` — la regle d'etat de 7.5 reste ecrite une
+                seule fois, cote serveur. Corollaire : un magasin unique ne peut
+                pas etre `mixte`.
+              */
+              const etat: EtatInterrupteur =
+                magasinChoisi === null
+                  ? ((ligne?.etat ?? "inactif") as EtatInterrupteur)
+                  : ligne?.magasins.includes(magasinChoisi)
+                    ? "actif"
+                    : "inactif";
+              /*
+                `Personnalisé : 2 magasins sur 3` ne se lit qu'en mode `Tous` :
+                en mode nomme, le denominateur affiche serait celui d'une
+                portee qu'on ne regarde pas.
+              */
+              const aide =
+                magasinChoisi === null && personnalise && ligne !== undefined
+                  ? aideDePersonnalisation(
+                      ligne.magasins.length,
+                      magasinsAccordes.length,
+                    )
+                  : undefined;
               return (
                 <LigneDroit
                   key={droit.code}
@@ -127,17 +191,14 @@ export function SectionDroits({
                   etat={etat}
                   note={notes?.[droit.code]}
                   erreur={erreurs?.[droit.code]}
-                  magasinsAccordes={magasinsDuCompte}
-                  detenus={lignes[droit.code]?.magasins ?? []}
-                  surBasculeDunMagasin={(magasinCode, accorde) =>
-                    surBasculeDunMagasin(droit.code, magasinCode, accorde)
-                  }
-                  surUniformiser={() => surUniformiser(droit.code)}
-                  // Un parent MIXTE s'allume : cliquer dessus met tous les
-                  // magasins a l'allumage, et le toast d'annulation le dit
-                  // (7.5). L'autre lecture — « eteindre tout » — ferait d'un
-                  // clic sur un etat intermediaire une revocation partielle
-                  // silencieuse.
+                  personnalise={personnalise}
+                  aide={aide}
+                  // En mode `Tous`, un parent MIXTE s'allume : cliquer dessus
+                  // met tous les magasins a l'allumage, et le toast
+                  // d'annulation le dit (7.5). L'autre lecture — « eteindre
+                  // tout » — ferait d'un clic sur un etat intermediaire une
+                  // revocation partielle silencieuse. En mode nomme, la meme
+                  // expression est une bascule binaire ordinaire.
                   onBascule={() => surBascule(droit.code, etat !== "actif")}
                 />
               );

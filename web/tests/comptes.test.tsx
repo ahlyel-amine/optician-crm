@@ -799,10 +799,13 @@ describe("le sélecteur de magasin des droits (PERM-03, PERM-04)", () => {
 
     // Le shell monte deja un selecteur de magasin (5.4). Deux `combobox`
     // homonymes sur un ecran sont ambigus a l'oeil comme au lecteur d'ecran,
-    // et rendent chaque requete de test equivoque : les noms accessibles
-    // doivent differer, et le libelle de l'option `Tous` avec eux.
-    const duShell = screen.getByRole("combobox", { name: "Tous les magasins" });
+    // et rendent chaque requete de test equivoque : celui des droits porte un
+    // nom accessible a lui, et le libelle de son option `Tous` differe aussi
+    // de `Tous les magasins` du shell.
+    const duShell = within(screen.getByTestId("portee-magasin")).getByRole("combobox");
     expect(duShell).not.toBe(selecteur);
+    expect(duShell.textContent).toContain("Tous les magasins");
+    expect(duShell.textContent).not.toContain("Tous les magasins de ce compte");
     expect(screen.getAllByRole("combobox", { name: ETIQUETTE_DES_DROITS })).toHaveLength(1);
   });
 

@@ -140,49 +140,6 @@ export function DialogueRetraitMagasin({
   );
 }
 
-export type ProprietesDialogueUniformisation = {
-  ouvert: boolean;
-  libelleDuDroit: string;
-  prenom: string;
-  nombreDeMagasins: number;
-  surRetour: () => void;
-  surConfirmation: () => void;
-};
-
-/**
- * `Uniformiser` remplace des reglages que le proprietaire a poses a la main.
- *
- * Il demande donc d'abord — et seulement quand les sous-interrupteurs divergent,
- * puisqu'une ligne deja uniforme n'a rien a remplacer.
- */
-export function DialogueUniformisation({
-  ouvert,
-  libelleDuDroit,
-  prenom,
-  nombreDeMagasins,
-  surRetour,
-  surConfirmation,
-}: ProprietesDialogueUniformisation) {
-  return (
-    <AlertDialog open={ouvert} onOpenChange={(etat) => (etat ? undefined : surRetour())}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>
-            Appliquer le même droit à tous les magasins ?
-          </AlertDialogTitle>
-          <AlertDialogDescription>
-            {`Les réglages par magasin de « ${libelleDuDroit} » seront remplacés. ${prenom} aura ce droit dans les ${String(nombreDeMagasins)} magasins.`}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel onClick={surRetour}>{RETOUR}</AlertDialogCancel>
-          <AlertDialogAction onClick={surConfirmation}>Uniformiser</AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-  );
-}
-
 export type ProprietesDialogueReinitialisation = {
   ouvert: boolean;
   prenom: string;
@@ -211,8 +168,8 @@ export type ProprietesDialogueReinitialisation = {
  * **Pas de `bg-destructive` sur l'action**, contrairement aux deux dialogues
  * de 7.9 : l'action REMPLACE une identification, elle ne detruit aucune
  * donnee et ne ferme aucune porte — le nouveau mot de passe est delivre dans
- * le meme geste. C'est le cas de `DialogueUniformisation`. Peindre en rouge
- * une operation de routine du support use le rouge des deux qui en ont besoin.
+ * le meme geste. Peindre en rouge une operation de routine du support use le
+ * rouge des deux qui en ont besoin.
  */
 export function DialogueReinitialisation({
   ouvert,

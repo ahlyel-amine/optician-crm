@@ -1,9 +1,6 @@
-import { useState } from "react";
-
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 
 /**
  * `03-UI-SPEC.md` 7.4 — l'anatomie d'une ligne de droit.
@@ -16,6 +13,19 @@ import { Button } from "@/components/ui/button";
  * cette ligne est le levier de cout de support de tout l'ecran : a 2 400 MAD
  * par an et par magasin, elle est la difference entre une charge de support
  * viable et non viable. Elle nomme la CONSEQUENCE, pas le code.
+ *
+ * **La ligne est SANS ETAT — 2026-09-17, phase 03.1, decision 1.** Elle portait
+ * jusqu'ici un bouton d'ouverture par magasin, la sous-liste d'un interrupteur
+ * par magasin qu'il depliait, l'etat de ce depliage et un bouton qui
+ * uniformisait la ligne. Tout cela est remplace par un selecteur unique en tete
+ * de section (`SelecteurDeMagasinDesDroits`), et la ligne ne decide plus rien :
+ * elle recoit un etat, un badge et une aide, deja projetes par `SectionDroits`
+ * selon le mode du selecteur.
+ *
+ * Ce n'est pas de la cosmetique. Une ligne sans etat rend le mode du selecteur
+ * **observable** plutot que devinable : il n'existe plus qu'un seul endroit ou
+ * la portee d'une bascule est decidee, donc plus qu'une seule chose a lire pour
+ * savoir ou un clic va ecrire.
  */
 
 /**
@@ -117,52 +127,6 @@ export function toastDannulation(message: string, defaire: () => void): void {
   });
 }
 
-export type ProprietesSurchargeParMagasin = {
-  libelle: string;
-  /** `{code: nom}` des magasins accordes, dans la portee de l'appelant. */
-  magasins: readonly { code: string; nom: string }[];
-  /** Les codes de magasins ou le droit est effectivement detenu. */
-  detenus: readonly string[];
-  surBasculeDunMagasin: (magasinCode: string, accorde: boolean) => void;
-};
-
-/**
- * La sous-liste depliee : **le seul endroit ou une grille apparait**.
- *
- * Le pire cas de `03-UI-SPEC.md` 7.1 — 21 par N controles — n'est atteignable
- * qu'au prix de 21 actions deliberees, et releve alors du choix de celui qui
- * les a faites. Dans le cas attendu, zero ligne est depliee.
- */
-export function SousListeParMagasin({
-  libelle,
-  magasins,
-  detenus,
-  surBasculeDunMagasin,
-}: ProprietesSurchargeParMagasin) {
-  return (
-    <ul className="mt-2 ml-[calc(24px+0.75rem)] space-y-2">
-      {magasins.map((magasin) => {
-        const detenu = detenus.includes(magasin.code);
-        return (
-          <li key={magasin.code} className="flex items-center gap-3">
-            <Interrupteur
-              // Le magasin est DANS le nom accessible : sans lui, un lecteur
-              // d'ecran annonce quatre fois « Saisir en caisse, coché » et la
-              // sous-liste ne veut plus rien dire (section 10).
-              nomAccessible={`${libelle} — ${magasin.nom}`}
-              etat={detenu ? "actif" : "inactif"}
-              onBascule={() => surBasculeDunMagasin(magasin.code, !detenu)}
-            />
-            <span className="text-sm" aria-hidden="true">
-              {magasin.nom}
-            </span>
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
 /** `Personnalisé : 2 magasins sur 3`, le numerateur et son denominateur. */
 export function aideDePersonnalisation(detenus: number, accordes: number): string {
   const pluriel = detenus > 1 ? "magasins" : "magasin";
@@ -188,15 +152,24 @@ export type ProprietesLigneDroit = {
    */
   erreur?: string;
   /**
-   * Les magasins accordes a ce compte, dans la portee de l'appelant. C'est
-   * `magasins.length >= 2` qui decide de l'existence meme de `Par magasin`.
+   * Le badge `Personnalisé`, pilote par l'etat **SERVEUR** de la ligne — donc
+   * vrai dans les DEUX modes du selecteur.
+   *
+   * « Ce droit n'est pas le meme partout » reste vrai quand on n'en regarde
+   * qu'un : cacher le badge en mode nomme reviendrait a cacher l'etat, et un
+   * proprietaire relisant l'ecran croirait le droit uniforme. C'est la
+   * propriete que gardait l'ancien badge « une fois la ligne repliee », et
+   * elle survit au repliement qui, lui, n'existe plus.
    */
-  magasinsAccordes?: readonly { code: string; nom: string }[];
-  /** Les codes de magasins ou le droit est effectivement detenu, tels que servis. */
-  detenus?: readonly string[];
-  surBasculeDunMagasin?: (magasinCode: string, accorde: boolean) => void;
-  /** Ouvre la confirmation d'uniformisation, decidee par la fiche. */
-  surUniformiser?: () => void;
+  personnalise?: boolean;
+  /**
+   * `Personnalisé : 2 magasins sur 3`, calcule par `SectionDroits`.
+   *
+   * La ligne ne compte rien elle-meme : le denominateur est le nombre de
+   * magasins accordes, qui n'est pas de son ressort depuis qu'elle est sans
+   * etat.
+   */
+  aide?: string;
 };
 
 export function LigneDroit({
@@ -207,28 +180,10 @@ export function LigneDroit({
   onBascule,
   note,
   erreur,
-  magasinsAccordes = [],
-  detenus = [],
-  surBasculeDunMagasin,
-  surUniformiser,
+  personnalise = false,
+  aide,
 }: ProprietesLigneDroit) {
   const identifiant = `droit-${code}`;
-  const surchargeable = magasinsAccordes.length >= 2 && surBasculeDunMagasin !== undefined;
-
-  /*
-    **Seules les lignes que le proprietaire a personnalisees se deplient**
-    d'emblee. Une ligne mixte l'est par definition — c'est l'unique etat
-    personnalise de 7.5 — et une ligne uniforme ne se deplie qu'a la demande.
-    Dans le cas attendu, zero ligne est depliee.
-  */
-  const [choix, setChoix] = useState<boolean | null>(null);
-  /*
-    `null` veut dire « personne n'a encore decide » : la ligne suit alors son
-    etat, et une ligne personnalisee est depliee. Des que l'utilisateur plie ou
-    deplie, son choix l'emporte — sans quoi une ligne qu'il vient de replier se
-    redeploierait a la premiere reponse du serveur qui la redit mixte.
-  */
-  const deplie = choix ?? etat === "mixte";
 
   return (
     <li className="border-b border-border py-3 last:border-0" data-code={code}>
@@ -256,22 +211,15 @@ export function LigneDroit({
           >
             {libelle}
           </button>
-          {!deplie && etat === "mixte" ? (
-            /*
-              Une ligne personnalisee garde son badge une fois repliee : sinon
-              l'etat serait cache, et un propriétaire relisant l'ecran croirait
-              le droit uniforme.
-            */
+          {personnalise ? (
             <Badge variant="outline" className="ml-2 align-middle">
               Personnalisé
             </Badge>
           ) : null}
           <p className="mt-0.5 text-xs text-muted-foreground">{explication}</p>
-          {etat === "mixte" ? (
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {aideDePersonnalisation(detenus.length, magasinsAccordes.length)}
-            </p>
-          ) : null}
+          {aide === undefined ? null : (
+            <p className="mt-0.5 text-xs text-muted-foreground">{aide}</p>
+          )}
           {note === undefined ? null : (
             <p className="mt-1 text-xs text-muted-foreground" role="status">
               {note}
@@ -283,65 +231,7 @@ export function LigneDroit({
             </p>
           )}
         </div>
-
-        {surchargeable ? (
-          deplie ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="text-xs"
-              onClick={() => {
-                // `Uniformiser` replie la ligne, puis demande — la fiche decide
-                // s'il y a lieu de demander, puisqu'elle seule sait si les
-                // sous-interrupteurs divergent.
-                setChoix(false);
-                surUniformiser?.();
-              }}
-            >
-              Uniformiser
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              // **Visible en permanence.** Il a d'abord ete rendu `opacity-0`
-              // jusqu'au survol de sa ligne, pour ne pas encombrer un ecran
-              // que la quasi-totalite des affaires n'utilisera jamais. Cela
-              // rendait le controle indecouvrable — il fallait pointer
-              // exactement la bonne ligne pour apprendre qu'il existait — et
-              // absent purement et simplement au toucher, donc absent de la
-              // tablette du comptoir. Le proprietaire en a conclu que
-              // l'octroi par magasin n'existait pas.
-              //
-              // Ce qui limite l'encombrement n'est pas la revelation, c'est
-              // `magasinsAccordes.length >= 2` juste au-dessus : une
-              // entreprise mono-magasin ne voit toujours rien, et c'est elle
-              // qui est le cas frequent.
-              //
-              // Le poids visuel reste subordonne : `ghost`, `text-xs` quand
-              // le libelle du droit est en `text-sm`, et la couleur de
-              // l'explication de ligne. `Uniformiser` garde sa couleur
-              // pleine — il REMPLACE des reglages poses a la main, ce qui
-              // pese plus que l'invitation a en poser.
-              className="text-xs text-muted-foreground"
-              onClick={() => setChoix(true)}
-            >
-              Par magasin
-            </Button>
-          )
-        ) : null}
       </div>
-
-      {deplie && surchargeable && surBasculeDunMagasin !== undefined ? (
-        <SousListeParMagasin
-          libelle={libelle}
-          magasins={magasinsAccordes}
-          detenus={detenus}
-          surBasculeDunMagasin={surBasculeDunMagasin}
-        />
-      ) : null}
     </li>
   );
 }
