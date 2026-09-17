@@ -160,6 +160,31 @@ export function surSessionExpiree(ecouteur: () => void): () => void {
   };
 }
 
+/**
+ * L'appel a-t-il ete abandonne, plutot qu'echoue ?
+ *
+ * **Le signal d'abord, le nom de l'exception ensuite.** `request.signal.aborted`
+ * est le FAIT — l'annulation a eu lieu, et `openapi-fetch` pose bien le signal
+ * sur la `Request` (`new Request(url, requestInit)`), lui-meme fourni par
+ * `openapi-react-query`, qui passe celui de react-query dans l'`init`. La forme
+ * de l'exception n'en est que le symptome, et elle varie : les navigateurs et
+ * `undici` rejettent une `DOMException` nommee `AbortError`, d'autres
+ * environnements un `Error` simple portant le meme `name`. `DOMException`
+ * heritant d'`Error`, un seul test couvre les deux — et une suite le verifie
+ * plutot que de le supposer.
+ *
+ * Ce qui n'est PAS traite comme un abandon : tout le reste. Un `TypeError:
+ * Failed to fetch` reste une coupure, et la banniere se leve des le premier —
+ * `clientDeRequetes` porte `retry: false`, donc exiger un second echec avant de
+ * parler laisserait l'utilisateur devant une interface active sur un lien mort.
+ */
+function estUneRequeteAvortee(erreur: unknown, requete: Request): boolean {
+  if (requete.signal?.aborted === true) {
+    return true;
+  }
+  return erreur instanceof Error && erreur.name === "AbortError";
+}
+
 const intergicielDeSession: Middleware = {
   onResponse({ response }) {
     signalerLienRetabli();
@@ -172,10 +197,29 @@ const intergicielDeSession: Middleware = {
     }
     return undefined;
   },
-  onError() {
-    // `fetch` ne rejette que sur un echec de transport : DNS, socket, TLS,
-    // requete avortee. Un 500 n'est PAS une erreur ici, c'est une reponse. Donc
-    // arriver dans cette branche veut dire que le lien est tombe.
+  onError({ error, request }) {
+    // Deux choses tres differentes arrivent ici, et les confondre a fait
+    // clignoter la banniere de coupure a chaque navigation.
+    //
+    //   - un echec de transport — DNS, socket, TLS — est une mesure du lien
+    //     qui ECHOUE : on a demande, rien n'est revenu, le lien est tombe ;
+    //   - un abandon est une mesure QUI N'A PAS EU LIEU : nous avons nous-memes
+    //     retire la question avant qu'elle n'ait une reponse.
+    //
+    // Un abandon ne dit donc rien de l'etat du lien, ni dans un sens ni dans
+    // l'autre, et il est parfaitement ORDINAIRE : react-query annule une
+    // requete des que son dernier observateur se desabonne — c'est-a-dire a
+    // chaque changement de route — et le navigateur annule tout au
+    // dechargement. Le compter comme une coupure levait la banniere a chaque
+    // rechargement, donc desactivait brievement tout controle d'ecriture du
+    // produit (`03-UI-SPEC.md` 8.6), et entrainait l'utilisateur a ignorer la
+    // seule fois ou elle dit vrai.
+    //
+    // Un 500, lui, n'est toujours PAS une erreur ici : c'est une reponse, donc
+    // une preuve que le lien tient, et il passe par `onResponse`.
+    if (estUneRequeteAvortee(error, request)) {
+      return undefined;
+    }
     signalerPanneDeLien();
     return undefined;
   },

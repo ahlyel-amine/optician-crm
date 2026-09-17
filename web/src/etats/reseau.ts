@@ -29,7 +29,16 @@ function diffuser(): void {
   }
 }
 
-/** La derniere requete n'a pas abouti : le lien est tombe. */
+/**
+ * La derniere requete a ECHOUE au transport : le lien est tombe.
+ *
+ * « Echoue », pas « n'a pas abouti » — la nuance est celle qui a fait clignoter
+ * la banniere a chaque navigation. Une requete ABANDONNEE n'aboutit pas non
+ * plus, et elle ne doit jamais arriver ici : c'est nous qui l'avons annulee,
+ * elle ne mesure rien. Le tri se fait dans `estUneRequeteAvortee()`
+ * (`src/api/client.ts`), le seul appelant de cette fonction avec l'evenement
+ * `offline` du navigateur.
+ */
 export function signalerPanneDeLien(): void {
   if (!enLigne) {
     return;
