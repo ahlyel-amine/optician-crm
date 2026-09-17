@@ -50,6 +50,12 @@ that can honour both halves of the directive:
   is a single uniform checklist and the magasin dimension is invisible;
 - a per-row **« Par magasin »** affordance (§6.4) is the only place the dimension ever surfaces.
 
+> **La troisième puce ne décrit plus l'écran livré — 2026-09-17, phase 03.1.** L'affordance
+> par ligne est remplacée par un sélecteur en tête de la section des droits (§7.4, §7.5).
+> **Les deux premières puces, elles, sont intactes** : le stockage reste
+> `(utilisateur, magasin_code, code)`, et le défaut reste une liste uniforme sur les magasins
+> accordés — CLAUDE.md #13 n'est pas amendé. Seul l'endroit où la dimension surgit a changé.
+
 The planner must reconcile the model with this. The constraint becomes
 `UniqueConstraint(utilisateur, magasin_code, code)` and `Acces.peut(code)` gains a magasin argument, or
 `Acces` is resolved per active magasin scope. **Raise it; do not quietly pick the research's shape.**
@@ -731,6 +737,16 @@ appears in Karim's sidebar.
   appears here with no SPA change, and a label can never drift from its code.
 - `Par magasin` is a ghost button, Label 12px, rendered **only when the account holds two or more
   magasins**, and only on row hover or row focus. Invisible for every single-magasin business.
+
+  > **`Par magasin` est supprimé et remplacé par un sélecteur en tête de section.
+  > 2026-09-17, phase 03.1, décision 1 du propriétaire.** Le contrôle par ligne a existé
+  > deux jours : rendu
+  > découvrable par la tâche rapide `260917-l7l`, il a permis au propriétaire de s'en servir, et
+  > de conclure qu'il préférait **basculer de magasin** puis régler. Une seule façon de faire
+  > remplace deux. Le prédicat qui protégeait l'écran de l'encombrement est inchangé et se
+  > déplace au sélecteur : rien n'apparaît en dessous de deux magasins accordés. **Ne pas
+  > réintroduire un contrôle par ligne** — la coexistence des deux est précisément ce que la
+  > décision refuse.
 - Codes whose fields arrive later (`article.voir_prix_achat` and `vente.voir_marge` in Phase 8,
   `dashboard.voir_ca_global` in Phase 10) are **shown and grantable from Phase 3**; they are part of
   the catalogue (`03-RESEARCH.md` correction 3) and granting one early simply has no visible effect
@@ -746,6 +762,34 @@ role tiers wearing a friendly name, and CLAUDE.md #6 forbids them. This is an ex
 a matter of taste.
 
 ### 7.5 Per-magasin override — the only place a grid ever appears
+
+> **Le dépliage par ligne est superseded par un sélecteur de magasin — 2026-09-17, phase 03.1.**
+> La sous-liste, l'état `déplié`, le bouton `Uniformiser` et son dialogue sont retirés. Ce qui
+> les remplace :
+>
+> - un sélecteur en tête de la section C, libellé `Régler les droits pour`, rendu seulement
+>   à partir de deux magasins accordés, et alimenté par `magasins_accordes` — jamais par le
+>   catalogue, dont les magasins sont ceux de l'appelant et non ceux de la cible ;
+> - **il ouvre sur `Tous les magasins de ce compte`, et CLAUDE.md #13 n'est pas amendé.** Le
+>   défaut reste une liste uniforme ; choisir un magasin nommé **est** la granularité par
+>   magasin faite surgir à la demande. Ouvrir sur un magasin nommé transformerait chaque
+>   premier clic en personnalisation accidentelle et produirait un sous-octroi silencieux —
+>   le propriétaire croirait avoir accordé partout. L'argument complet est au plan
+>   `03.1-01`, section « la question tranchée » ;
+> - en mode `Tous`, tout ce qui suit dans cette section reste vrai mot pour mot : le
+>   tri-état, `aria-checked="mixed"`, `Personnalisé : 2 magasins sur 3`, et « cliquer un
+>   parent mixte allume tous les magasins, et l'annulation le dit » ;
+> - en mode nommé, une ligne est **binaire** et ne peut pas être mixte. Son état est
+>   l'**appartenance** de ce magasin à `lignes[].magasins`, déjà servi par le contrat de
+>   bascule. Ce n'est pas une quatrième variante de `services.etat_de` : c'est une lecture
+>   d'ensemble, et la règle d'état reste écrite une seule fois ;
+> - le badge `Personnalisé` est piloté par l'état **serveur** de la ligne, donc il persiste
+>   en mode nommé : « ce droit n'est pas le même partout » reste vrai quand on n'en regarde
+>   qu'un.
+>
+> `Uniformiser` disparaît sans perte : il n'uniformisait que **vers le haut**, ce que le
+> clic sur un parent mixte fait déjà en mode `Tous`. La route serveur et
+> `services.uniformiser` sont conservées et sans appelant web — à réexaminer à la phase 11.
 
 Storage is `(gérant, magasin, permission)` per CLAUDE.md #13. The UI hides that by default:
 
@@ -1061,7 +1105,15 @@ never appear.
 | Shell — top bar | — | — | `Tous les magasins`, `Recherche`, `Mon compte`, `Changer mon mot de passe`, `Se déconnecter` |
 | Shell — nav | — | — | `Tableau de bord`, `Clients`, `Stock`, `Ventes`, `Caisse`, `Achats`, `Rappels`, `Paramètres` |
 | `/parametres/comptes` | `Comptes et droits` | — | `Nom`, `Adresse e-mail`, `Magasins`, `Droits`, `Statut`, `Dernière connexion`, `Actif`, `Désactivé`, `Jamais connecté`, `Propriétaire`, `Personnalisé` |
-| `/parametres/comptes/:id` | the person's name | `Identité`, `Magasins`, `Droits`, `Historique des droits` | `Réinitialiser le mot de passe`, `Par magasin`, `Uniformiser`, `Personnalisé : 2 magasins sur 3` |
+| `/parametres/comptes/:id` | the person's name | `Identité`, `Magasins`, `Droits`, `Historique des droits` | `Réinitialiser le mot de passe`, `Régler les droits pour`, `Tous les magasins de ce compte`, `Personnalisé : 2 magasins sur 3` |
+
+> **`Tous les magasins de ce compte` n'est pas `Tous les magasins` de 5.4, et la différence
+> est délibérée — 2026-09-17, phase 03.1.** Le second est la portée des données à l'écran ; le
+> premier est l'ensemble des magasins auxquels un réglage de droit s'applique. Deux contrôles
+> homonymes sur un même écran sont ambigus à l'œil comme au lecteur d'écran. Ne pas les aligner.
+>
+> `Par magasin` et `Uniformiser` quittent cette ligne dans le même changement : les deux
+> contrôles n'existent plus (voir 7.4 et 7.5).
 
 **`/mot-de-passe` is one route with two paths, and they do not ask for the same thing. Settled — do
 not collapse them back into one.**
