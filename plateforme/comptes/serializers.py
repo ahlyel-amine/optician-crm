@@ -95,18 +95,46 @@ class ConnexionSerializer(serializers.Serializer):
 
 
 class ChangementMotDePasseSerializer(serializers.Serializer):
-    """Le changement par l'intéressé. L'ancien mot de passe est exigé.
+    """Le changement par l'intéressé. L'ancien mot de passe est exigé — **sauf** en
+    changement forcé, et la dérogation s'arrête là.
 
-    Sans lui, un poste laissé déverrouillé une minute — ou un CSRF réussi — ne donne plus
-    une session mais un compte, définitivement. C'est la différence entre un incident et
-    une perte de contrôle.
+    **Le cas général : `mot_de_passe_actuel` est obligatoire.** Sans lui, un poste laissé
+    déverrouillé une minute — ou un CSRF réussi — ne donne plus une session mais un
+    compte, définitivement. C'est la différence entre un incident et une perte de
+    contrôle, et c'est la garantie que le plan 03-08 a posée ici.
+
+    **La dérogation : `doit_changer_mot_de_passe` vrai, et rien d'autre.** Sur
+    l'atterrissage forcé, la personne vient de saisir ce mot de passe précis, quelques
+    secondes plus tôt, pour ouvrir la session qui porte cette requête. Le lui redemander
+    revient à lui faire répéter ce qu'elle vient de taper. Et la garantie ci-dessus ne
+    protège rien dans cet état : le mot de passe d'un compte en changement forcé a été
+    **posé par le propriétaire ou par l'opérateur**, il est connu d'un tiers par
+    construction — c'est précisément pourquoi le drapeau est levé.
+
+    Tranché par le propriétaire au point de contrôle du plan 03-13, le 2026-09-17,
+    revenant sur la décision du point de contrôle 03-12 (`03-UI-SPEC.md` 9.4, amendée
+    une seconde fois). Deux tests nommés tiennent les deux moitiés, et c'est le second
+    qui compte : `test_perm01_un_changement_force_n_exige_pas_le_mot_de_passe_actuel` et
+    `test_perm01_un_compte_ordinaire_reste_refuse_sans_le_mot_de_passe_actuel`. Une
+    dérogation écrite pour un cas précis s'élargit au premier refactoring qui trouve la
+    condition gênante ; le second test rougit quand cela arrive.
+
+    Facultatif n'est pas ignoré : fourni, le champ est **vérifié**, y compris en
+    changement forcé — un mot de passe actuel faux reste un 400.
 
     `validate_password` applique `AUTH_PASSWORD_VALIDATORS`, qui est **posé** dans
     `config/settings/base.py` : sans validateurs déclarés, cet appel valide `1234` en
     silence, et le point de terminaison aurait l'air protégé sans l'être.
     """
 
-    mot_de_passe_actuel = serializers.CharField(write_only=True, trim_whitespace=False)
+    mot_de_passe_actuel = serializers.CharField(
+        write_only=True,
+        trim_whitespace=False,
+        required=False,
+        help_text=(
+            "Obligatoire, sauf lorsque le compte porte `doit_changer_mot_de_passe`."
+        ),
+    )
     nouveau_mot_de_passe = serializers.CharField(write_only=True, trim_whitespace=False)
 
     def validate_mot_de_passe_actuel(self, valeur: str) -> str:
@@ -114,6 +142,20 @@ class ChangementMotDePasseSerializer(serializers.Serializer):
         if not utilisateur.check_password(valeur):
             raise serializers.ValidationError("Le mot de passe actuel est incorrect.")
         return valeur
+
+    def validate(self, attrs: dict) -> dict:
+        """L'exigence, portée ici parce qu'elle dépend du compte et non du champ.
+
+        `required=True` sur le champ ne saurait pas lire `doit_changer_mot_de_passe` ;
+        la condition est donc au niveau de l'objet. Le corps d'erreur reste indexé par
+        le nom du champ, pour que l'interface sache lequel manque.
+        """
+        utilisateur = self.context["utilisateur"]
+        if not utilisateur.doit_changer_mot_de_passe and "mot_de_passe_actuel" not in attrs:
+            raise serializers.ValidationError(
+                {"mot_de_passe_actuel": ["Ce champ est obligatoire."]}
+            )
+        return attrs
 
     def validate_nouveau_mot_de_passe(self, valeur: str) -> str:
         try:

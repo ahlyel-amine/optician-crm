@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 import { clientApi } from "@/api/client";
 import { ROUTE_MOT_DE_PASSE, lireCorpsDerreur } from "@/api/requetes";
@@ -11,38 +11,51 @@ import { Label } from "@/components/ui/label";
 import { MESSAGE_SERVICE_INDISPONIBLE } from "@/etats/messages";
 
 /**
- * `/mot-de-passe` — le changement force (`03-UI-SPEC.md` 6, dernier etat).
- *
- * Page pleine, **non refermable**, sans navigation de shell et sans aucun lien.
- * Ce n'est pas une modale : une modale se ferme, et un compte dont le mot de
- * passe a ete communique par un tiers ne doit pas pouvoir continuer avec.
- * L'inevitabilite est tenue par `RequireAuth`, qui y retombe tant que le
- * drapeau est vrai — taper une URL protegee a la main revient ici.
- *
- * Il n'y a pas de reinitialisation par e-mail dans ce produit : aucun
- * fournisseur d'e-mail transactionnel n'est au contrat. Le chemin sans e-mail
- * est celui-ci — le proprietaire reinitialise un gerant, l'operateur
- * reinitialise un proprietaire, et `doit_changer_mot_de_passe` force le
- * changement a la premiere connexion.
+ * `/mot-de-passe` — UNE route, DEUX chemins qui ne demandent pas la meme chose.
  *
  * ---
  *
- * `Mot de passe actuel` EST AU CONTRAT — ne pas le retirer.
+ * **Chemin force** (`doit_changer_mot_de_passe`, `03-UI-SPEC.md` 6, dernier
+ * etat). Page pleine, **non refermable**, sans navigation de shell et sans
+ * aucun lien. Ce n'est pas une modale : une modale se ferme, et un compte dont
+ * le mot de passe a ete communique par un tiers ne doit pas pouvoir continuer
+ * avec. L'inevitabilite est tenue par `RequireAuth`, qui y retombe tant que le
+ * drapeau est vrai — taper une URL protegee a la main revient ici.
  *
- * `03-UI-SPEC.md` 9.4 ne listait a l'origine que `Nouveau mot de passe`,
- * `Confirmer` et `Enregistrer`. L'ecart a ete porte au point de controle humain
- * du plan 03-12 le 2026-09-16, et tranche : la specification a ete amendee,
- * l'exigence serveur n'a pas ete affaiblie. Le point de terminaison livre au
- * plan 03-08 exige `mot_de_passe_actuel`, et ce n'est pas un oubli de sa part :
- * sans lui, un poste laisse deverrouille une minute — ou un CSRF reussi — ne
- * donne plus une session mais un compte, definitivement.
+ * **Chemin volontaire**, atteint par `Changer mon mot de passe` du menu du
+ * compte (`03-UI-SPEC.md` 9.4). Rien n'est force, la personne a une issue, et
+ * la copie ne peut donc pas etre celle du chemin force : « Ce mot de passe vous
+ * a ete communique par le proprietaire » est faux pour quelqu'un qui a choisi
+ * le sien il y a six mois.
  *
- * Le titre, le corps et les trois autres libelles sont ceux de la
- * specification, au caractere pres.
+ * ---
+ *
+ * **DEUX champs sur le chemin force, TROIS sur le chemin volontaire.**
+ *
+ * Le chemin force ne demande PAS `Mot de passe actuel` : la personne vient de
+ * le saisir, quelques secondes plus tot, pour ouvrir la session qui porte cette
+ * requete. Et la garantie que le champ protege — qu'un poste deverrouille ou un
+ * CSRF reussi donne une session et non le compte — ne protege rien dans cet
+ * etat : le mot de passe d'un compte en changement force a ete POSE par le
+ * proprietaire ou l'operateur, il est connu d'un tiers par construction.
+ *
+ * Le chemin volontaire l'exige, et le serveur aussi : la derogation est
+ * conditionnee a `doit_changer_mot_de_passe` cote serveur
+ * (`ChangementMotDePasseSerializer`), pas seulement ici. Un client qui omet le
+ * champ hors changement force recoit un 400.
+ *
+ * Historique, parce que la decision a ete revisitee et qu'un lecteur doit voir
+ * une decision tranchee et non une hesitation : le champ a ete ajoute au
+ * chemin force au point de controle du plan 03-12 le 2026-09-16, puis retire de
+ * ce seul chemin au point de controle du plan 03-13 le 2026-09-17.
+ * `03-UI-SPEC.md` 9.4 decrit desormais les deux chemins.
  */
 export function MotDePasse() {
   const navigate = useNavigate();
-  const { adopterLamorcage } = useAuth();
+  const { utilisateur, adopterLamorcage } = useAuth();
+
+  /** Le chemin force. Le drapeau vient du serveur, jamais de la route. */
+  const force = utilisateur?.doit_changer_mot_de_passe === true;
 
   const [actuel, setActuel] = useState("");
   const [nouveau, setNouveau] = useState("");
@@ -66,7 +79,9 @@ export function MotDePasse() {
     try {
       // `error` porte le corps deja analyse : `response` est consomme.
       const { data, error, response } = await clientApi.POST(ROUTE_MOT_DE_PASSE, {
-        body: { mot_de_passe_actuel: actuel, nouveau_mot_de_passe: nouveau },
+        body: force
+          ? { nouveau_mot_de_passe: nouveau }
+          : { mot_de_passe_actuel: actuel, nouveau_mot_de_passe: nouveau },
       });
       if (!response.ok || data === undefined) {
         // La politique de mot de passe est celle du serveur
@@ -93,11 +108,12 @@ export function MotDePasse() {
     >
       <div className="w-full max-w-[400px] rounded-lg border border-border bg-white p-6">
         <h1 className="text-2xl font-semibold leading-tight">
-          Choisissez votre mot de passe
+          {force ? "Choisissez votre mot de passe" : "Changer mon mot de passe"}
         </h1>
         <p className="mt-4 text-sm text-muted-foreground">
-          Ce mot de passe vous a été communiqué par le propriétaire. Choisissez-en un que
-          vous êtes seul à connaître.
+          {force
+            ? "Ce mot de passe vous a été communiqué par le propriétaire. Choisissez-en un que vous êtes seul à connaître."
+            : "Choisissez un nouveau mot de passe. Saisissez d'abord celui que vous utilisez aujourd'hui."}
         </p>
 
         {erreur !== null ? (
@@ -110,18 +126,20 @@ export function MotDePasse() {
         ) : null}
 
         <form className="mt-4 flex flex-col gap-4" onSubmit={soumettre} noValidate>
-          <div className="flex flex-col gap-2">
-            <Label className="text-xs font-semibold" htmlFor="actuel">
-              Mot de passe actuel
-            </Label>
-            <Input
-              id="actuel"
-              type="password"
-              autoComplete="current-password"
-              value={actuel}
-              onChange={(evenement) => setActuel(evenement.target.value)}
-            />
-          </div>
+          {force ? null : (
+            <div className="flex flex-col gap-2">
+              <Label className="text-xs font-semibold" htmlFor="actuel">
+                Mot de passe actuel
+              </Label>
+              <Input
+                id="actuel"
+                type="password"
+                autoComplete="current-password"
+                value={actuel}
+                onChange={(evenement) => setActuel(evenement.target.value)}
+              />
+            </div>
+          )}
           <div className="flex flex-col gap-2">
             <Label className="text-xs font-semibold" htmlFor="nouveau">
               Nouveau mot de passe
@@ -154,6 +172,20 @@ export function MotDePasse() {
             Enregistrer
           </Button>
         </form>
+
+        {/* L'issue, sur le chemin volontaire SEULEMENT — et c'est toute la
+            difference entre les deux. Cette page est hors du shell : sans ce
+            lien, quelqu'un qui a ouvert le menu par erreur n'a plus de
+            navigation du tout. « Retour » et non « Annuler » : le lexique
+            reserve « Annuler » a l'annulation d'une modification enregistree
+            (`03-UI-SPEC.md` 7.10 et 9.3). */}
+        {force ? null : (
+          <p className="mt-4 text-center text-sm">
+            <Link className="underline underline-offset-4" to="/">
+              Retour
+            </Link>
+          </p>
+        )}
       </div>
     </main>
   );
