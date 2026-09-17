@@ -46,7 +46,7 @@ Calendar-driven work. Starts day one and runs in parallel with build — no amou
 - [x] **PERM-01**: An optician (owner) can sign in and stays signed in across sessions
 - [ ] **PERM-02**: An owner can create a gérant account for their business and deactivate it later
 - [ ] **PERM-03**: An owner can grant or revoke individual permissions for a specific gérant, without those permissions being fixed to a role tier
-- [ ] **PERM-04**: A gérant sees only the magasins and data the owner has granted them
+- [x] **PERM-04**: A gérant sees only the magasins and data the owner has granted them
 - [ ] **PERM-05**: Prix d'achat, margin and business-wide revenue are hidden from a gérant unless the owner explicitly grants access
 - [ ] **PERM-06**: A single projection layer enforces field-level permissions for the API, exports and printed documents alike
 - [ ] **PERM-07**: A sale records which vendeur made it as a data field, entered by the signed-in user — vendeurs have no login
@@ -140,9 +140,9 @@ Owner-facing reporting. Deliberately not a BI tool.
 
 ### Applications (APP)
 
-- [ ] **APP-01**: The web application runs in a browser with a French interface
+- [x] **APP-01**: The web application runs in a browser with a French interface
 - [ ] **APP-02**: The mobile application runs on phone and tablet with the same features as the web application
-- [ ] **APP-03**: Amounts, dates and numbers are formatted for Morocco (MAD, French conventions)
+- [x] **APP-03**: Amounts, dates and numbers are formatted for Morocco (MAD, French conventions)
 
 ### Subscription & Self-Serve (BILL)
 

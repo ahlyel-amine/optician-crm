@@ -91,7 +91,7 @@ Plans:
 - [x] 03-10-PLAN.md — Formatage MAD serveur, français de l'API, schéma OpenAPI committé et porte de diff (APP-01, APP-03, PERM-06)
 - [x] 03-11-PLAN.md — Formatage client et registre de colonnes filtré par présence, moitié cliente de PERM-06 (APP-03, PERM-06)
 - [x] 03-12-PLAN.md — Client API généré, `AuthProvider`, `/connexion`, `/mot-de-passe`, états globaux (PERM-01, APP-01)
-- [ ] 03-13-PLAN.md — App shell : navigation déclarative, sélecteur de magasin, recherche, `print.css` (PERM-04, APP-01, APP-03)
+- [x] 03-13-PLAN.md — App shell : navigation déclarative, sélecteur de magasin, recherche, `print.css` (PERM-04, APP-01, APP-03)
 - [ ] 03-14-PLAN.md — Écrans Comptes et droits : liste, détail, checklist 21 droits, surcharge par magasin (PERM-02, PERM-03, PERM-04)
 
 ### Phase 4: Clients & Ordonnances

@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed quick 260917-04r (echec CSRF d'origine corrige ; point de controle approuve sur reproduction machine, la connexion au navigateur reste NON VERIFIEE par un humain — comme les sept verifications de 03-12). Suivant : 03-13
-last_updated: "2026-09-17T00:35:00.000Z"
+stopped_at: "Completed 03-13-PLAN.md (app shell). Les six decisions du point de controle sont appliquees ; la traversee manuelle des huit etapes du shell est COMMENCEE mais NON TERMINEE et aucune etape n'est approuvee. Suivant : 03-14"
+last_updated: "2026-09-17T10:31:46.867Z"
 last_activity: 2026-09-17
 progress:
   total_phases: 12
   completed_phases: 1
   total_plans: 21
-  completed_plans: 19
-  percent: 90
+  completed_plans: 20
+  percent: 95
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-09-09)
 ## Current Position
 
 Phase: 3 of 12 (Comptes, Permissions & App Shell)
-Plan: 12 of 14 complete in current phase (03-01 à 03-12) ; la SPA parle désormais à l'API par un client **généré** depuis `web/src/api/schema.yml` (régénération = diff vide), chaque appel mutant porte `X-CSRFToken`, le 401 mémorise le chemin tenté et y revient, les cinq états globaux de `03-UI-SPEC.md` 8.6 vivent une seule fois dans `web/src/etats/`, et `/connexion` + `/mot-de-passe` rendent la copie exacte de la spécification (50 tests frontend, 179 backend, build à 0). Il reste 03-13 (le shell, qui remplace `ContenuProtege`) et 03-14 (l'écran des comptes et des droits)
+Plan: 13 of 14 complete in current phase (03-01 à 03-13) ; l'**app shell** existe et a remplacé `ContenuProtege` : la navigation vient d'un seul tableau déclaratif de huit entrées (plafond dur à neuf), une entrée dont le droit manque ne produit **aucun nœud DOM**, le sélecteur de magasin disparaît entièrement pour un mono-magasin et une route à portée magasin **demande** lequel plutôt que de deviner, la recherche réserve ses 480px sans rien normaliser côté client, et `print.css` pose la géométrie A4 que la phase 9 étendra (85 tests frontend, 182 backend / 30 deselected, build à 0). Le point de contrôle a rendu **six décisions**, toutes appliquées, dont la révision du champ `Mot de passe actuel` qui amende les plans 03-08 et 03-12. Il reste 03-14 (l'écran des comptes et des droits)
 Status: Executing
 Last activity: 2026-09-17
 
-Progress: [█████████░] 90%
+Progress: [██████████] 95%
 
 ## Performance Metrics
 
@@ -66,6 +66,7 @@ Progress: [█████████░] 90%
 | Phase 03 P09 | ~85m | 3 tasks | 8 files |
 | Phase 03 P10 | ~30m | 3 tasks | 8 files |
 | Phase 03 P12 | ~45m | 4 tasks | 18 files |
+| Phase 03 P13 | ~55m | 4 tasks | 24 files |
 
 ## Quick Tasks Completed
 
@@ -161,6 +162,12 @@ Recent decisions affecting current work:
 - [Phase 03]: 03-12: les cinq etats globaux de 03-UI-SPEC 8.6 vivent dans web/src/etats/ (repertoire non prevu au plan) — neuf phases en heritent, et une copie par page rendrait fausse la regle « la chaine apparait une seule fois » des la phase 4
 - [Quick 260917-04r]: **Piege transverse, verifie dans Django 6.1.1 — les origines de confiance du CSRF sont gelees au premier `Origin` du processus.** `csrf_protect` est `decorator_from_middleware(CsrfViewMiddleware)` et `make_middleware_decorator` (`django/utils/decorators.py:126`) instancie le middleware **une seule fois, a l'import du module de vues** ; `allowed_origins_exact` et `csrf_trusted_origins_hosts` sont des `cached_property` (`django/middleware/csrf.py:174-186`) et `django/test/signals.py` ne contient **aucun** recepteur de `setting_changed` qui les invalide. Consequence pour toute phase : **un test qui envoie un en-tete `Origin` ne peut pas supposer que son propre `override_settings` gagne** — s'il tourne apres un autre test porteur d'`Origin`, il voit la liste du premier. Les jambes d'un meme test partagent donc un seul override ; deux valeurs differentes donnent silencieusement le meme resultat aux deux, et le test « passe » sans rien prouver
 - [Quick 260917-04r]: le proxy de developpement Vite preserve `Host` (`changeOrigin: false` explicite, la forme chaine le met a `true`) — `CsrfViewMiddleware` reconstruit l'origine attendue depuis `request.get_host()`, donc un `Host` reecrit refuse toute ecriture en 403. **Le reverse proxy de production doit preserver `Host` pour la meme raison**, et `CSRF_TRUSTED_ORIGINS` ne le rattrapera pas la-bas : il vit dans `local.py` seul, jamais dans `base.py`
+- [Phase 03]: 03-13: `disponible` reste la porte de la navigation — une construction de production ne livre jamais une entree menant a un emplacement vide ; VITE_NAV_COMPLET reste un outil de revue de densite qui compile a `false` constant en production, jamais un drapeau livre actif
+- [Phase 03]: 03-13: `--primary` aligne sur l'accent #2563EB de 03-UI-SPEC section 4, pose APRES le bloc du preset zinc pour que celui-ci reste reinstallable. Le bouton de /connexion change de couleur : consequence assumee. Blanc sur #2563EB mesure 5,17:1, au-dessus du plancher AA de 4,5:1
+- [Phase 03]: 03-13: deux fichiers VENDUS par shadcn sont modifies — Ctrl+B retire de `sidebar.tsx` (5.7 interdit tout accord en v1) et MOBILE_BREAKPOINT 768 → 1024 dans `use-mobile.ts` (5.6). Chacun porte la raison en tete ET un test nomme : un `shadcn add` ramenerait les deux defauts sans que rien ne rougisse
+- [Phase 03]: 03-13: /mot-de-passe est UNE route et DEUX chemins — le changement force rend deux champs, le volontaire trois, avec sa propre copie et une issue `Retour` (`Annuler` est reserve a l'annulation d'une modification enregistree)
+- [Phase 03]: 03-13: le changement FORCE n'exige pas `mot_de_passe_actuel` — derogation conditionnee a `doit_changer_mot_de_passe` COTE SERVEUR, pas cote client. REVIENT sur la decision du point de controle 03-12 et amende les plans 03-08 et 03-12. Le garde-fou est `test_perm01_un_compte_ordinaire_reste_refuse_sans_le_mot_de_passe_actuel`, qui rougit le jour ou la derogation s'elargit
+- [Phase 03]: 03-13: le plafond de navigation est de neuf entrees, huit prises et une reservee — un dixieme module entre dans une section existante ou en remplace une. Et toute route declare `portee: magasin|multi` : une route a portee magasin DEMANDE lequel plutot que de deviner
 
 ### Pending Todos
 
@@ -171,12 +178,12 @@ None yet.
 - [Phase 6] Four open questions block the facturation schema and need a Moroccan comptable, not research: TVA rate on optical goods after the 2026 reform, série per magasin vs per company, TVA treatment of the acompte, and whether the facture is issued at commande or délivrance. Start these during Phase 1.
 - [Phase 1] CNDP prior authorization is reported at 2-4 months and the Moroccan merchant contract at weeks to months. Both must be in flight from day one or they become the launch critical path.
 - [Phase 12] Recurring card-on-file on Moroccan rails is a vendor claim and needs sandbox proof; if false, billing falls back to invoice plus payment link per period.
-- [Phase 3] **Les sept vérifications manuelles au navigateur du point de contrôle 03-12 n'ont pas été effectuées.** Le propriétaire a approuvé sur la preuve automatisée (50 tests frontend, 179 backend, build à 0) et a explicitement dit ne pas les avoir exécutées. Restent ouvertes : connexion sans clignotement, stabilité de la carte à l'erreur, compte à rebours à la onzième tentative, atterrissage forcé sans issue, traversée au clavier seul, lecture en français contre `03-UI-SPEC.md` 9.3 (la vérification manuelle nommée dans `03-VALIDATION.md`), bannière de connexion perdue. À reprendre à la vérification de phase — vitest rend dans jsdom et ne voit ni clignotement, ni saut de mise en page réel, ni anneau de focus, ni si une phrase se lit comme du français. Détail : `.planning/phases/03-comptes-permissions-app-shell/03-12-SUMMARY.md`. **S'y ajoute la confirmation au navigateur du quick 260917-04r** (connexion réussie depuis `http://localhost:5173/connexion`, et `Host: localhost:5173` dans les en-têtes reçus par Django) : le correctif est prouvé par reproduction HTTP, pas par un humain devant l'écran. Les huit vérifications se font en une seule passe.
+- [Phase 3] **Les sept vérifications manuelles au navigateur du point de contrôle 03-12 n'ont pas été effectuées.** Le propriétaire a approuvé sur la preuve automatisée (50 tests frontend, 179 backend, build à 0) et a explicitement dit ne pas les avoir exécutées. Restent ouvertes : connexion sans clignotement, stabilité de la carte à l'erreur, compte à rebours à la onzième tentative, atterrissage forcé sans issue, traversée au clavier seul, lecture en français contre `03-UI-SPEC.md` 9.3 (la vérification manuelle nommée dans `03-VALIDATION.md`), bannière de connexion perdue. À reprendre à la vérification de phase — vitest rend dans jsdom et ne voit ni clignotement, ni saut de mise en page réel, ni anneau de focus, ni si une phrase se lit comme du français. Détail : `.planning/phases/03-comptes-permissions-app-shell/03-12-SUMMARY.md`. **S'y ajoute la confirmation au navigateur du quick 260917-04r** (connexion réussie depuis `http://localhost:5173/connexion`, et `Host: localhost:5173` dans les en-têtes reçus par Django) : le correctif est prouvé par reproduction HTTP, pas par un humain devant l'écran. Les huit vérifications se font en une seule passe. **S'y ajoutent les huit étapes du point de contrôle 03-13** (les huit entrées en propriétaire, la densité sous `VITE_NAV_COMPLET=1`, l'application visiblement plus petite d'un gérant, l'absence totale de contrôle en mono-magasin, le changement de portée sans changement de route, la traversée au clavier seul puis sous VoiceOver — la vérification manuelle nommée dans `03-VALIDATION.md` —, `Ctrl+P`, et le zoom à 200 %). Le propriétaire a **commencé** cette traversée, y a découvert le défaut du changement de mot de passe forcé, et **n'a rendu aucun verdict sur le reste** : aucune des huit étapes n'est approuvée ni déclarée passée. Trois des six décisions du point de contrôle repeignent ou redimensionnent le shell (accent `#2563EB`, retrait de `Ctrl+B`, borne du tiroir à 1024px), donc la passe doit se faire **après** elles — c'est le cas. Détail : `.planning/phases/03-comptes-permissions-app-shell/03-13-SUMMARY.md`.
 
 ## Session Continuity
 
-Last session: 2026-09-17T00:35:00.000Z
-Stopped at: Completed quick 260917-04r (echec CSRF d'origine corrige ; point de controle approuve sur reproduction machine, la connexion au navigateur reste NON VERIFIEE par un humain — comme les sept verifications de 03-12). Suivant : 03-13
+Last session: 2026-09-17T10:31:46.865Z
+Stopped at: Completed 03-13-PLAN.md (app shell). Les six decisions du point de controle sont appliquees ; la traversee manuelle des huit etapes du shell est COMMENCEE mais NON TERMINEE et aucune etape n'est approuvee. Suivant : 03-14
 Resume file: None
 
-Serveurs de developpement laisses TOURNANTS : Vite sur 5173, Django sur 127.0.0.1:8010 — le proprietaire peut encore regarder l'ecran de connexion.
+Serveurs de developpement laisses TOURNANTS : Vite sur 5173 (navigation filtree, l'etat livre) et sur 5174 (`VITE_NAV_COMPLET=1`, la densite a huit entrees), Django sur 127.0.0.1:8010 — le proprietaire peut reprendre la traversee des huit etapes du shell.
