@@ -567,7 +567,7 @@ def uniformiser(cible, code, accorde: bool, *, par) -> Resultat:
 
 
 @transaction.atomic(using="default")
-def accorder_magasin(cible, magasin_code: str, *, par) -> Resultat:
+def accorder_magasin(cible, magasin_code: str, *, par, reappliquer: bool = True) -> Resultat:
     """Donner accès à un magasin, et y **étendre les lignes uniformes uniquement**.
 
     C'est la règle de `03-UI-SPEC.md` 7.5 la plus facile à écrire de travers, et son mode
@@ -576,6 +576,21 @@ def accorder_magasin(cible, magasin_code: str, *, par) -> Resultat:
     accordée, à l'occasion d'une action sans rapport (menace T-03-62). Le nouveau magasin
     démarre donc à l'arrêt pour tout code mixte, et l'interface affiche sa note
     « Californie a été ajouté. Vérifiez les 2 droits personnalisés par magasin. »
+
+    **Cette règle est désormais proposée, plus subie** (contexte de la phase 03.1,
+    décision 2). Le propriétaire peut demander un magasin qui démarre sans aucun droit :
+    c'est `reappliquer=False`. Le défaut reste `True`, c'est-à-dire la règle de 7.5
+    inchangée — être interrogé est plus sûr que subir une règle implicite, ce n'est pas
+    une raison de jeter la règle.
+
+    **`reappliquer` décide du sort des lignes uniformes, et de rien d'autre.** Sous l'une
+    comme sous l'autre valeur, une ligne réglée magasin par magasin ne s'étend jamais :
+    la garde de T-03-62 est en amont du choix, pas dedans. Sans cette phrase, un lecteur
+    pressé lit « réappliquer les droits existants » comme « tous les droits existants »,
+    ce qui est exactement l'élévation que la garde interdit.
+
+    Dans les deux cas l'accès au magasin est accordé, journalisé, et rendu dans
+    `magasins_accordes` : c'est le droit qui varie, jamais l'`AccesMagasin`.
     """
     acces_appelant = acces_pour(par)
     _verifier_la_cible(cible, acces_appelant)
@@ -606,11 +621,12 @@ def accorder_magasin(cible, magasin_code: str, *, par) -> Resultat:
     )
     _journaliser(cible, JournalDroit.Action.ACCORDE, magasin_code, par)
 
-    # Les lignes uniformes s'étendent ; les personnalisées non. Le calcul est fait sur
-    # l'état **d'avant**, sans quoi le magasin qu'on vient d'ajouter rendrait toute ligne
-    # mixte et rien ne s'étendrait jamais.
+    # Les lignes uniformes s'étendent — si le propriétaire l'a demandé ; les
+    # personnalisées non, quoi qu'il ait demandé. Le calcul est fait sur l'état
+    # **d'avant**, sans quoi le magasin qu'on vient d'ajouter rendrait toute ligne mixte
+    # et rien ne s'étendrait jamais.
     etendus: list[str] = []
-    if avant:
+    if avant and reappliquer:
         for code in sorted(set(Permission.values)):
             if ligne_de(cible, code, avant).etat != ETAT_ACTIF:
                 continue

@@ -535,14 +535,29 @@ class UniformisationSerializer(serializers.Serializer):
 
 
 class BasculeMagasinSerializer(serializers.Serializer):
-    """`{magasin_code, accorde}` — l'accès à un magasin (`03-UI-SPEC.md` 7.3 B).
+    """`{magasin_code, accorde, reappliquer?}` — l'accès à un magasin (7.3 B).
 
     Le code métier, jamais l'identifiant : c'est ce que stocke `AccesMagasin`, et c'est
     ce qui survit à une restauration là où un `id` est réattribué (TENANT-09).
+
+    `reappliquer` est le choix que l'écran pose au propriétaire avant d'ajouter un
+    magasin (contexte de la phase 03.1, décision 2). C'est un champ de **corps** et non
+    un paramètre de requête : il décide d'une écriture, il voyage donc avec elle, et
+    `PARAMETRES_RESERVES` n'a pas à le connaître. Facultatif et défaut `True`, pour que
+    la règle d'aujourd'hui reste la règle pour tout appelant qui ne dit rien.
     """
 
     magasin_code = serializers.CharField(max_length=20)
     accorde = serializers.BooleanField()
+    reappliquer = serializers.BooleanField(
+        required=False,
+        default=True,
+        help_text=(
+            "À l'ajout d'un magasin : étendre au nouveau magasin les droits accordés "
+            "uniformément dans tous les autres. Les droits réglés magasin par magasin "
+            "ne s'étendent jamais, quelle que soit la valeur. Sans effet au retrait."
+        ),
+    )
 
 
 class LigneDeDroitSerializer(serializers.Serializer):

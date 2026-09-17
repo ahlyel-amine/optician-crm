@@ -777,17 +777,32 @@ class VueComptes(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Gene
         personnalisées où elles sont ; retirer emporte les droits qui visaient ce
         magasin. Les deux effets sont annoncés par l'interface avant d'être appliqués
         (7.5 et 7.9), et appliqués ici que l'interface les ait annoncés ou non.
+
+        **L'extension est désormais un choix du propriétaire**, énoncé par l'écran avant
+        d'être appliqué, et par défaut celui de 7.5. Cette vue ne le prend pas : elle
+        valide le booléen et le passe au service, où vit toute la logique d'octroi. Le
+        retrait, lui, ne le reçoit pas — d'où la branche explicite plutôt qu'une table
+        d'opérations, qui obligerait à passer l'argument à une fonction qui n'en veut pas.
         """
         cible = self.get_object()
         formulaire = BasculeMagasinSerializer(data=request.data)
         formulaire.is_valid(raise_exception=True)
         donnees = formulaire.validated_data
 
-        operation = (
-            services.accorder_magasin if donnees["accorde"] else services.retirer_magasin
-        )
         with _erreurs_de_service():
-            resultat = operation(cible, donnees["magasin_code"], par=request.user)
+            if donnees["accorde"]:
+                resultat = services.accorder_magasin(
+                    cible,
+                    donnees["magasin_code"],
+                    par=request.user,
+                    reappliquer=donnees["reappliquer"],
+                )
+            else:
+                resultat = services.retirer_magasin(
+                    cible,
+                    donnees["magasin_code"],
+                    par=request.user,
+                )
         return Response(self._resultat_visible(request, resultat))
 
 
