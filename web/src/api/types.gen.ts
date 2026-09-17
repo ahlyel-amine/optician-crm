@@ -237,6 +237,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/comptes/{id}/journal/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * L'historique des droits d'un compte
+         * @description `03-UI-SPEC.md` 7.3 D — la seule vue de `JournalDroit`, en lecture seule.
+         *
+         *     Le journal est écrit par le service depuis le plan 03-09 et n'avait pas de route
+         *     pour l'alimenter ; celle-ci est la lecture, et rien d'autre. `JournalDroit`
+         *     refuse la réécriture et le retrait dans son propre `save()` / `delete()`, donc
+         *     « lecture seule » n'est pas une propriété de cette vue — c'est une propriété du
+         *     modèle, et cette vue ne pourrait pas la contourner si elle essayait.
+         *
+         *     **Intersectée comme le reste.** Sans cela, il suffirait d'ouvrir le repli d'un
+         *     historique pour apprendre qu'`article.voir_prix_achat` existe et qui le détient,
+         *     c'est-à-dire pour contourner en un clic ce que le catalogue et la fiche retirent.
+         *
+         *     Pas de pagination : l'historique d'un compte est de l'ordre de la dizaine
+         *     d'entrées, et un `collapsible` fermé par défaut ne le charge qu'à l'ouverture.
+         *     Le jour où une affaire en accumule des milliers, la forme à écrire est une
+         *     pagination, pas une troncature silencieuse.
+         */
+        get: operations["comptes_journal_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/comptes/{id}/magasins/": {
         parameters: {
             query?: never;
@@ -634,6 +669,28 @@ export interface components {
             readonly explication: string;
         };
         /**
+         * @description Une ligne de `03-UI-SPEC.md` 7.3 D — la seule vue de `JournalDroit`.
+         *
+         *     **Déclarée pour le schéma, pas pour sérialiser** : la charge utile est construite par
+         *     `charge_utile_journal`, qui joint deux mondes — les libellés des permissions vivent
+         *     dans le plan de contrôle, les noms des magasins dans la base de l'opticien.
+         *
+         *     `nature` plutôt qu'une phrase toute faite. « a accordé « Voir le prix d'achat » » et
+         *     « a accordé l'accès au magasin Maârif » ne se composent pas pareil en français, et
+         *     cette grammaire-là appartient à l'interface (`03-UI-SPEC.md` 9.3). Le serveur livre
+         *     donc un libellé et sa nature, jamais une phrase à afficher telle quelle — une phrase
+         *     assemblée ici serait impossible à corriger sans redéployer le serveur.
+         */
+        EntreeDeJournal: {
+            /** Format: date-time */
+            readonly le: string;
+            readonly action: string;
+            readonly nature: string;
+            readonly cible: string;
+            readonly libelle: string;
+            readonly par: string;
+        };
+        /**
          * @description L'état d'un code pour un compte : sa valeur, et les magasins où elle vaut.
          *
          *     `etat` vaut `actif`, `inactif` ou `mixte`. Les deux premiers sont **uniformes** au
@@ -992,6 +1049,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ResultatOctroi"];
+                };
+            };
+        };
+    };
+    comptes_journal_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Un(une) valeur entière unique identifiant ce(cette) utilisateur. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EntreeDeJournal"][];
                 };
             };
         };

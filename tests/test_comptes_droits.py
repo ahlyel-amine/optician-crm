@@ -1485,3 +1485,90 @@ def test_perm03_la_fiche_porte_letat_de_chaque_droit_deja_intersecte(affaire_ree
         "existe précisément pour que le badge « Personnalisé par magasin » ne coûte pas "
         "soixante-trois lectures par ligne (7.2)."
     )
+
+
+def test_perm03_lhistorique_des_droits_est_lisible_et_intersecte(affaire_reelle):
+    """`03-UI-SPEC.md` 7.3 D — la seule vue de `JournalDroit`, et elle est intersectée.
+
+    Le plan 03-09 l'a consignée comme absence délibérée : le journal est **écrit** par le
+    service et lisible en base, mais le `collapsible` de la fiche n'avait pas de route
+    pour l'alimenter. Elle est ici, et elle répond à la question que le propriétaire finit
+    toujours par poser — « qui a donné les marges à Karim ? ».
+
+    Deux propriétés, et la seconde est celle qui peut se perdre en refactorant : l'ordre
+    **du plus récent au plus ancien**, et l'intersection. Un journal servi entier
+    contournerait tout ce que le catalogue et la fiche intersectent : il suffirait
+    d'ouvrir un historique pour apprendre qu'`article.voir_prix_achat` existe et qui le
+    détient.
+
+    L'entrée porte sa **nature** — droit ou magasin — plutôt qu'une phrase toute faite :
+    « a accordé « Voir le prix d'achat » » et « a accordé l'accès au magasin Maârif » ne
+    se composent pas pareil en français, et cette grammaire-là est une affaire
+    d'interface (`03-UI-SPEC.md` 9.3).
+    """
+    from plateforme.comptes.models import JournalDroit
+    from plateforme.comptes.permissions_catalogue import Permission
+    from tests.factories import (
+        AccesMagasinFactory,
+        DroitAccordeFactory,
+        GerantFactory,
+        ProprietaireFactory,
+    )
+
+    anfa, maarif = affaire_reelle.magasins
+    proprietaire = ProprietaireFactory(client=affaire_reelle.client)
+    karim = GerantFactory(client=affaire_reelle.client)
+    AccesMagasinFactory(utilisateur=karim, magasin_code=anfa.code)
+    DroitAccordeFactory(
+        utilisateur=karim, magasin_code=anfa.code, code=Permission.STOCK_VOIR
+    )
+
+    JournalDroit.objects.create(
+        utilisateur=karim,
+        action=JournalDroit.Action.ACCORDE,
+        cible=Permission.STOCK_VOIR.value,
+        par=proprietaire,
+    )
+    JournalDroit.objects.create(
+        utilisateur=karim,
+        action=JournalDroit.Action.ACCORDE,
+        cible=Permission.ARTICLE_VOIR_PRIX_ACHAT.value,
+        par=proprietaire,
+    )
+    JournalDroit.objects.create(
+        utilisateur=karim,
+        action=JournalDroit.Action.REVOQUE,
+        cible=maarif.code,
+        par=proprietaire,
+    )
+
+    api = _connecter(_client_api(), proprietaire)
+    reponse = api.get(f"{COMPTES}{karim.pk}/journal/")
+    assert reponse.status_code == 200, reponse.data
+
+    assert [entree["cible"] for entree in reponse.data] == [
+        maarif.code,
+        Permission.ARTICLE_VOIR_PRIX_ACHAT.value,
+        Permission.STOCK_VOIR.value,
+    ], "Le journal n'est pas servi du plus récent au plus ancien."
+    assert reponse.data[0]["nature"] == "magasin"
+    assert reponse.data[0]["action"] == "revoque"
+    assert reponse.data[0]["libelle"] == maarif.nom
+    assert reponse.data[1]["nature"] == "droit"
+    assert reponse.data[1]["libelle"] == Permission.ARTICLE_VOIR_PRIX_ACHAT.label
+    assert reponse.data[2]["par"] == proprietaire.nom_complet
+    assert reponse.data[2]["le"] is not None
+
+    # -- l'intersection, sur les octets -------------------------------------------------
+    gestionnaire = _gerant_gestionnaire(
+        affaire_reelle, [anfa.code], [Permission.STOCK_VOIR]
+    )
+    vue = _connecter(_client_api(), gestionnaire).get(f"{COMPTES}{karim.pk}/journal/")
+    assert vue.status_code == 200, vue.data
+    assert Permission.ARTICLE_VOIR_PRIX_ACHAT.value.encode() not in vue.content, (
+        "L'historique sert à un gérant-gestionnaire une entrée nommant un droit qu'il ne "
+        "détient pas. Il suffirait d'ouvrir le repli pour contourner l'intersection du "
+        "catalogue et de la fiche."
+    )
+    assert maarif.code.encode() not in vue.content
+    assert [entree["cible"] for entree in vue.data] == [Permission.STOCK_VOIR.value]

@@ -508,7 +508,16 @@ describe("la fiche d'un compte", () => {
       compte: ligneKarim({ magasins: [ANFA] }),
     });
 
-    expect(await screen.findByText("Magasin : Anfa")).toBeTruthy();
+    // Le nom du magasin est dans un `bdi` (8.5), donc la phrase est coupee en
+    // deux noeuds : l'assertion porte sur le texte complet du paragraphe, ce
+    // qui est bien la copie, et non sur un noeud de texte isole.
+    await screen.findByRole("region", { name: "Magasins" });
+    expect(
+      screen.getByText(
+        (_contenu, element) =>
+          element?.tagName === "P" && element.textContent === "Magasin : Anfa",
+      ),
+    ).toBeTruthy();
     expect(
       screen.getByText("Ce compte a accès au seul magasin de l'entreprise."),
     ).toBeTruthy();

@@ -326,6 +326,47 @@ paths:
               schema:
                 $ref: '#/components/schemas/ResultatOctroi'
           description: ''
+  /api/comptes/{id}/journal/:
+    get:
+      operationId: comptes_journal_list
+      description: |-
+        `03-UI-SPEC.md` 7.3 D — la seule vue de `JournalDroit`, en lecture seule.
+
+        Le journal est écrit par le service depuis le plan 03-09 et n'avait pas de route
+        pour l'alimenter ; celle-ci est la lecture, et rien d'autre. `JournalDroit`
+        refuse la réécriture et le retrait dans son propre `save()` / `delete()`, donc
+        « lecture seule » n'est pas une propriété de cette vue — c'est une propriété du
+        modèle, et cette vue ne pourrait pas la contourner si elle essayait.
+
+        **Intersectée comme le reste.** Sans cela, il suffirait d'ouvrir le repli d'un
+        historique pour apprendre qu'`article.voir_prix_achat` existe et qui le détient,
+        c'est-à-dire pour contourner en un clic ce que le catalogue et la fiche retirent.
+
+        Pas de pagination : l'historique d'un compte est de l'ordre de la dizaine
+        d'entrées, et un `collapsible` fermé par défaut ne le charge qu'à l'ouverture.
+        Le jour où une affaire en accumule des milliers, la forme à écrire est une
+        pagination, pas une troncature silencieuse.
+      summary: L'historique des droits d'un compte
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Un(une) valeur entière unique identifiant ce(cette) utilisateur.
+        required: true
+      tags:
+      - comptes
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/EntreeDeJournal'
+          description: ''
   /api/comptes/{id}/magasins/:
     post:
       operationId: comptes_magasins_create
@@ -967,6 +1008,47 @@ components:
       - code
       - explication
       - libelle
+    EntreeDeJournal:
+      type: object
+      description: |-
+        Une ligne de `03-UI-SPEC.md` 7.3 D — la seule vue de `JournalDroit`.
+
+        **Déclarée pour le schéma, pas pour sérialiser** : la charge utile est construite par
+        `charge_utile_journal`, qui joint deux mondes — les libellés des permissions vivent
+        dans le plan de contrôle, les noms des magasins dans la base de l'opticien.
+
+        `nature` plutôt qu'une phrase toute faite. « a accordé « Voir le prix d'achat » » et
+        « a accordé l'accès au magasin Maârif » ne se composent pas pareil en français, et
+        cette grammaire-là appartient à l'interface (`03-UI-SPEC.md` 9.3). Le serveur livre
+        donc un libellé et sa nature, jamais une phrase à afficher telle quelle — une phrase
+        assemblée ici serait impossible à corriger sans redéployer le serveur.
+      properties:
+        le:
+          type: string
+          format: date-time
+          readOnly: true
+        action:
+          type: string
+          readOnly: true
+        nature:
+          type: string
+          readOnly: true
+        cible:
+          type: string
+          readOnly: true
+        libelle:
+          type: string
+          readOnly: true
+        par:
+          type: string
+          readOnly: true
+      required:
+      - action
+      - cible
+      - le
+      - libelle
+      - nature
+      - par
     LigneDeDroit:
       type: object
       description: |-

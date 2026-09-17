@@ -51,7 +51,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView, exception_handler
 
 from plateforme.comptes.acces import Acces, acces_pour
-from plateforme.comptes.models import Utilisateur
+from plateforme.comptes.models import JournalDroit, Utilisateur
 from plateforme.comptes.permissions_catalogue import Permission
 from plateforme.comptes import services
 from plateforme.comptes.serializers import (
@@ -65,11 +65,13 @@ from plateforme.comptes.serializers import (
     CompteSerializer,
     ConnexionSerializer,
     CreationCompteSerializer,
+    EntreeDeJournalSerializer,
     ModificationIdentiteSerializer,
     ResultatOctroiSerializer,
     StatutSerializer,
     UniformisationSerializer,
     catalogue_offrable,
+    charge_utile_journal,
     charge_utile_moi,
     charge_utile_resultat,
 )
@@ -535,15 +537,27 @@ class VueComptes(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Gene
         # catalogue a retiré. `peut_quelque_part` n'est donc appelé qu'une fois, à son
         # unique emplacement sanctionné (plan 03-09).
         if self.action == "retrieve" and not acces.pour_le_schema:
-            magasins = _magasins(acces)
-            catalogue = catalogue_offrable(acces, magasins)
-            contexte["codes_offrables"] = [
-                droit["code"]
-                for section in catalogue["sections"]
-                for droit in section["droits"]
-            ]
-            contexte["magasins_offrables"] = [magasin.code for magasin in magasins]
+            codes, magasins = self._intersection(acces)
+            contexte["codes_offrables"] = codes
+            contexte["magasins_offrables"] = list(magasins)
         return contexte
+
+    @staticmethod
+    def _intersection(acces) -> tuple[list[str], dict[str, str]]:
+        """Ce que cet appelant peut voir : les codes, et `{code magasin: nom}`.
+
+        Écrit **une fois** et lu par la fiche comme par l'historique. Deux intersections
+        écrites séparément divergent, et celle qui divergerait servirait l'état — ou une
+        entrée de journal — d'un code que le catalogue a retiré.
+        """
+        magasins = _magasins(acces)
+        catalogue = catalogue_offrable(acces, magasins)
+        codes = [
+            droit["code"]
+            for section in catalogue["sections"]
+            for droit in section["droits"]
+        ]
+        return codes, {magasin.code: magasin.nom for magasin in magasins}
 
     @extend_schema(
         request=CreationCompteSerializer,
@@ -757,6 +771,40 @@ class VueComptes(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Gene
         with _erreurs_de_service():
             resultat = operation(cible, donnees["magasin_code"], par=request.user)
         return Response(charge_utile_resultat(resultat))
+
+
+    @extend_schema(
+        responses={200: EntreeDeJournalSerializer(many=True)},
+        summary="L'historique des droits d'un compte",
+    )
+    @action(detail=True, methods=["get"], url_path="journal")
+    def journal(self, request, pk=None):
+        """`03-UI-SPEC.md` 7.3 D — la seule vue de `JournalDroit`, en lecture seule.
+
+        Le journal est écrit par le service depuis le plan 03-09 et n'avait pas de route
+        pour l'alimenter ; celle-ci est la lecture, et rien d'autre. `JournalDroit`
+        refuse la réécriture et le retrait dans son propre `save()` / `delete()`, donc
+        « lecture seule » n'est pas une propriété de cette vue — c'est une propriété du
+        modèle, et cette vue ne pourrait pas la contourner si elle essayait.
+
+        **Intersectée comme le reste.** Sans cela, il suffirait d'ouvrir le repli d'un
+        historique pour apprendre qu'`article.voir_prix_achat` existe et qui le détient,
+        c'est-à-dire pour contourner en un clic ce que le catalogue et la fiche retirent.
+
+        Pas de pagination : l'historique d'un compte est de l'ordre de la dizaine
+        d'entrées, et un `collapsible` fermé par défaut ne le charge qu'à l'ouverture.
+        Le jour où une affaire en accumule des milliers, la forme à écrire est une
+        pagination, pas une troncature silencieuse.
+        """
+        cible = self.get_object()
+        acces = acces_de_la_requete(request)
+        codes, magasins = self._intersection(acces)
+        entrees = (
+            JournalDroit.objects.filter(utilisateur=cible)
+            .select_related("par")
+            .order_by("-le", "-pk")
+        )
+        return Response(charge_utile_journal(entrees, set(codes), magasins))
 
 
 class VueCatalogue(APIView):

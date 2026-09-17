@@ -600,6 +600,61 @@ def charge_utile_resultat(resultat) -> dict:
     }
 
 
+class EntreeDeJournalSerializer(serializers.Serializer):
+    """Une ligne de `03-UI-SPEC.md` 7.3 D — la seule vue de `JournalDroit`.
+
+    **Déclarée pour le schéma, pas pour sérialiser** : la charge utile est construite par
+    `charge_utile_journal`, qui joint deux mondes — les libellés des permissions vivent
+    dans le plan de contrôle, les noms des magasins dans la base de l'opticien.
+
+    `nature` plutôt qu'une phrase toute faite. « a accordé « Voir le prix d'achat » » et
+    « a accordé l'accès au magasin Maârif » ne se composent pas pareil en français, et
+    cette grammaire-là appartient à l'interface (`03-UI-SPEC.md` 9.3). Le serveur livre
+    donc un libellé et sa nature, jamais une phrase à afficher telle quelle — une phrase
+    assemblée ici serait impossible à corriger sans redéployer le serveur.
+    """
+
+    le = serializers.DateTimeField(read_only=True)
+    action = serializers.CharField(read_only=True)
+    nature = serializers.CharField(read_only=True)
+    cible = serializers.CharField(read_only=True)
+    libelle = serializers.CharField(read_only=True)
+    par = serializers.CharField(read_only=True)
+
+
+def charge_utile_journal(entrees, codes_visibles, magasins_visibles) -> list[dict]:
+    """Le journal d'un compte, **intersecté** comme le catalogue et la fiche.
+
+    Une entrée dont la cible sort de l'intersection est **retirée**, pas anonymisée : un
+    « (droit masqué) » dirait qu'il y a quelque chose à voir et combien de fois, ce qui
+    est la même divulgation en plus discret. Sans ce filtre, il suffirait d'ouvrir le
+    repli d'un historique pour contourner tout ce que `catalogue_offrable` retire.
+
+    Une entrée dont la cible n'est plus dans le catalogue **ni** dans les magasins — un
+    magasin désactivé depuis, par exemple — tombe dans le même cas. C'est un appauvrissement
+    assumé de l'historique, et l'alternative serait de servir le code brut à l'écran.
+    """
+    charge = []
+    for entree in entrees:
+        if entree.cible in codes_visibles:
+            nature, libelle = "droit", _libelle(entree.cible)
+        elif entree.cible in magasins_visibles:
+            nature, libelle = "magasin", magasins_visibles[entree.cible]
+        else:
+            continue
+        charge.append(
+            {
+                "le": entree.le,
+                "action": entree.action,
+                "nature": nature,
+                "cible": entree.cible,
+                "libelle": libelle,
+                "par": entree.par.nom_complet,
+            }
+        )
+    return charge
+
+
 class CompteDetailSerializer(CompteSerializer):
     """La fiche (`03-UI-SPEC.md` 7.3), qui porte en plus **l'état de chaque droit**.
 
