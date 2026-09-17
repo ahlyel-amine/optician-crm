@@ -183,6 +183,27 @@
   --accent-marque-foreground: var(--primary-foreground);
 }
 
+/* ---------------------------------------------------------------------------
+ * Couche produit — l'accent, et l'anneau de focus (03-UI-SPEC.md section 4)
+ *
+ * La specification reserve #2563EB a cinq usages et a aucun autre : le bouton
+ * primaire UNIQUE d'un ecran, l'anneau de focus, la barre d'accent de l'entree
+ * de navigation active, l'etat coche d'un interrupteur, et la ligne
+ * selectionnee d'une palette. Pas les liens de tableau, pas les icones en
+ * general, pas « les elements interactifs » comme categorie.
+ *
+ * ECART CONNU, a trancher et non a oublier : le preset zinc installe au plan
+ * 03-03 donne un --primary quasi noir, donc le bouton primaire n'est PAS
+ * #2563EB aujourd'hui. L'anneau de focus, lui, est pose ici a la valeur de la
+ * specification. Aligner --primary sur --accent-produit rendrait le produit
+ * conforme d'un seul coup, mais repeindrait des ecrans deja valides : c'est une
+ * decision de revue, pas un effet de bord de ce plan.
+ * ------------------------------------------------------------------------- */
+:root {
+  --accent-produit: #2563eb;
+  --anneau-focus: var(--accent-produit);
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -218,6 +239,13 @@
     transform: translate(-50%, -50%);
   }
 
+  /* 03-UI-SPEC.md 5.1 : la zone de contenu n'a PAS de largeur maximale — le
+   * tableau de stock de la phase 5 et les lignes de document de la phase 6 ont
+   * besoin de toute la fenetre. Ce sont les formulaires qui plafonnent. */
+  .colonne-formulaire {
+    max-width: 640px;
+  }
+
   /* 03-UI-SPEC.md section 10 : rien au-dela de 150ms, et aucune transition du
    * tout quand l'utilisateur demande moins de mouvement. */
   @media (prefers-reduced-motion: reduce) {
@@ -230,4 +258,51 @@
       scroll-behavior: auto !important;
     }
   }
+}
+
+/* ---------------------------------------------------------------------------
+ * HORS COUCHE, et c'est le sujet de ce bloc.
+ *
+ * Ces regles ne sont dans AUCUN `@layer`, delibere : en CSS, une declaration
+ * hors couche l'emporte sur toute declaration en couche, quelle que soit la
+ * specificite. C'est la seule facon fiable de battre une utilitaire Tailwind
+ * emise par un bloc shadcn vendorise, sans `!important` et sans modifier le
+ * bloc — donc sans empecher sa mise a jour.
+ *
+ * Deux choses en dependent, et ce sont deux contrats, pas deux preferences :
+ *
+ *   - l'anneau de focus. Le bloc `sidebar` pose `outline-hidden` et
+ *     `focus-visible:ring-2` sur ses boutons ; en couche, notre anneau
+ *     disparaitrait sous la sienne. « L'anneau de focus n'est jamais retire »
+ *     (03-UI-SPEC.md section 10) ne peut pas dependre d'un ordre d'import ;
+ *   - la graisse de l'entree active. Le bloc pose `font-medium` (500) ; le
+ *     produit ne livre que deux graisses, 400 et 600 (section 3). 500 n'existe
+ *     pas ici.
+ * ------------------------------------------------------------------------- */
+
+:focus-visible {
+  outline: 2px solid var(--anneau-focus);
+  outline-offset: 2px;
+}
+
+/* 03-UI-SPEC.md 5.3 : l'entree active porte une barre d'accent de 2px a gauche,
+ * la graisse 600 et le fond #F4F4F5 (que `--sidebar-accent` vaut deja).
+ * L'accent est LA BARRE, jamais un aplat : un fond a l'accent ferait de la
+ * couleur de marque de la phase 9 la couleur dominante de l'ecran. */
+.entree-nav {
+  position: relative;
+}
+
+.entree-nav-active {
+  font-weight: 600;
+}
+
+.entree-nav-active::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 2px;
+  background-color: var(--accent-produit);
 }

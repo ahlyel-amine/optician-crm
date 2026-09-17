@@ -16,16 +16,19 @@ export type ProprietesPageInterdite = {
  * catalogue est identique pour toutes les affaires du produit, donc le nommer
  * ne revele l'existence de rien qui soit propre a un autre client. En echange,
  * l'utilisateur sait quoi demander, a qui, sans appeler le support.
+ *
+ * Ce n'est PAS un repere `main` : depuis le plan 03-13 cette page se rend dans
+ * la zone de contenu du shell, qui est deja le `main` unique.
  */
 export function PageInterdite({ libelleDuDroit }: ProprietesPageInterdite) {
   return (
-    <main className="mx-auto max-w-prose px-6 py-12">
+    <div className="mx-auto max-w-prose py-6">
       <h1 className="text-2xl font-semibold">{MESSAGE_ACCES_REFUSE}</h1>
       {libelleDuDroit ? (
         <p className="mt-4 text-sm text-muted-foreground">
           {messageDroitManquant(libelleDuDroit)}
         </p>
       ) : null}
-    </main>
+    </div>
   );
 }

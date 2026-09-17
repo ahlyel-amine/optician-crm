@@ -133,22 +133,7 @@ beforeEach(() => {
   localStorage.clear();
   reinitialiserLeClient();
   document.cookie = "csrftoken=jeton-de-test; path=/";
-  // jsdom n'implemente pas matchMedia, dont dependent le rail automatique et le
-  // tiroir hors-canevas. On le pose en mode « large ecran » : le responsive est
-  // une affaire de mise en page reelle, que jsdom ne simule pas utilement.
-  vi.stubGlobal(
-    "matchMedia",
-    vi.fn((requete: string) => ({
-      matches: false,
-      media: requete,
-      onchange: null,
-      addEventListener: () => {},
-      removeEventListener: () => {},
-      addListener: () => {},
-      removeListener: () => {},
-      dispatchEvent: () => false,
-    })),
-  );
+  // `matchMedia` vient de tests/setup.ts, en mode « large ecran ».
 });
 
 afterEach(() => {
@@ -328,18 +313,23 @@ describe("la mise en page et le clavier", () => {
     rendreShell();
     await screen.findByRole("navigation", { name: "Navigation principale" });
 
-    const versClients = within(barreDeNavigation()).getByRole("link", { name: /Clients/ });
-    fireEvent.click(versClients);
+    // « Parametres » plutot que « Clients » : sans `VITE_NAV_COMPLET`, seules
+    // les entrees des modules CONSTRUITS sont rendues, ce qui est exactement le
+    // comportement qu'affirme la suite du contrat de navigation.
+    const versParametres = within(barreDeNavigation()).getByRole("link", {
+      name: "Paramètres",
+    });
+    fireEvent.click(versParametres);
 
     // Sans cela, un utilisateur de lecteur d'ecran n'entend RIEN apres avoir
     // clique une entree : la page a change, sa position n'a pas bouge.
     await waitFor(() => {
       const titre = screen.getByRole("heading", { level: 1 });
-      expect(titre.textContent).toBe("Clients");
+      expect(titre.textContent).toBe("Paramètres");
       expect(document.activeElement).toBe(titre);
     });
     await waitFor(() => {
-      expect(screen.getByTestId("annonce-de-route").textContent).toBe("Clients");
+      expect(screen.getByTestId("annonce-de-route").textContent).toBe("Paramètres");
     });
   });
 });

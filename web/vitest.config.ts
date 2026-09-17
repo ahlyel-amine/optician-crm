@@ -22,6 +22,9 @@ export default defineConfig({
     // jsdom : le test des colonnes rend du DOM. Voir tests/colonnes.test.ts.
     environment: "jsdom",
     globals: true,
+    // Ce que jsdom n'implemente pas et dont le shell depend — matchMedia. Voir
+    // tests/setup.ts : sans lui, toute suite qui monte l'application leve.
+    setupFiles: ["./tests/setup.ts"],
     include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
   },
   server: {
