@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03.1-03-PLAN.md
+stopped_at: "Completed 03.1-04-PLAN.md — la porte de la phase 03.1. Quatre portes mecaniques relevees puis REJOUEES apres la passe (backend 187/30, web 133, build 0, schema diff muet), cinq gardes vertes, et la passe humaine en six etapes. Verdict du proprietaire, d'un seul tenant, mot pour mot : « all good ». Aucun defaut signale — la passe precedente sur cet ecran en avait produit cinq pendant que 303 tests etaient verts. D-1a TRANCHEE l'ecran devant lui : le selecteur ouvre sur `Tous les magasins de ce compte`, CLAUDE.md #13 N'EST PAS amende, le renversement chiffre au §5 n'est pas pris. Etape 5 approuvee sur ce qui etait observable, couverture declaree PARTIELLE : aucun decompte a la main n'est rapporte, et le cas gerant-gestionnaire (l'apercu peut sur-annoncer) n'a pas ete parcouru. Releve en base apres coup : le proprietaire A cree CALIFORNIE (19:36:37Z) et l'a accorde a Karim par le produit (19:37:59Z) — 16 droits uniformes etendus, 4 personnalises laisses a l'arret, donc l'apercu et l'ecriture serveur coincident et T-03-62 tient en conditions reelles. Les dix affirmations non etablies par les trois plans sont triees une par une. Le solde de verifications manuelles de la phase 3 reste a 18 : cette phase en ajoute ZERO. Deux agents de continuation ont travaille en parallele sur ce plan (8c9994a puis 80407a1) ; le document est reconcilie, l'historique n'est pas reecrit."
 last_updated: "2026-09-17T20:58:26.756Z"
 last_activity: 2026-09-17
 progress:
@@ -25,14 +25,18 @@ See: .planning/PROJECT.md (updated 2026-09-09)
 
 ## Current Position
 
-Phase: 3 of 12 (Comptes, Permissions & App Shell)
-Plan: **14 of 14 complete in current phase (03-01 à 03-14) — la phase 3 est complète côté CODE, pas côté vérification.** L'écran `Comptes et droits` existe : les 21 droits en sept sections venus du catalogue serveur (la SPA ne code aucun libellé), la surcharge par magasin qui n'apparaît qu'à la demande avec son tri-état `aria-checked="mixed"`, aucun preset ni palier nulle part, les deux dialogues destructifs qui énoncent **ce qui survit**, et l'historique de `JournalDroit`. Une entreprise mono-magasin ne rencontre aucun contrôle.
+Phase: 03.1 of 12 (Assignation des droits par magasin — insérée après la phase 3) — **CLOSE**
+Plan: **4 of 4 complete (03.1-01 à 03.1-04).** La phase est fermée par sa porte, et non par épuisement de ses plans : le propriétaire a rouvert dans un navigateur l'écran qu'il avait lui-même fait réécrire et a répondu **« all good »** sur les six étapes, sans signaler un seul défaut. Le sélecteur de magasin remplace entièrement l'ouverture ligne par ligne ; **il ouvre sur `Tous les magasins de ce compte`, ratifié l'écran devant lui, et CLAUDE.md #13 n'est pas amendé** ; cocher un magasin ouvre une confirmation qui chiffre ce qui s'étendra et ce qui ne s'étendra pas. Aucune migration : la forme `(gérant, magasin, permission)` n'a pas bougé. **Une seule réserve écrite** — l'étape 5 est partiellement couverte (voir Blockers). Suites : backend **187 passed / 30 deselected**, web **133 passed**, build 0, schéma `--fail-on-warn` 0 et diff muet, relevés **avant et après** la passe.
+
+---
+
+**La phase 3, pour mémoire (14 of 14, complète côté CODE, pas côté vérification)** — (03-01 à 03-14) — la phase 3 est complète côté CODE, pas côté vérification.** L'écran `Comptes et droits` existe : les 21 droits en sept sections venus du catalogue serveur (la SPA ne code aucun libellé), la surcharge par magasin qui n'apparaît qu'à la demande avec son tri-état `aria-checked="mixed"`, aucun preset ni palier nulle part, les deux dialogues destructifs qui énoncent **ce qui survit**, et l'historique de `JournalDroit`. Une entreprise mono-magasin ne rencontre aucun contrôle.
 
 **Le point de contrôle a relevé un blocage, pas un écart de copie : l'écran entier était inatteignable par l'interface.** `Paramètres` menait au titre d'attente et rien dans le produit ne liait vers `/parametres/comptes` — 32 tests frontend étaient verts parce qu'ils montaient tous l'écran à sa propre route. La navigation de second niveau de `03-UI-SPEC.md` 5.3 est construite, l'accueil des paramètres redirige vers sa première entrée visible, et un test part de la racine et **clique**. Trois décisions du propriétaire appliquées : l'intersection de la réponse d'une bascule (qui amende le contrat du plan 03-09), l'abandon de la mise en évidence de 2 secondes, et une seconde affaire mono-magasin en développement.
 
 Suites : backend **184 passed / 30 deselected**, web **119 passed**, build 0, `spectacular --fail-on-warn` 0 avec diff de schéma vide, `migrate_all --check` 2 ok / 0 behind.
 
-Suivant : la **vérification de phase 3**, dont la passe manuelle au navigateur — 24 vérifications accumulées et aucune effectuée.
+Suivant : la **vérification de phase 3**, dont la passe manuelle au navigateur — **18 vérifications restent dues** (7 du point de contrôle 03-12, 1 du quick `260917-04r`, 8 du 03-13, 2 du 03-14). **La phase 03.1 n'en ajoute aucune** : ses six étapes portent sur les surfaces qu'elle vient de réécrire et remplacent les items correspondants du 03-14, qui étaient déjà passés sur un écran n'existant plus sous cette forme. Le chiffre de 24 écrit ici auparavant était périmé ; l'arithmétique est corrigée et datée dans `03.1-VALIDATION.md` §6.
 Status: Executing
 Last activity: 2026-09-17
 
@@ -77,6 +81,7 @@ Progress: [██████████] 100% (14/14 plans de la phase 3 écri
 | Phase 03.1 P01 | 11m | 3 tasks | 7 files |
 | Phase 03.1 P02 | 6min | 3 tasks | 8 files |
 | Phase 03.1 P03 | 13min | 3 tasks | 6 files |
+| Phase 03.1 P04 | ~100min (dont l'attente du proprietaire) | 3 tasks | 4 files |
 
 ## Quick Tasks Completed
 
@@ -197,6 +202,10 @@ Recent decisions affecting current work:
 - [Phase 03.1]: DialogueAjoutMagasin offre le choix par une radio presélectionnée, jamais par un troisième bouton de pied
 - [Phase 03.1]: reappliquer part explicitement dans le corps même à true : un choix invisible sur le fil est indébogable
 - [Phase 03.1]: La note de section disparaît quand le magasin démarre vierge, et rien ne la remplace (T-03.1-13)
+- [Phase 03.1-04]: **L'ouverture du sélecteur sur `Tous les magasins de ce compte` est RATIFIÉE par le propriétaire**, l'écran sous les yeux et le coût du renversement chiffré d'avance. CLAUDE.md #13 n'est pas amendé, `MODE_PAR_DEFAUT` reste à `null`, les deux tests nommés ne sont pas réécrits, et le badge `Personnalisé par magasin` de 7.2 reste un signal. Le §5 du VALIDATION est conservé : le devis d'un renversement futur est déjà fait
+- [Phase 03.1-04]: Un verdict humain rendu **d'un seul tenant** se reporte tel quel sur chaque étape, en écrivant qu'aucune n'a reçu de commentaire propre — plutôt qu'en le répartissant en six phrases que personne n'a prononcées
+- [Phase 03.1-04]: Les portes mécaniques se rejouent **après** une passe humaine et pas seulement avant : la passe tourne sur une pile vivante et modifie les données de développement
+- [Phase 03.1-04]: Un intervalle `git log` utilisé comme garde se **nomme** (`e2d46d8~1..HEAD`). `main..HEAD` est devenu vide quand la référence `main` a bougé sur `HEAD`, ce qui rendait la garde G5 verte sans rien tenir
 
 ### Pending Todos
 
@@ -204,7 +213,7 @@ None yet.
 
 ### Blockers/Concerns
 
-- [Phase 03.1] **Passe humaine effectuée le 2026-09-17 — verdict « all good », aucun défaut signalé.** D-1a tranchée l'écran devant le propriétaire : le sélecteur ouvre sur `Tous les magasins de ce compte`, **CLAUDE.md #13 n'est pas amendé**, le renversement chiffré en `03.1-VALIDATION.md` §5 n'est pas pris. **L'étape 5 reste partiellement couverte** : la seconde phrase chiffrée du dialogue d'ajout n'a pas été observée avec un nombre dessus, aucun compte de développement ne pouvant l'afficher — il manque un troisième magasin dans l'affaire `anfa` accordé à personne (`CALIFORNIE`). Le bac à sable a refusé sa création à l'agent comme à l'orchestrateur ; la commande a été remise au propriétaire et **on ne sait pas s'il l'a exécutée**. Fermable en une minute lors d'une passe ultérieure. Deux affirmations restent ouvertes : `reappliquer` envoyé sur un **retrait** (inerte par construction, aucun test), et `Retour` prouvé comme abstention sur le fil mais pas comme lecture de la base. Et un écart qu'aucun test ne couvre : pour un **gérant-gestionnaire** l'aperçu du dialogue peut annoncer plus que ce que le serveur écrit, celui-ci écartant en plus les codes que l'appelant ne détient pas — un propriétaire ne voit jamais cet écart. Détail : `.planning/phases/03.1-assignation-des-droits-par-magasin/03.1-VALIDATION.md` §7.
+- [Phase 03.1] **Passe humaine effectuée le 2026-09-17 — verdict « all good », aucun défaut signalé.** D-1a tranchée l'écran devant le propriétaire : le sélecteur ouvre sur `Tous les magasins de ce compte`, **CLAUDE.md #13 n'est pas amendé**, le renversement chiffré en `03.1-VALIDATION.md` §5 n'est pas pris. **L'étape 5 reste partiellement couverte** : la seconde phrase chiffrée du dialogue d'ajout n'a pas été observée avec un nombre dessus, aucun compte de développement ne pouvant l'afficher — il manquait un troisième magasin dans l'affaire `anfa` accordé à personne (`CALIFORNIE`), le bac à sable ayant refusé sa création à l'agent comme à l'orchestrateur. **Corrigé le 2026-09-17 à 22:10, sur relevé en base : le propriétaire A exécuté la commande.** `CALIFORNIE` existe (`created_at` = `19:36:37Z`) et il l'a accordé à Karim **par le produit** à `19:37:59Z` — **16** droits uniformes étendus dans la même seconde, **4** personnalisés laissés à l'arrêt. Le dialogue s'est donc ouvert sur le cas qui porte la seconde phrase chiffrée, avec un `4` dessus, **l'aperçu et l'écriture serveur coïncident**, et T-03-62 a tenu en conditions réelles. Ce qui reste non établi n'est plus le fixture mais **le décompte à la main** : la réponse est « all good » et ne cite aucun chiffre. À savoir pour la prochaine passe : Karim détient désormais les **trois** magasins, donc son dialogue ne peut plus s'ouvrir — il faut soit lui retirer `CALIFORNIE`, soit un quatrième magasin (commande prête dans `03.1-VALIDATION.md` §3). Deux affirmations restent ouvertes : `reappliquer` envoyé sur un **retrait** (inerte par construction, aucun test), et `Retour` prouvé comme abstention sur le fil mais pas comme lecture de la base. Et un écart qu'aucun test ne couvre : pour un **gérant-gestionnaire** l'aperçu du dialogue peut annoncer plus que ce que le serveur écrit, celui-ci écartant en plus les codes que l'appelant ne détient pas — un propriétaire ne voit jamais cet écart. Détail : `.planning/phases/03.1-assignation-des-droits-par-magasin/03.1-VALIDATION.md` §7.
 - [Phase 3 / Phase 10] **`/` (Tableau de bord) est marqué `disponible: true` mais ne rend que le gabarit d'attente** — un titre et le chemin. C'est la page d'atterrissage après connexion, donc la première chose que voit un propriétaire est un écran vide. Cela **contredit la règle posée au point de contrôle 03-13** (décision 1) : `disponible` est la porte d'expédition précisément pour qu'une build de production ne livre jamais une entrée de navigation menant à un gabarit vide. Les six autres modules non construits sont correctement à `disponible: false` ; seule l'entrée toujours visible viole la règle. **Constaté par le propriétaire le 2026-09-17 en parcourant l'application, et laissé tel quel par sa décision explicite** : le gabarit imprime le chemin, ce qui sert pendant la construction des phases 4 à 10, et personne hors développement ne le voit encore. **À résoudre au plus tard en phase 10**, qui construit le vrai tableau de bord — ou plus tôt si un opticien réel reçoit un accès avant. Ne pas livrer en production avec cette entrée en l'état.
 - [Phase 6] Four open questions block the facturation schema and need a Moroccan comptable, not research: TVA rate on optical goods after the 2026 reform, série per magasin vs per company, TVA treatment of the acompte, and whether the facture is issued at commande or délivrance. Start these during Phase 1.
 - [Phase 1] CNDP prior authorization is reported at 2-4 months and the Moroccan merchant contract at weeks to months. Both must be in flight from day one or they become the launch critical path.
@@ -213,8 +222,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-17T19:22:35.886Z
-Stopped at: Completed 03.1-03-PLAN.md
+Last session: 2026-09-17T21:15:00.000Z
+Stopped at: Completed 03.1-04-PLAN.md — phase 03.1 close, porte franchie, une reserve ecrite
 Resume file: None
 
 Serveurs de developpement laisses TOURNANTS : Vite sur 5173 (navigation filtree, l'etat livre) et sur 5174 (`VITE_NAV_COMPLET=1`, la densite a huit entrees), Django sur 127.0.0.1:8010 — le proprietaire peut reprendre la traversee, celle du shell (03-13) comme celle de l'ecran des droits (03-14).

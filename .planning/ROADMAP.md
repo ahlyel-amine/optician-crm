@@ -15,6 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 1: Legal & Compliance Track** - Calendar-driven filings started day one, running in parallel with every build phase
 - [ ] **Phase 2: Tenancy Foundation & Control Plane** - Database-per-client provisioning, fail-closed resolution, migration fan-out, manual onboarding
 - [x] **Phase 3: Comptes, Permissions & App Shell** - Owner/gérant logins, per-gérant permissions, and the single projection layer, inside a French web shell (completed 2026-09-17)
+- [x] **Phase 03.1: Assignation des droits par magasin (INSERTED)** - Un sélecteur de magasin remplace l'ouverture ligne par ligne, et l'ajout d'un magasin demande s'il faut réappliquer les droits (completed 2026-09-17, porte franchie par une passe humaine — verdict « all good »)
 - [ ] **Phase 4: Clients & Ordonnances** - Client records and structured, versioned, validated ordonnances
 - [ ] **Phase 5: Stock & Catalogue** - Per-magasin articles with an append-only movement ledger, scanner-ready search, suivi de commande, inventaire physique
 - [ ] **Phase 6: Vente & Facturation** - The fiscal core: devis → facture → avoir as one document model, gapless server-issued legal number, remise, idempotent submission
@@ -96,9 +97,14 @@ Plans:
 
 > **Complète côté code, pas côté vérification.** Les 14 plans sont écrits et leurs suites sont vertes
 > (backend 184 / 30 deselected, web 119, build 0, `spectacular --fail-on-warn` 0, `migrate_all --check`
-> 0 behind). **24 vérifications manuelles au navigateur restent en attente** et n'ont jamais été
-> effectuées : 7 du point de contrôle 03-12, 1 du quick 260917-04r, 8 du 03-13 et 8 du 03-14. Elles se
-> font en une seule passe à la vérification de phase. Détail dans `STATE.md` → Blockers/Concerns.
+> 0 behind). **18 vérifications manuelles au navigateur restent dues** : 7 du point de contrôle 03-12,
+> 1 du quick 260917-04r, 8 du 03-13 et **2** du 03-14. Le chiffre de 24 écrit ici auparavant est
+> périmé : le propriétaire a fait **6** des 8 items du 03-14 lors de la passe du 2026-09-17 — celle qui
+> a trouvé cinq défauts pendant que 303 tests étaient verts et qui a créé la phase 03.1. Les 2 items
+> restants (dialogue de désactivation ; **absence d'un code de permission dans l'onglet réseau** en
+> gérant-gestionnaire, la garantie sur laquelle reposent PERM-05 et PERM-06) **ne sont pas** absorbés
+> par la phase 03.1. Elles se font en une seule passe à la vérification de phase. Détail dans
+> `STATE.md` → Blockers/Concerns et dans `03.1-VALIDATION.md` §6.
 
 ### Phase 03.1: Assignation des droits par magasin (INSERTED)
 
@@ -279,6 +285,7 @@ Phase 1 is a parallel calendar track: it starts first and stays open across late
 | 1. Legal & Compliance Track | 0/TBD | Not started | - |
 | 2. Tenancy Foundation & Control Plane | 7/7 | Complete | 2026-09-13 |
 | 3. Comptes, Permissions & App Shell | 14/14 | Complete   | 2026-09-17 |
+| 03.1 Assignation des droits par magasin (INSERTED) | 4/4 | Complete | 2026-09-17 |
 | 4. Clients & Ordonnances | 0/TBD | Not started | - |
 | 5. Stock & Catalogue | 0/TBD | Not started | - |
 | 6. Vente & Facturation | 0/TBD | Not started | - |
