@@ -1,5 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { toast } from "sonner";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -518,7 +525,6 @@ function rendreLaFiche(options: {
   amorcage?: unknown;
   surDroits?: (requete: Request) => Response | Promise<Response>;
   surMagasins?: (requete: Request) => Response | Promise<Response>;
-  surUniformiser?: (requete: Request) => Response | Promise<Response>;
   surStatut?: (requete: Request) => Response | Promise<Response>;
   surMotDePasse?: (requete: Request) => Response | Promise<Response>;
   surJournal?: (requete: Request) => Response | Promise<Response>;
@@ -535,9 +541,6 @@ function rendreLaFiche(options: {
   };
   if (options.surDroits) {
     table["POST /api/comptes/2/droits/"] = options.surDroits;
-  }
-  if (options.surUniformiser) {
-    table["POST /api/comptes/2/droits/uniformiser/"] = options.surUniformiser;
   }
   if (options.surMagasins) {
     table["POST /api/comptes/2/magasins/"] = options.surMagasins;
@@ -751,33 +754,26 @@ function resultat(surcharge: Record<string, unknown> = {}) {
   };
 }
 
-describe("la surcharge par magasin", () => {
-  it("n'offre `Par magasin` qu'a partir de deux magasins", async () => {
-    rendreLaFiche({
-      catalogue: catalogueOffrable([ANFA]),
-      magasinsAccordes: ["ANFA"],
-      droits: [{ code: "stock.voir", etat: "actif", magasins: ["ANFA"] }],
-    });
+/** Le nom accessible du selecteur des droits, distinct de celui du shell (5.4). */
+const ETIQUETTE_DES_DROITS = /Régler les droits pour/;
 
-    await screen.findByRole("switch", { name: "Consulter le stock" });
-    // Invisible pour toute entreprise mono-magasin : la grille n'existe que la
-    // ou le proprietaire l'a demandee, et il ne peut pas la demander ici.
-    expect(screen.queryByRole("button", { name: "Par magasin" })).toBeNull();
-  });
-
-  it("rend `Par magasin` visible sans survol ni focus, sur chaque ligne (PERM-03)", async () => {
-    // Le pendant du test ci-dessus, et le defaut qu'il ne voyait pas : le
-    // bouton EXISTAIT a deux magasins, et il etait rendu `opacity-0` jusqu'au
-    // survol de sa ligne. Indecouvrable — il faut pointer exactement la bonne
-    // ligne pour apprendre qu'il existe — et purement absent au toucher, donc
-    // absent de la tablette du comptoir. Le proprietaire en a conclu que
-    // l'octroi par magasin n'existait pas.
+describe("le sélecteur de magasin des droits (PERM-03, PERM-04)", () => {
+  it("rend le sélecteur sans survol ni focus, et ouvre sur « Tous les magasins de ce compte » (PERM-03)", async () => {
+    // Le remplacant du test caduc de la tache rapide `260917-l7l`, dont il
+    // reprend la discipline d'assertion. Le defaut d'origine : le controle par
+    // ligne existait a deux magasins mais etait rendu `opacity-0` jusqu'au
+    // survol de sa ligne. Indecouvrable — il fallait pointer exactement la
+    // bonne ligne pour apprendre qu'il existait — et purement absent au
+    // toucher, donc absent de la tablette du comptoir. Le proprietaire en a
+    // conclu que l'octroi par magasin n'existait pas, puis a demande un
+    // selecteur en tete de section a la place. C'est ce selecteur-la qui doit
+    // desormais se voir sans rien survoler.
     //
     // **Pourquoi une assertion de CLASSES et non de visibilite.** jsdom ne
     // calcule pas le CSS : `getComputedStyle` n'y resout ni Tailwind ni une
     // feuille externe, donc `toBeVisible()` rend vrai sur un `opacity-0`. Ce
-    // test attrape la regression exacte qui vient de se produire ; il ne
-    // prouve pas une visibilite reelle. Cette preuve-la reste humaine.
+    // test attrape la regression exacte ; il ne prouve pas une visibilite
+    // reelle. Cette preuve-la reste humaine — etape 1 du plan `03.1-04`.
     rendreLaFiche({
       droits: [
         { code: "stock.voir", etat: "actif", magasins: ["ANFA", "MAARIF"] },
@@ -787,26 +783,221 @@ describe("la surcharge par magasin", () => {
 
     await screen.findByRole("switch", { name: "Consulter le stock" });
     // Aucun `mouseOver`, aucun `focus` : l'ecran tel qu'il est rendu.
-    const boutons = screen.getAllByRole("button", { name: "Par magasin" });
-    expect(boutons).toHaveLength(5);
+    const selecteur = screen.getByRole("combobox", { name: ETIQUETTE_DES_DROITS });
+    expect(selecteur.textContent).toContain("Tous les magasins de ce compte");
 
-    for (const bouton of boutons) {
-      const classes = bouton.className.split(/\s+/);
-      expect(classes).not.toContain("opacity-0");
-      expect(
-        classes.filter(
-          (classe) =>
-            classe.startsWith("group-hover:") ||
-            classe.startsWith("group-focus-within:") ||
-            classe.startsWith("focus:opacity"),
+    const classes = selecteur.className.split(/\s+/);
+    expect(classes).not.toContain("opacity-0");
+    expect(
+      classes.filter(
+        (classe) =>
+          classe.startsWith("group-hover:") ||
+          classe.startsWith("group-focus-within:") ||
+          classe.startsWith("focus:opacity"),
+      ),
+    ).toEqual([]);
+
+    // Le shell monte deja un selecteur de magasin (5.4). Deux `combobox`
+    // homonymes sur un ecran sont ambigus a l'oeil comme au lecteur d'ecran,
+    // et rendent chaque requete de test equivoque : les noms accessibles
+    // doivent differer, et le libelle de l'option `Tous` avec eux.
+    const duShell = screen.getByRole("combobox", { name: "Tous les magasins" });
+    expect(duShell).not.toBe(selecteur);
+    expect(screen.getAllByRole("combobox", { name: ETIQUETTE_DES_DROITS })).toHaveLength(1);
+  });
+
+  it("n'offre aucun sélecteur a une entreprise mono-magasin", async () => {
+    // **Une garde de predicat se teste par paire.** Seule, l'assertion
+    // d'absence serait verte contre un ecran qui ne porte aucun selecteur du
+    // tout — c'est-a-dire contre le code d'avant ce plan. Le cas a deux
+    // magasins est donc rendu d'abord, et c'est lui qui donne du mordant au
+    // second.
+    rendreLaFiche({
+      droits: [{ code: "stock.voir", etat: "actif", magasins: ["ANFA", "MAARIF"] }],
+    });
+    expect(
+      await screen.findByRole("combobox", { name: ETIQUETTE_DES_DROITS }),
+    ).toBeTruthy();
+
+    cleanup();
+    appels = [];
+
+    // Le cas frequent : une affaire a un magasin, ou un gerant-gestionnaire
+    // reduit a un seul. Aucune decision, donc aucun controle (5.4, 7.3 B).
+    // La source est `magasins_accordes`, jamais le catalogue de l'appelant
+    // (T-03.1-02) : offrir une portee que le serveur refusera est une impasse.
+    rendreLaFiche({
+      catalogue: catalogueOffrable([ANFA]),
+      magasinsAccordes: ["ANFA"],
+      droits: [{ code: "stock.voir", etat: "actif", magasins: ["ANFA"] }],
+    });
+    await screen.findByRole("switch", { name: "Consulter le stock" });
+    expect(screen.queryByRole("combobox", { name: ETIQUETTE_DES_DROITS })).toBeNull();
+    expect(screen.queryByText("Tous les magasins de ce compte")).toBeNull();
+  });
+
+  it("ne laisse subsister ni « Par magasin », ni sous-liste, ni « Uniformiser » — une seule facon de faire", async () => {
+    // Une ligne MIXTE est le seul cas ou l'ancien ecran depliait d'emblee :
+    // c'est donc la fiche sur laquelle les trois absences veulent dire
+    // quelque chose. La decision 1 du CONTEXT refuse la coexistence des deux
+    // mecanismes, pas seulement l'ancien.
+    rendreLaFiche({ droits: DROITS_MIXTES });
+
+    await screen.findByRole("switch", { name: "Saisir en caisse" });
+    expect(screen.queryAllByRole("button", { name: "Par magasin" })).toHaveLength(0);
+    expect(screen.queryAllByRole("button", { name: "Uniformiser" })).toHaveLength(0);
+    // Le tiret cadratin etait ce que la sous-liste mettait dans le nom
+    // accessible de chaque sous-interrupteur.
+    expect(screen.queryAllByRole("switch", { name: /—/ })).toHaveLength(0);
+  });
+
+  it("regle un seul magasin quand un magasin est choisi, et n'annonce jamais « mixed »", async () => {
+    rendreLaFiche({
+      droits: DROITS_MIXTES,
+      surDroits: () =>
+        json(
+          resultat({
+            action: "revoque",
+            lignes: [{ code: "caisse.saisir", etat: "inactif", magasins: [] }],
+          }),
         ),
-      ).toEqual([]);
+    });
+
+    fireEvent.click(await screen.findByRole("combobox", { name: ETIQUETTE_DES_DROITS }));
+    fireEvent.click(await screen.findByRole("option", { name: "Anfa" }));
+
+    // (a) **Un magasin unique ne peut pas etre mixte.** C'est l'invariant qui
+    // interdit une quatrieme variante de `services.etat_de` : en mode nomme,
+    // l'etat d'une ligne est une APPARTENANCE a `lignes[].magasins`, pas un
+    // etat calcule.
+    for (const interrupteur of screen.getAllByRole("switch")) {
+      expect(interrupteur.getAttribute("aria-checked")).not.toBe("mixed");
     }
 
-    // CLAUDE.md #13 : rendre le bouton visible ne deplie RIEN. Le defaut reste
-    // la case a cocher uniforme ; le tiret cadratin est ce que la sous-liste
-    // met dans le nom accessible de chaque sous-interrupteur.
-    expect(screen.queryAllByRole("switch", { name: /\u2014/ })).toHaveLength(0);
+    // (b) `caisse.saisir` est detenu a Anfa, et a Anfa seulement.
+    const saisir = screen.getByRole("switch", { name: "Saisir en caisse" });
+    expect(saisir.getAttribute("aria-checked")).toBe("true");
+
+    // (c) Exactement un code de magasin sur le fil, celui choisi (T-03.1-06).
+    fireEvent.click(saisir);
+    await waitFor(() => {
+      const envoi = appels.find(
+        (appel) => appel.chemin === "/api/comptes/2/droits/" && appel.methode === "POST",
+      );
+      expect(envoi?.corps).toEqual({
+        code: "caisse.saisir",
+        accorde: false,
+        magasins: ["ANFA"],
+      });
+    });
+  });
+
+  it("porte TOUS les magasins accordes sur le fil tant que le mode est « Tous »", async () => {
+    // La garde contre le **sous-octroi silencieux** (T-03.1-03) : un corps
+    // reduit au magasin choisi alors que le mode est `Tous` ferait croire au
+    // proprietaire qu'il a accorde partout. Elle vaut pour le defaut ET pour
+    // un retour explicite sur `Tous` apres un detour par un magasin nomme.
+    rendreLaFiche({
+      droits: DROITS_MIXTES,
+      surDroits: () => json(resultat({ action: "revoque", lignes: [] })),
+    });
+
+    // Sans toucher au selecteur.
+    fireEvent.click(await screen.findByRole("switch", { name: "Consulter le stock" }));
+    // **Apres un tour de boucle d'evenements**, jamais juste apres le clic :
+    // `mutate()` rend la main avant d'appeler `fetch`, donc une assertion
+    // immediate serait verte au-dessus du defaut.
+    await waitFor(() => {
+      const envoi = appels.find(
+        (appel) => appel.chemin === "/api/comptes/2/droits/" && appel.methode === "POST",
+      );
+      expect(envoi?.corps).toEqual({
+        code: "stock.voir",
+        accorde: false,
+        magasins: ["ANFA", "MAARIF"],
+      });
+    });
+
+    fireEvent.click(screen.getByRole("combobox", { name: ETIQUETTE_DES_DROITS }));
+    fireEvent.click(await screen.findByRole("option", { name: "Anfa" }));
+    fireEvent.click(screen.getByRole("combobox", { name: ETIQUETTE_DES_DROITS }));
+    fireEvent.click(
+      await screen.findByRole("option", { name: "Tous les magasins de ce compte" }),
+    );
+
+    appels = [];
+    fireEvent.click(screen.getByRole("switch", { name: "Consulter la caisse" }));
+    await waitFor(() => {
+      const envoi = appels.find(
+        (appel) => appel.chemin === "/api/comptes/2/droits/" && appel.methode === "POST",
+      );
+      expect(envoi?.corps).toEqual({
+        code: "caisse.voir",
+        accorde: false,
+        magasins: ["ANFA", "MAARIF"],
+      });
+    });
+  });
+
+  it("garde le badge « Personnalisé » dans les deux modes, pilote par l'etat serveur", async () => {
+    // Le successeur de `garde le badge « Personnalise » une fois la ligne
+    // repliee` : il n'y a plus de repliement, mais la propriete qu'il gardait
+    // — l'etat personnalise n'est JAMAIS cache — reste et doit rester tenue.
+    // Le badge dit « ce droit n'est pas le meme partout », et cette phrase
+    // reste vraie quand on n'en regarde qu'un.
+    rendreLaFiche({ droits: DROITS_MIXTES });
+
+    await screen.findByRole("switch", { name: "Saisir en caisse" });
+    expect(screen.getByText("Personnalisé")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("combobox", { name: ETIQUETTE_DES_DROITS }));
+    fireEvent.click(await screen.findByRole("option", { name: "Anfa" }));
+
+    expect(screen.getByText("Personnalisé")).toBeTruthy();
+  });
+
+  it("retombe sur « Tous » quand le magasin choisi est retire du compte", async () => {
+    // Menace T-03.1-04 : une selection perimee ferait echouer chaque clic
+    // suivant contre `_magasins_vises`, avec une erreur sur chaque ligne et
+    // aucune explication utile. La revalidation est la regle de 5.4,
+    // appliquee ici.
+    rendreLaFiche({
+      droits: DROITS_MIXTES,
+      surMagasins: () =>
+        json(
+          resultat({
+            code: "MAARIF",
+            action: "revoque",
+            lignes: [{ code: "caisse.saisir", etat: "actif", magasins: ["ANFA"] }],
+            magasins_accordes: ["ANFA"],
+          }),
+        ),
+      surDroits: () => json(resultat({ action: "revoque", lignes: [] })),
+    });
+
+    fireEvent.click(await screen.findByRole("combobox", { name: ETIQUETTE_DES_DROITS }));
+    fireEvent.click(await screen.findByRole("option", { name: "Maârif" }));
+
+    fireEvent.click(screen.getByRole("checkbox", { name: /Maârif/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Retirer l'accès" }));
+
+    // Un seul magasin restant : il n'y a plus de decision, donc plus de
+    // controle.
+    await waitFor(() => {
+      expect(screen.queryByRole("combobox", { name: ETIQUETTE_DES_DROITS })).toBeNull();
+    });
+
+    appels = [];
+    fireEvent.click(screen.getByRole("switch", { name: "Consulter le stock" }));
+    await waitFor(() => {
+      expect(
+        appels.some((appel) => appel.chemin === "/api/comptes/2/droits/"),
+      ).toBe(true);
+    });
+    // Aucune requete ulterieure ne porte le magasin retire.
+    for (const appel of appels) {
+      expect(JSON.stringify(appel.corps ?? null)).not.toContain("MAARIF");
+    }
   });
 
   it("annonce le tri-etat plutot que de seulement le dessiner", async () => {
@@ -815,28 +1006,6 @@ describe("la surcharge par magasin", () => {
     const parent = await screen.findByRole("switch", { name: "Saisir en caisse" });
     expect(parent.getAttribute("aria-checked")).toBe("mixed");
     expect(screen.getByText("Personnalisé : 1 magasin sur 2")).toBeTruthy();
-  });
-
-  it("deplie une seule ligne, et nomme le magasin dans chaque sous-interrupteur", async () => {
-    rendreLaFiche({ droits: DROITS_MIXTES });
-
-    await screen.findByRole("switch", { name: "Saisir en caisse" });
-    // Une ligne personnalisee est depliee d'emblee ; dans le cas attendu —
-    // aucune personnalisation — zero ligne l'est.
-    expect(screen.getByRole("switch", { name: "Saisir en caisse — Anfa" })).toBeTruthy();
-    expect(screen.getByRole("switch", { name: "Saisir en caisse — Maârif" })).toBeTruthy();
-    expect(screen.queryByRole("switch", { name: "Consulter le stock — Anfa" })).toBeNull();
-  });
-
-  it("garde le badge `Personnalise` une fois la ligne repliee", async () => {
-    rendreLaFiche({ droits: DROITS_MIXTES });
-
-    fireEvent.click(await screen.findByRole("button", { name: "Uniformiser" }));
-    // Le dialogue s'interpose ; on revient en arriere, la ligne se replie.
-    fireEvent.click(screen.getByRole("button", { name: "Retour" }));
-
-    expect(screen.queryByRole("switch", { name: "Saisir en caisse — Anfa" })).toBeNull();
-    expect(screen.getByText("Personnalisé")).toBeTruthy();
   });
 
   it("allume TOUS les magasins au clic sur un parent mixte, et le toast le dit", async () => {
@@ -867,23 +1036,6 @@ describe("la surcharge par magasin", () => {
     expect(
       await screen.findByText("Droit accordé dans tous les magasins : « Saisir en caisse »."),
     ).toBeTruthy();
-  });
-
-  it("demande avant d'uniformiser une ligne dont les magasins divergent", async () => {
-    rendreLaFiche({ droits: DROITS_MIXTES });
-
-    fireEvent.click(await screen.findByRole("button", { name: "Uniformiser" }));
-
-    expect(
-      screen.getByRole("heading", { name: "Appliquer le même droit à tous les magasins ?" }),
-    ).toBeTruthy();
-    expect(
-      screen.getByText(
-        "Les réglages par magasin de « Saisir en caisse » seront remplacés. Karim aura ce droit dans les 2 magasins.",
-      ),
-    ).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Retour" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Annuler" })).toBeNull();
   });
 
   it("etend les lignes uniformes a un magasin ajoute, et pas les personnalisees", async () => {
