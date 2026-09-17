@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: "Completed 03.1-03-PLAN.md — `DialogueAjoutMagasin` : cocher un magasin n'ecrit plus rien, il ouvre une confirmation qui propose `Reappliquer les droits existants` PRESELECTIONNE et chiffre les deux moities (ce qui s'etend, ce qui ne s'etendra jamais, la seconde phrase omise a zero). `reappliquer` part explicitement dans le corps dans les deux sens ; la note de section disparait quand le magasin demarre vierge (T-03.1-13). Web 133 passed (base 128, +5 : le test 3 du plan a ete livre en jumeau, un `it` par valeur — l'attendu du VALIDATION etait 134, ecart -1 justifie dans le SUMMARY), backend 187/30 inchange, build 0, audit:format muet. Le test `etend les lignes uniformes…` a ete reecrit SUR PLACE : `git show --numstat` rend `185 0`, zero suppression. Deviations : une troisieme variante de copie pour `uniformes === 0` (le cas frequent, un compte neuf n'ayant aucun droit), et le bloc de tete de `dialogues.tsx` qui comptait encore trois confirmations. Reste de la phase : le point de controle humain 03.1-04, dont l'etape 5 porte sur ce dialogue."
-last_updated: "2026-09-17T19:22:35.889Z"
+stopped_at: Completed 03.1-03-PLAN.md
+last_updated: "2026-09-17T20:58:26.756Z"
 last_activity: 2026-09-17
 progress:
   total_phases: 13
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 25
-  completed_plans: 24
-  percent: 96
+  completed_plans: 25
+  percent: 100
 ---
 
 # Project State
@@ -204,6 +204,7 @@ None yet.
 
 ### Blockers/Concerns
 
+- [Phase 03.1] **Passe humaine effectuée le 2026-09-17 — verdict « all good », aucun défaut signalé.** D-1a tranchée l'écran devant le propriétaire : le sélecteur ouvre sur `Tous les magasins de ce compte`, **CLAUDE.md #13 n'est pas amendé**, le renversement chiffré en `03.1-VALIDATION.md` §5 n'est pas pris. **L'étape 5 reste partiellement couverte** : la seconde phrase chiffrée du dialogue d'ajout n'a pas été observée avec un nombre dessus, aucun compte de développement ne pouvant l'afficher — il manque un troisième magasin dans l'affaire `anfa` accordé à personne (`CALIFORNIE`). Le bac à sable a refusé sa création à l'agent comme à l'orchestrateur ; la commande a été remise au propriétaire et **on ne sait pas s'il l'a exécutée**. Fermable en une minute lors d'une passe ultérieure. Deux affirmations restent ouvertes : `reappliquer` envoyé sur un **retrait** (inerte par construction, aucun test), et `Retour` prouvé comme abstention sur le fil mais pas comme lecture de la base. Et un écart qu'aucun test ne couvre : pour un **gérant-gestionnaire** l'aperçu du dialogue peut annoncer plus que ce que le serveur écrit, celui-ci écartant en plus les codes que l'appelant ne détient pas — un propriétaire ne voit jamais cet écart. Détail : `.planning/phases/03.1-assignation-des-droits-par-magasin/03.1-VALIDATION.md` §7.
 - [Phase 3 / Phase 10] **`/` (Tableau de bord) est marqué `disponible: true` mais ne rend que le gabarit d'attente** — un titre et le chemin. C'est la page d'atterrissage après connexion, donc la première chose que voit un propriétaire est un écran vide. Cela **contredit la règle posée au point de contrôle 03-13** (décision 1) : `disponible` est la porte d'expédition précisément pour qu'une build de production ne livre jamais une entrée de navigation menant à un gabarit vide. Les six autres modules non construits sont correctement à `disponible: false` ; seule l'entrée toujours visible viole la règle. **Constaté par le propriétaire le 2026-09-17 en parcourant l'application, et laissé tel quel par sa décision explicite** : le gabarit imprime le chemin, ce qui sert pendant la construction des phases 4 à 10, et personne hors développement ne le voit encore. **À résoudre au plus tard en phase 10**, qui construit le vrai tableau de bord — ou plus tôt si un opticien réel reçoit un accès avant. Ne pas livrer en production avec cette entrée en l'état.
 - [Phase 6] Four open questions block the facturation schema and need a Moroccan comptable, not research: TVA rate on optical goods after the 2026 reform, série per magasin vs per company, TVA treatment of the acompte, and whether the facture is issued at commande or délivrance. Start these during Phase 1.
 - [Phase 1] CNDP prior authorization is reported at 2-4 months and the Moroccan merchant contract at weeks to months. Both must be in flight from day one or they become the launch critical path.
