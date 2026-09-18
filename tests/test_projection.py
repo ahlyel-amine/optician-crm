@@ -29,6 +29,8 @@ dans `tests/test_comptes_socle.py`, depuis le plan 03-01, avec son contrôle pos
 
 from __future__ import annotations
 
+from typing import Callable, NamedTuple
+
 import pytest
 
 from tests.ressources_fixture import (  # noqa: F401 — fixtures pytest, importées pour être disponibles
@@ -71,17 +73,35 @@ RENDUS = ["api", "export", "document", "catalogue"]
 
 
 def champs_proteges_parametres():
-    """Les cas `(clé, code)` de la paramétrisation, avec repli tant que le registre est vide.
+    """Les cas `(clé, code)` de la paramétrisation : le registre réel **plus** la fixture.
 
     Import **local et gardé**, délibérément : les arguments de `parametrize` sont évalués à
     l'import du module de test, donc un import au niveau du module transformerait l'absence
     du registre en erreur de collecte pour toute la suite.
+
+    **Le cas de la ressource de test est CONCATÉNÉ, jamais un repli.** Il l'a été jusqu'au
+    plan 04-05 : l'expression se terminait par un opérateur de choix, dont la branche de
+    droite ne s'évaluait que sur un registre vide. Tant que le produit n'avait aucune
+    entrée réelle, personne ne pouvait le voir ; à la **première** ligne inscrite —
+    `clients.Client.derniere_ordonnance`, ce même plan — le cas de la fixture serait sorti
+    de la paramétrisation et **quatre assertions auraient disparu sans qu'aucun test ne
+    rougisse**. Le garde aurait perdu son propre contrôle de fonctionnement au moment
+    exact où il commençait à servir.
+
+    La ressource de test n'est donc pas une béquille de phase 3 : c'est le seul sujet dont
+    la suite maîtrise entièrement le sérialiseur, la vue, le gabarit et la tâche, donc le
+    seul qui prouve que la machinerie marche plutôt que le champ. Elle reste paramétrée
+    pour toujours.
+
+    Dédoublonné par `dict.fromkeys` — qui préserve l'ordre — pour le jour où quelqu'un
+    inscrirait la clé de la fixture au vrai registre : le test tournerait alors deux fois
+    sur le même sujet et le décompte mentirait.
     """
     try:
         from plateforme.projection.registre import CHAMPS_PROTEGES
     except ImportError:  # pragma: no cover — avant le plan 03-06
         return [CHAMP_DE_REPLI]
-    return sorted(CHAMPS_PROTEGES.items()) or [CHAMP_DE_REPLI]
+    return list(dict.fromkeys(sorted(CHAMPS_PROTEGES.items()) + [CHAMP_DE_REPLI]))
 
 
 # --------------------------------------------------------------------------------------
@@ -91,9 +111,92 @@ def champs_proteges_parametres():
 #: table ci-dessous fait ce lien, et c'est **la seule chose** qu'un plan de phase 8 ou 9 a
 #: à ajouter pour que ses champs rejoignent le test porteur. Une clé sans sujet échoue avec
 #: un message qui dit quoi écrire — un rouge précis plutôt qu'un silence.
-def _sujet_pour(cle, instance_de_la_fixture):
+class Sujet(NamedTuple):
+    """Tout ce que le test porteur a besoin de savoir d'une clé de registre.
+
+    **Huit champs plutôt que deux, et l'élargissement est arrivé avec la première entrée
+    réelle.** Jusqu'au plan 04-05, `_sujet_pour` rendait `(sérialiseur, instance)` et le
+    reste était écrit en dur dans le corps du test : la valeur attendue était la constante
+    `VALEUR_PROTEGEE` de la fixture, le contrôle positif son `PRIX_VENTE`, la vue sa
+    `VueRessourceFixture`, et l'accès sans le droit celui qui ne détient pas
+    `article.voir_prix_achat`.
+
+    Aucune de ces quatre choses n'est vraie d'un vrai champ. Une fiche client ne porte ni
+    `4242.42` ni `1800.00`, elle est servie par `VueClients`, et le gérant qui doit
+    l'atteindre sans voir le résumé clinique doit détenir `client.voir` — sans quoi il
+    reçoit **403** et l'assertion d'absence passerait parce que la réponse est vide.
+
+    C'est donc le sujet, et non le test, qui porte le « comment ». Le corps du test ne sait
+    plus rien d'aucune ressource, ce qui est ce qui lui permet d'en servir deux.
+    """
+
+    #: La classe de sérialiseur qui expose le champ.
+    serializer: type
+    #: La ligne qui l'illustre.
+    instance: object
+    #: La valeur rendue du champ protégé, en chaîne. Elle doit être **absente** de chacun
+    #: des quatre rendus pour qui n'a pas le droit.
+    valeur: str
+    #: Une valeur publique de la même ligne. Elle doit être **présente** : sans elle, un
+    #: rendu qui n'imprimerait jamais rien satisfait « absent » quatre fois sur quatre.
+    valeur_publique: str
+    #: Le queryset de l'export, appelé paresseusement (il exige le locataire lié).
+    lignes: Callable[[], object]
+    #: `(utilisateur, instance) -> réponse rendue` — la route de détail de la ressource.
+    detail: Callable[[object, object], object]
+    #: `(magasins) -> (utilisateur, Acces)` — un appelant qui **atteint** la ressource et
+    #: ne détient **pas** le code protégé.
+    acces_sans: Callable[[object], tuple]
+    #: `(magasins) -> (utilisateur, Acces)` — le contrôle positif.
+    acces_avec: Callable[[object], tuple]
+
+
+def _cles_du_resume_ordonnance() -> frozenset[str]:
+    """Les deux clés que le plan 04-05 a inscrites au registre, **dérivées** du modèle.
+
+    Dérivées et non recopiées, pour la même raison que `CHAMP_DE_REPLI` : une clé écrite à
+    la main survit à un renommage de champ, et le test devient alors paramétré sur une clé
+    que plus personne ne protège — donc vert, donc sans valeur.
+    """
+    from domaine.clients.models import Client
+    from plateforme.projection.registre import cle_de_champ
+
+    return frozenset(
+        cle_de_champ(Client, nom)
+        for nom in ("derniere_ordonnance", "resume_ordonnance")
+    )
+
+
+def _sujet_pour(cle, instance_de_la_fixture, fiche_avec_ordonnance):
     if cle == CLE_PROTEGEE:
-        return SerializerRessourceFixture, instance_de_la_fixture
+        return Sujet(
+            serializer=SerializerRessourceFixture,
+            instance=instance_de_la_fixture,
+            valeur=str(VALEUR_PROTEGEE),
+            valeur_publique=str(PRIX_VENTE),
+            lignes=lambda: RessourceFixture.objects.all(),
+            detail=_reponse_detail,
+            acces_sans=acces_sans_le_droit,
+            acces_avec=acces_avec_le_droit,
+        )
+
+    if cle in _cles_du_resume_ordonnance():
+        from domaine.clients.models import Client
+        from domaine.clients.serializers import FicheClientSerializer
+        from domaine.ordonnances.services import avec_la_derniere_ordonnance
+
+        fiche, valeurs_attendues = fiche_avec_ordonnance
+        return Sujet(
+            serializer=FicheClientSerializer,
+            instance=fiche,
+            valeur=valeurs_attendues[cle.rsplit(".", 1)[-1]],
+            valeur_publique=fiche.nom,
+            lignes=lambda: avec_la_derniere_ordonnance(Client.objects.all()),
+            detail=_reponse_fiche_client,
+            acces_sans=acces_client_sans_ordonnance_voir,
+            acces_avec=acces_avec_le_droit,
+        )
+
     pytest.fail(
         f"Le registre protège {cle!r} mais aucun sujet de test ne lui correspond. "
         "Ajoutez son sérialiseur et une instance à `_sujet_pour` dans le plan qui a "
@@ -146,12 +249,117 @@ def _reponse_detail(utilisateur, instance):
 
 
 # --------------------------------------------------------------------------------------
+# Le second sujet : la fiche client et son résumé d'ordonnance (plan 04-05)
+# --------------------------------------------------------------------------------------
+#: La date de prescription de la version en cours du sujet client. **Ancienne et
+#: reconnaissable** : elle est cherchée comme sous-chaîne dans un JSON, dans un CSV et
+#: dans un HTML, donc elle ne doit ressembler à aucune date que la suite produit toute
+#: seule — `created_at` est celui du jour, et une collision rendrait l'assertion d'absence
+#: fausse sans le dire.
+DATE_DE_PRESCRIPTION = "2019-07-23"
+
+#: La sphère OD de cette version, en chaîne. Même exigence : distinctive. La fabrique par
+#: défaut pose `-1.00`, valeur bien trop banale pour être cherchée dans des octets.
+SPHERE_DU_RESUME = "-6.75"
+
+#: Le nom du client sujet — le **contrôle positif** de chacune de ses quatre assertions
+#: d'absence. Sans accent, parce qu'il est comparé dans du HTML échappé et dans un CSV.
+NOM_DU_CLIENT_SUJET = "Karim Bennani"
+
+
+@pytest.fixture
+def fiche_avec_ordonnance(db_all, deux_magasins):
+    """Une fiche client portant deux versions d'ordonnance, et les valeurs à y chercher.
+
+    **Deux versions et non une**, parce que le résumé doit être celui de la version *en
+    cours* : avec une seule ligne, une implémentation qui rendrait la plus ancienne, la
+    première insérée ou n'importe laquelle serait verte. La version 1 porte donc une
+    sphère différente, et c'est celle de la version 2 que les assertions cherchent.
+    """
+    from decimal import Decimal
+
+    from domaine.ordonnances.models import Ordonnance
+    from tests.factories import FicheClientFactory, OrdonnanceFactory
+
+    fiche = FicheClientFactory(nom=NOM_DU_CLIENT_SUJET, telephone="0612345678")
+    OrdonnanceFactory(
+        client=fiche,
+        magasin=deux_magasins[0],
+        version=1,
+        date_prescription="2017-01-09",
+        sphere_od=Decimal("-2.00"),
+    )
+    OrdonnanceFactory(
+        client=fiche,
+        magasin=deux_magasins[0],
+        version=2,
+        date_prescription=DATE_DE_PRESCRIPTION,
+        sphere_od=Decimal(SPHERE_DU_RESUME),
+    )
+    assert Ordonnance.objects.filter(client=fiche).count() == 2
+
+    return fiche, {
+        "derniere_ordonnance": DATE_DE_PRESCRIPTION,
+        "resume_ordonnance": SPHERE_DU_RESUME,
+    }
+
+
+def _reponse_fiche_client(utilisateur, fiche):
+    """`GET /api/clients/<id>/`, joué sans client HTTP et **rendu**.
+
+    Même idiome et mêmes deux raisons que `_appeler` : traverser `AccesMiddleware` rend le
+    test de bout en bout, et `force_authenticate` est obligatoire sans quoi l'appelant
+    devient anonyme et l'assertion d'absence passerait pour une raison fausse.
+    """
+    from rest_framework.test import APIRequestFactory, force_authenticate
+
+    from domaine.clients.vues import VueClients
+    from plateforme.comptes.middleware import AccesMiddleware
+
+    vue = VueClients.as_view({"get": "retrieve"})
+    requete = APIRequestFactory().get(f"/api/clients/{fiche.pk}/")
+    requete.user = utilisateur
+    force_authenticate(requete, user=utilisateur)
+    reponse = AccesMiddleware(lambda recue: vue(recue, pk=fiche.pk))(requete)
+    reponse.render()
+    return reponse
+
+
+def acces_client_sans_ordonnance_voir(magasins):
+    """Un gérant qui **atteint** la fiche client et ne voit pas le résumé clinique.
+
+    `client.voir` est indispensable et c'est tout l'intérêt du cas : sans lui la vue
+    répond **403**, la charge utile est vide, et « la clé du résumé est absente » serait
+    vrai pour une raison qui n'a rien à voir avec le registre. C'est la forme exacte du
+    faux vert que `acces_sans_le_droit` évite déjà sur la ressource de test en accordant
+    un *autre* droit.
+
+    Les droits sont posés dans les **deux** magasins : `Acces.peut(code)` sans argument
+    magasin est une conjonction (plan 03-05), donc un droit accordé dans un seul des deux
+    n'autorise rien.
+    """
+    from plateforme.comptes.acces import acces_pour
+    from plateforme.comptes.permissions_catalogue import Permission
+    from tests.factories import AccesMagasinFactory, DroitAccordeFactory, GerantFactory
+
+    gerant = GerantFactory()
+    for magasin in magasins:
+        AccesMagasinFactory(utilisateur=gerant, magasin_code=magasin.code)
+        DroitAccordeFactory(
+            utilisateur=gerant,
+            magasin_code=magasin.code,
+            code=Permission.CLIENT_VOIR,
+        )
+    return gerant, acces_pour(gerant)
+
+
+# --------------------------------------------------------------------------------------
 # Le test porteur de la phase
 # --------------------------------------------------------------------------------------
 @pytest.mark.parametrize("rendu", RENDUS)
 @pytest.mark.parametrize("cle,code", champs_proteges_parametres())
 def test_perm06_champ_protege_absent_de_lapi_de_lexport_et_du_document(
-    rendu, cle, code, db_all, deux_magasins, ressource
+    rendu, cle, code, db_all, deux_magasins, ressource, fiche_avec_ordonnance
 ):
     """PERM-06 — le même champ, le même gérant, les trois rendus, une seule réponse.
 
@@ -173,12 +381,13 @@ def test_perm06_champ_protege_absent_de_lapi_de_lexport_et_du_document(
     exactement une chose à écrire — l'entrée correspondante dans `_sujet_pour`, faute de
     quoi le test devient rouge en le disant.
     """
-    classe_serializer, instance = _sujet_pour(cle, ressource)
+    sujet = _sujet_pour(cle, ressource, fiche_avec_ordonnance)
+    classe_serializer, instance = sujet.serializer, sujet.instance
     nom_du_champ = cle.rsplit(".", 1)[-1]
-    valeur_rendue = str(VALEUR_PROTEGEE)
+    valeur_rendue = sujet.valeur
 
-    _gerant, acces_gerant = acces_sans_le_droit(deux_magasins)
-    proprietaire, acces_proprietaire = acces_avec_le_droit(deux_magasins)
+    _gerant, acces_gerant = sujet.acces_sans(deux_magasins)
+    proprietaire, acces_proprietaire = sujet.acces_avec(deux_magasins)
 
     assert acces_gerant.peut(code) is False, (
         "Le gérant du test détient le code protégé : le test ne vérifierait rien."
@@ -189,8 +398,11 @@ def test_perm06_champ_protege_absent_de_lapi_de_lexport_et_du_document(
     )
 
     if rendu == "api":
-        reponse = _reponse_detail(_gerant, instance)
-        assert reponse.status_code == 200
+        reponse = sujet.detail(_gerant, instance)
+        assert reponse.status_code == 200, (
+            f"La route de détail a répondu {reponse.status_code} : un appelant qui "
+            "n'atteint pas la ressource ne prouve rien sur la projection de ses champs."
+        )
         assert nom_du_champ not in reponse.data, (
             f"La clé {nom_du_champ!r} est dans la charge utile servie à un gérant qui n'a "
             "pas le droit correspondant."
@@ -198,7 +410,7 @@ def test_perm06_champ_protege_absent_de_lapi_de_lexport_et_du_document(
         assert nom_du_champ.encode() not in reponse.rendered_content
         assert valeur_rendue.encode() not in reponse.rendered_content
 
-        temoin = _reponse_detail(proprietaire, instance)
+        temoin = sujet.detail(proprietaire, instance)
         assert nom_du_champ in temoin.data, (
             "Le propriétaire ne reçoit pas le champ protégé : la projection ne projette "
             "pas, elle supprime."
@@ -208,7 +420,7 @@ def test_perm06_champ_protege_absent_de_lapi_de_lexport_et_du_document(
     elif rendu == "export":
         from plateforme.projection.export import exporter_csv
 
-        lignes = RessourceFixture.objects.all()
+        lignes = sujet.lignes()
         csv_gerant = exporter_csv(classe_serializer, lignes, acces=acces_gerant)
         entete = csv_gerant.splitlines()[0]
         assert nom_du_champ not in entete, (
@@ -218,7 +430,13 @@ def test_perm06_champ_protege_absent_de_lapi_de_lexport_et_du_document(
         )
         assert valeur_rendue not in csv_gerant
 
-        temoin = exporter_csv(classe_serializer, lignes, acces=acces_proprietaire)
+        assert sujet.valeur_publique in csv_gerant, (
+            "Aucune valeur publique dans l'export du gérant : un export vide satisfait "
+            "« absent » sans rien projeter, et les deux assertions ci-dessus seraient "
+            "vraies au-dessus d'un `exporter_csv` cassé."
+        )
+
+        temoin = exporter_csv(classe_serializer, sujet.lignes(), acces=acces_proprietaire)
         assert nom_du_champ in temoin.splitlines()[0]
         assert valeur_rendue in temoin
 
@@ -235,9 +453,9 @@ def test_perm06_champ_protege_absent_de_lapi_de_lexport_et_du_document(
             "`string_if_invalid` cache : un champ absent et un champ mal orthographié se "
             "ressemblent, mais une valeur imprimée est imprimée."
         )
-        # Le contrôle positif porte sur le prix public : le document rend bien quelque
-        # chose, donc « absent » n'est pas « vide ».
-        assert str(PRIX_VENTE) in html_gerant
+        # Le contrôle positif porte sur une valeur publique de la même ligne : le
+        # document rend bien quelque chose, donc « absent » n'est pas « vide ».
+        assert sujet.valeur_publique in html_gerant
 
         temoin = rendre_html(
             NOM_TEMPLATE,
@@ -277,6 +495,75 @@ def test_perm06_champ_protege_absent_de_lapi_de_lexport_et_du_document(
             f"Le rendu {rendu!r} est déclaré dans RENDUS mais n'a aucune assertion. "
             "Le plan qui ajoute un rendu ajoute sa branche ici, sinon la liste ment."
         )
+
+
+def test_perm06_un_gerant_sans_ordonnance_voir_ne_recoit_pas_le_resume(
+    db_all, deux_magasins, fiche_avec_ordonnance
+):
+    """CLIENT-06 / `04-UI-SPEC.md` §15.5 — les deux clés **absentes**, et non à `null`.
+
+    Un test nommé **en plus** du paramétré, et ce n'est pas une redite. Le paramétré
+    prouve que la machinerie s'applique à une clé de registre quelconque ; celui-ci dit,
+    en toutes lettres et sous un nom qu'une recherche trouve, ce que le produit promet :
+    *un gérant qui peut voir un client mais pas ses ordonnances reçoit sa fiche sans le
+    résumé clinique.* Le jour où quelqu'un retire les deux lignes du registre, le
+    paramétré ne rougit pas — il perd simplement huit cas — et celui-ci rougit.
+
+    **Absent, pas `null`.** Une clé toujours présente à `null` donnerait un type
+    TypeScript plus simple et un `?? "—"` au site d'appel ; c'est refusé parce que
+    `null` est une information (« ce client n'a pas d'ordonnance ») et que la confondre
+    avec « vous n'avez pas le droit » est exactement la distinction que la fiche doit
+    faire. L'assertion porte donc sur la **présence de la clé**, puis sur les octets
+    rendus, parce qu'un filtrage appliqué après sérialisation serait invisible dans
+    `reponse.data`.
+    """
+    from plateforme.comptes.permissions_catalogue import Permission
+
+    fiche, valeurs = fiche_avec_ordonnance
+
+    gerant, acces_gerant = acces_client_sans_ordonnance_voir(deux_magasins)
+    assert acces_gerant.peut(Permission.CLIENT_VOIR) is True, (
+        "Le gérant du test n'atteint pas la fiche : il recevrait 403 et l'absence des "
+        "deux clés ne dirait rien du registre."
+    )
+    assert acces_gerant.peut(Permission.ORDONNANCE_VOIR) is False
+
+    reponse = _reponse_fiche_client(gerant, fiche)
+    assert reponse.status_code == 200, reponse.data
+
+    for nom in ("derniere_ordonnance", "resume_ordonnance"):
+        assert nom not in reponse.data, (
+            f"La clé {nom!r} est servie à un gérant sans `ordonnance.voir`. Une clé "
+            "présente à `null` n'est pas « absente » : elle confond « pas "
+            "d'ordonnance » avec « pas le droit »."
+        )
+        assert nom.encode() not in reponse.rendered_content
+
+    for valeur in valeurs.values():
+        assert valeur.encode() not in reponse.rendered_content, (
+            f"La valeur {valeur!r} est sur le fil. Un champ retiré de `reponse.data` "
+            "mais réinjecté au rendu est la fuite que `rendered_content` existe pour "
+            "attraper."
+        )
+
+    assert reponse.data["nom"] == fiche.nom, (
+        "Le gérant ne reçoit même pas le nom : la fiche est vide, donc l'absence des "
+        "deux clés ne prouve rien."
+    )
+
+    # Le contrôle positif. Sans lui, un sérialiseur qui n'exposerait jamais ces deux
+    # clés passerait tout ce qui précède.
+    proprietaire, acces_proprietaire = acces_avec_le_droit(deux_magasins)
+    assert acces_proprietaire.peut(Permission.ORDONNANCE_VOIR) is True
+
+    temoin = _reponse_fiche_client(proprietaire, fiche)
+    assert temoin.status_code == 200, temoin.data
+    assert temoin.data["derniere_ordonnance"] == DATE_DE_PRESCRIPTION
+    assert temoin.data["resume_ordonnance"]["od"]["sphere"] == SPHERE_DU_RESUME
+    assert temoin.data["resume_ordonnance"]["version"] == 2, (
+        "Le résumé ne porte pas la version en cours : une fiche qui affiche une "
+        "correction périmée est pire qu'une fiche qui n'en affiche aucune."
+    )
 
 
 # --------------------------------------------------------------------------------------

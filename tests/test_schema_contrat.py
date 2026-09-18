@@ -120,6 +120,12 @@ def test_perm06_le_contrat_porte_les_routes_montees_et_aucune_route_de_test(tmp_
         # `APIView` nue ferait disparaître du contrat sans rien casser d'autre.
         "/api/clients/",
         "/api/clients/{id}/",
+        # Phase 4, plan 04-05. **Imbriquées**, et c'est ce qui les met ici : une route
+        # portant deux paramètres de chemin est celle qu'un routeur mal monté fait
+        # disparaître du document sans que rien d'autre ne casse — la SPA continue
+        # d'appeler une URL que le contrat ne décrit plus.
+        "/api/clients/{client_id}/ordonnances/",
+        "/api/clients/{client_id}/ordonnances/{id}/",
     }
     manquants = attendus - chemins
     assert not manquants, (
