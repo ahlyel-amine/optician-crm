@@ -21,3 +21,5 @@ export type { MontantBrut } from "./montant";
 
 export { FUSEAU_AFFICHAGE, formaterDateCourte, formaterDateHeure, formaterHeure } from "./date";
 export type { DateBrute } from "./date";
+
+export { SEPARATEUR_PAIRES, formaterTelephone } from "./telephone";

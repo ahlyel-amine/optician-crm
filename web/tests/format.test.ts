@@ -347,7 +347,7 @@ describe("formaterTelephone", () => {
     const { formaterTelephone, SEPARATEUR_PAIRES } = await chargerTelephone();
     const rendu = formaterTelephone("0612345678");
 
-    expect(rendu).toBe("06 12 34 56 78");
+    expect(rendu).toBe("06\u00a012\u00a034\u00a056\u00a078");
     expect(SEPARATEUR_PAIRES.codePointAt(0)).toBe(ESPACE_INSECABLE);
     const points = pointsDeCode(rendu);
     expect(points.filter((point) => point === ESPACE_INSECABLE)).toHaveLength(4);
@@ -359,7 +359,7 @@ describe("formaterTelephone", () => {
     const { formaterTelephone } = await chargerTelephone();
     const rendu = formaterTelephone("212612345678");
 
-    expect(rendu).toBe("+212 6 12 34 56 78");
+    expect(rendu).toBe("+212\u00a06\u00a012\u00a034\u00a056\u00a078");
     expect(pointsDeCode(rendu)).not.toContain(ESPACE_ORDINAIRE);
   });
 
@@ -383,7 +383,7 @@ describe("formaterTelephone", () => {
     // de vitest toucherait un Intl en piege et masquerait la vraie cause.
     const rendu = sansAucuneLocale(() => formaterTelephone("0612345678"));
 
-    expect(rendu).toBe("06 12 34 56 78");
+    expect(rendu).toBe("06\u00a012\u00a034\u00a056\u00a078");
   });
 });
 

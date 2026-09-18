@@ -106,9 +106,9 @@ describe("nombres", () => {
 
     // Un trait d'union a 14px a cote d'un `+` est ambigu sur une grille dense :
     // le signe affiche est U+2212, jamais U+002D.
-    expect(rendu).toBe("−1,00");
-    expect(SIGNE_MOINS).toBe("−");
-    expect(rendu).toContain("−");
+    expect(rendu).toBe("\u22121,00");
+    expect(SIGNE_MOINS).toBe("\u2212");
+    expect(rendu).toContain("\u2212");
     expect(rendu).not.toContain("-");
   });
 
@@ -269,7 +269,7 @@ type ComposantChampNombre = (proprietes: ProprietesChampNombre) => ReactElement;
 
 /** Un avertissement de 04-UI-SPEC.md 16.3, ligne A2, recopie au caractere pres. */
 const AVERTISSEMENT_A2 =
-  "À vérifier — une sphère de −12,00 est forte. Confirmez-la sur l'ordonnance.";
+  "À vérifier — une sphère de \u221212,00 est forte. Confirmez-la sur l'ordonnance.";
 
 function HarnaisNombre({
   Champ,
