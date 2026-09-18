@@ -9,6 +9,8 @@ So: **keep the tag, scrub the body.** These tests are the reason that sentence s
 — a scrubber with no test is a scrubber that silently stops covering a new field.
 """
 
+import pytest
+
 from plateforme.tenancy.telemetry import REDACTED, before_send
 
 
@@ -98,3 +100,52 @@ def test_tenant_telemetry_tolerates_a_sparse_event():
     """
     assert before_send({}, hint={}) is not None
     assert before_send({"request": None, "exception": None}, hint={}) is not None
+
+
+# ======================================================================================
+# CLIENT-09 — le nom du fichier téléversé (plan 04-06)
+# ======================================================================================
+#: Les six clés sous lesquelles un nom de fichier voyage. **Paramétré et non écrit une
+#: fois**, parce que le mode de défaillance est l'alternance *manquante* : un test qui
+#: n'en vérifierait qu'une resterait vert avec cinq trous.
+CLES_DE_FICHIER = ("photo", "image", "fichier", "scan", "upload", "piece_jointe")
+
+#: Le nom tel qu'un comptoir en produit. Il porte le nom du patient — c'est toute la
+#: raison de ce test.
+NOM_TELEVERSE = "ordonnance_benali_ahmed.jpg"
+
+
+@pytest.mark.parametrize("cle", CLES_DE_FICHIER)
+def test_client09_un_nom_de_fichier_n_atteint_pas_sentry_en_clair(cle):
+    """`SENSITIVE_KEY` ne couvrait aucune de ces six clés. CLIENT-09, `04-RESEARCH.md` §4.6.
+
+    Un nom de fichier téléversé porte couramment le nom du patient, et une trace
+    d'exception traversant un sérialiseur de téléversement emporte les variables locales
+    de chaque cadre de pile — c'est-à-dire la valeur. `send_default_pii = False` ne
+    couvre pas les locales ; ce caviardage-ci, si.
+
+    **Le contrôle positif est dans le même test, et il n'est pas décoratif** : sans lui,
+    un `SENSITIVE_KEY` réduit à `.` — donc un caviardage total — serait vert. Un
+    caviardage total se fait désactiver, et alors plus rien n'est caviardé.
+    """
+    evenement = {
+        "extra": {cle: NOM_TELEVERSE, "duree_ms": 42},
+        "exception": {
+            "values": [
+                {"stacktrace": {"frames": [{"vars": {cle: NOM_TELEVERSE, "duree_ms": 42}}]}}
+            ]
+        },
+    }
+    scrubbed = before_send(evenement, hint={})
+    frame_vars = scrubbed["exception"]["values"][0]["stacktrace"]["frames"][0]["vars"]
+
+    for endroit, charge in (("extra", scrubbed["extra"]), ("locales", frame_vars)):
+        assert charge[cle] == REDACTED, (
+            f"La clé « {cle} » survit dans {endroit} avec {charge[cle]!r}. Ce nom de "
+            "fichier porte le nom du patient, et Sentry est un tiers qui peut stocker "
+            "l'événement hors du Maroc et hors de l'UE."
+        )
+        assert charge["duree_ms"] == 42, (
+            f"« duree_ms » a été caviardée dans {endroit}. Un caviardage qui emporte "
+            "tout se fait désactiver, et alors plus rien n'est caviardé."
+        )
