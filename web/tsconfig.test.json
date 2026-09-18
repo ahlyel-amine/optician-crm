@@ -36,7 +36,18 @@
 
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+
+      // `dom-accessibility-api` EXPEDIE ses types — `dist/index.d.ts` est dans
+      // le paquet — mais sa carte `exports` ne declare aucune condition
+      // `types`, et `moduleResolution: bundler` la respecte : TS7016 sur un
+      // paquet qui est pourtant type. Le paquet est fige a la version DEJA
+      // INSTALLEE dans l'arbre, tiree par `@testing-library/dom` (^0.5.9) ;
+      // prendre une version plus recente pour contourner le probleme
+      // dupliquerait la bibliotheque dans l'arbre de dependances au lieu de la
+      // partager. La declaration est donc designee directement, ici et
+      // seulement pour le projet de test, qui est le seul a l'utiliser.
+      "dom-accessibility-api": ["./node_modules/dom-accessibility-api/dist/index.d.ts"]
     }
   },
   "include": ["tests"]

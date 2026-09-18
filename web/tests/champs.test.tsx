@@ -2,6 +2,8 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useState, type ReactElement } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { attendUnNomAccessible, nomAccessible } from "./nomAccessible";
+
 /* ---------------------------------------------------------------------------
  * Les primitives de saisie de la phase 4, prouvees AVANT tout ecran.
  *
@@ -332,5 +334,45 @@ describe("ChampNombre", () => {
 
     const decritPar = (entree.getAttribute("aria-describedby") ?? "").split(/\s+/);
     expect(decritPar).toContain(note.id);
+  });
+});
+
+/* ===========================================================================
+ * L'outil de mesure lui-meme, prouve DANS LES DEUX SENS.
+ *
+ * Le controle positif et le negatif vivent dans le meme `it` : un outil qui
+ * rendrait toujours la chaine vide passerait la moitie negative seule, et on
+ * l'aurait cru bon jusqu'au premier ecran.
+ * ======================================================================== */
+describe("nomAccessible", () => {
+  it("mesure un nom vide sur un combobox sans etiquette et un nom non vide avec", () => {
+    render(
+      <div>
+        {/* Le cas D-1, reproduit : du texte visible, et aucun nom. */}
+        <div role="combobox" aria-expanded={false} data-essai="nu">
+          Tous les magasins
+        </div>
+
+        <label id="etiquette-magasin">Magasin qui enregistre</label>
+        <div
+          role="combobox"
+          aria-expanded={false}
+          aria-labelledby="etiquette-magasin"
+          data-essai="nomme"
+        >
+          Anfa
+        </div>
+      </div>,
+    );
+
+    const nu = document.querySelector('[data-essai="nu"]') as Element;
+    const nomme = document.querySelector('[data-essai="nomme"]') as Element;
+
+    // Negatif : `combobox` prend son nom de l'auteur, donc « Tous les
+    // magasins » ne devient JAMAIS son nom.
+    expect(nomAccessible(nu)).toBe("");
+    // Positif : l'etiquette visible designee par `aria-labelledby` le devient.
+    expect(nomAccessible(nomme)).toBe("Magasin qui enregistre");
+    attendUnNomAccessible(nomme, "Magasin qui enregistre");
   });
 });

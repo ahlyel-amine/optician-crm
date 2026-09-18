@@ -56,26 +56,22 @@ export function masquerDate(saisi: string): string {
   const brut = saisi.replace(/[^\d/]/g, "");
   const morceaux = brut.split("/");
 
-  let jour: string;
-  let mois: string;
-  let annee: string;
-  let slashApresJour: boolean;
-  let slashApresMois: boolean;
+  // Les chiffres CASCADENT d'un segment plein vers le suivant. Sans cela, le
+  // troisieme chiffre du mois — la premiere frappe de l'annee — tombe dans le
+  // vide : `14/09` puis `2` rendait `14/09`, et le chiffre etait perdu sous les
+  // doigts de l'opticien. C'est ce que le test de frappe chiffre a chiffre a
+  // attrape ; une seule frappe de la chaine complete ne l'aurait jamais vu.
+  const jour = morceaux[0].slice(0, 2);
+  const debordJour = morceaux[0].slice(2);
 
-  if (morceaux.length === 1) {
-    const chiffres = morceaux[0];
-    jour = chiffres.slice(0, 2);
-    mois = chiffres.slice(2, 4);
-    annee = chiffres.slice(4, 8);
-    slashApresJour = chiffres.length > 2;
-    slashApresMois = chiffres.length > 4;
-  } else {
-    jour = morceaux[0].slice(0, 2);
-    mois = (morceaux[1] ?? "").slice(0, 2);
-    annee = morceaux.slice(2).join("").slice(0, 4);
-    slashApresJour = true;
-    slashApresMois = morceaux.length > 2;
-  }
+  const moisEtendu = `${debordJour}${morceaux[1] ?? ""}`;
+  const mois = moisEtendu.slice(0, 2);
+  const debordMois = moisEtendu.slice(2);
+
+  const annee = `${debordMois}${morceaux.slice(2).join("")}`.slice(0, 4);
+
+  const slashApresJour = morceaux.length > 1 || debordJour !== "";
+  const slashApresMois = morceaux.length > 2 || debordMois !== "";
 
   let sortie = jour;
   if (slashApresJour || mois !== "") {
