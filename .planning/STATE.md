@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Termine 04-03-PLAN.md (API fiche client + recherche CLIENT-10)
-last_updated: "2026-09-18T14:53:37.473Z"
+stopped_at: Termine 04-04-PLAN.md (domaine ordonnance, bornes servies) — 04-07 en parallele
+last_updated: "2026-09-18T16:01:42.679Z"
 last_activity: 2026-09-17
 progress:
   total_phases: 13
   completed_phases: 3
   total_plans: 34
-  completed_plans: 28
-  percent: 82
+  completed_plans: 29
+  percent: 85
 ---
 
 # Project State
@@ -85,6 +85,7 @@ Progress: [██████████] 100% (14/14 plans de la phase 3 écri
 | Phase 04 P02 | 22 | 3 tasks | 14 files |
 | Phase 04 P01 | 95min | 3 tasks | 15 files |
 | Phase 04 P03 | 115 | 3 tasks | 16 files |
+| Phase 04 P04 | 40 | 3 tasks | 14 files |
 
 ## Quick Tasks Completed
 
@@ -216,6 +217,9 @@ Recent decisions affecting current work:
 - [Phase 04]: SEUIL_MOT monte de 0.3 a 0.65 : a 0,3 Fatima fusionne avec Fatiha et Abdelkader avec Abdelkrim ; c'est la couche phonetique, par prefixe de cle metaphone, qui porte CLIENT-10
 - [Phase 04]: L'operateur pg_trgm <% compare avec >= et non > : le defaut 0,6 laisse passer une paire mesuree a 0,600 pile
 - [Phase 04]: Les requetes de rappel portent un order_by() vide : Meta.ordering detourne le planificateur vers idx_client_nom et l'index GIN n'est jamais consulte
+- [Phase 04]: 04-04 : les bornes cliniques vivent dans domaine/ordonnances/bornes.py et sont SERVIES sur l'amorcage, jamais compilees dans le SPA (Q1)
+- [Phase 04]: 04-04 : aucune table de commande speciale — STOCK-08 (phase 5) possede ce cycle de vie ; la phase 4 livre snapshot_pour_fournisseur, CLIENT-08 non cochee
+- [Phase 04]: 04-04 : le +/-20 de PITFALLS.md ecrase le +/-30 de la zone grise 1 — et aucun des deux n'a de source normative, ce qui est ecrit dans bornes.py
 
 ### Pending Todos
 
@@ -232,8 +236,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-18T14:53:37.470Z
-Stopped at: Termine 04-03-PLAN.md (API fiche client + recherche CLIENT-10)
+Last session: 2026-09-18T16:01:42.676Z
+Stopped at: Termine 04-04-PLAN.md (domaine ordonnance, bornes servies) — 04-07 en parallele
 Resume file: None
 
 Serveurs de developpement laisses TOURNANTS : Vite sur 5173 (navigation filtree, l'etat livre) et sur 5174 (`VITE_NAV_COMPLET=1`, la densite a huit entrees), Django sur 127.0.0.1:8010 — le proprietaire peut reprendre la traversee, celle du shell (03-13) comme celle de l'ecran des droits (03-14).
