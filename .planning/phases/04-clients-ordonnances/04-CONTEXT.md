@@ -1,17 +1,24 @@
 ---
 phase: 04-clients-ordonnances
 type: context
-status: proposed — quatre décisions attendent la confirmation du propriétaire
+status: accepted-by-default — le propriétaire a dit « continue » sans corriger
 created: 2026-09-17
 ---
 
 # Contexte de la phase 4 — Clients & Ordonnances
 
-> **Statut : PROPOSÉ, pas verrouillé.** Les quatre zones grises ci-dessous ont été
-> présentées au propriétaire, qui n'a pas répondu. Chacune porte une **recommandation
-> argumentée** plutôt qu'un blanc, pour que le travail puisse avancer et qu'une correction
-> coûte un mot. **Un plan ne doit pas traiter ces quatre points comme verrouillés** — il les
-> applique en les nommant, de sorte qu'un désaccord se voie.
+> **Statut : ACCEPTÉ PAR DÉFAUT, pas ratifié.** Les quatre zones grises ont été présentées
+> au propriétaire le 2026-09-17. Il n'y a pas répondu, puis a dit « continue » — ce qui est
+> lu comme *avance sur tes recommandations*, et non comme *je les ai lues et approuvées*.
+> La distinction est écrite parce qu'elle change ce qu'on peut affirmer plus tard.
+>
+> **Un plan les applique en les NOMMANT**, de sorte qu'un désaccord se voie et coûte un mot.
+> Aucune ne doit être enterrée dans une ligne de code sans trace.
+>
+> **La plus chère à corriger tard est la convention de signe du cylindre** (zone grise 1) :
+> elle est dans le modèle, pas dans l'affichage. Le plan qui la pose doit la mettre à un
+> endroit unique et nommé, et l'écran de saisie doit la dire à l'utilisateur, pour qu'une
+> erreur se voie au premier essai plutôt qu'à la première paire de verres fausse.
 >
 > Ce qui est écrit sous « Acquis » l'est réellement : cela vient du dépôt, de la feuille de
 > route ou des phases déjà livrées.
