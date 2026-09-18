@@ -40,6 +40,11 @@ from __future__ import annotations
 
 from typing import Mapping
 
+# Import de module, au niveau supérieur, et sans risque de cycle : le catalogue de
+# permissions ne dépend que de Django. C'est le sens de la flèche qui compte — le
+# registre *nomme* des codes, et un code n'a jamais à connaître le champ qu'il garde.
+from plateforme.comptes.permissions_catalogue import Permission
+
 #: `"app_label.ModelName.field_name"` -> code de permission du catalogue.
 #:
 #: **Vide en phase 3, et c'est délibéré.** `prix_achat` et `marge` n'existent qu'en phase 8
@@ -58,12 +63,52 @@ from typing import Mapping
 #: depuis le plan 03-04 : la phase 8 n'aura qu'une ligne de registre à écrire, pas un
 #: modèle de droits à inventer sous pression.
 #:
+#: **Le registre a cessé d'être vide au plan 04-05**, et pas avec les champs annoncés
+#: ci-dessus : les ordonnances arrivent avant les achats. Les deux premières entrées
+#: réelles du produit sont donc les résumés cliniques posés sur la fiche client, et
+#: `04-UI-SPEC.md` §15.5 tranche la zone grise 5 en disant pourquoi. Lire le bloc qui
+#: suit la déclaration.
+#:
 #: C'est un `dict` mutable et non un `MappingProxyType`, pour une seule raison, écrite ici
 #: pour qu'elle ne soit pas prise pour de la négligence : la suite de tests y injecte la
 #: ressource de test par `monkeypatch.setitem`, exactement la ligne que la phase 8 écrira à
 #: demeure. Aucun code de production ne l'écrit, et aucun ne doit le faire — un droit se
 #: change en base, jamais en mémoire.
-CHAMPS_PROTEGES: dict[str, str] = {}
+CHAMPS_PROTEGES: dict[str, str] = {
+    # ==================================================================================
+    # LES DEUX PREMIÈRES ENTRÉES RÉELLES DU PRODUIT (plan 04-05)
+    # ==================================================================================
+    #
+    # Le plan 03-06 avait désigné la phase 8 (`prix_achat`) comme premier client de ce
+    # registre. Les ordonnances sont arrivées avant, et `04-UI-SPEC.md` §15.5 dit
+    # pourquoi la fiche client porte un résumé de prescription : « quelle est la
+    # correction actuelle de ce client » est la question la plus fréquente du comptoir,
+    # et en faire une seconde navigation est la friction que ce produit existe pour
+    # supprimer.
+    #
+    # **L'ordonnance elle-même est une LIGNE, pas un champ.** `ordonnance.voir` gouverne
+    # l'accès à des objets entiers, ce qui relève de la portée de queryset
+    # (`VueOrdonnances.get_queryset`) et non de ce registre. Ce qui est inscrit ici, ce
+    # sont les deux **résumés** posés sur un objet que l'appelant a par ailleurs le droit
+    # de voir — une fiche client — et dont le contenu est clinique. C'est exactement la
+    # forme que ce registre existe pour traiter, et la phase 4 est donc son premier vrai
+    # client.
+    #
+    # **Ni l'une ni l'autre n'est une colonne de `Client`**, et le registre s'en moque :
+    # il est clé par *nom de champ*, et `SerializerProjete.get_fields()` retire par nom.
+    # Un `SerializerMethodField` se retire donc exactement comme une colonne, ce qui est
+    # ce qui permet d'écrire ces deux lignes sans toucher au modèle.
+    # `test_perm06_tout_champ_de_modele_expose_est_classe` ignore ce qui n'est pas une
+    # colonne, donc rien d'autre n'est à faire de ce côté.
+    #
+    # **Aucun rendu n'est ajouté par ce plan, et ce n'est pas un oubli.** La règle du plan
+    # 03-06 — « un rendu rejoint `RENDUS` dans le plan qui le crée » — est respectée par
+    # le fait qu'il n'y a rien à ajouter : l'API, l'export, le document et le catalogue
+    # existent déjà et lisent tous ce registre. Les deux clés produisent donc huit
+    # assertions que personne n'a tapées.
+    "clients.Client.derniere_ordonnance": Permission.ORDONNANCE_VOIR,
+    "clients.Client.resume_ordonnance": Permission.ORDONNANCE_VOIR,
+}
 
 #: Les champs de modèle délibérément visibles de tous.
 #:

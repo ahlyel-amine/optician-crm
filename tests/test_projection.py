@@ -69,6 +69,15 @@ CHAMP_DE_REPLI = (CLE_PROTEGEE, CODE_PROTEGE)
 #: et un éditeur qui ne détient pas ce code ne doit pas le voir dans son catalogue. Une
 #: ligne ajoutée au registre en phase 8 produit donc quatre assertions, et la
 #: recommandation de fond du `03-UI-CHECK.md` cesse d'être une convention.
+#:
+#: **Le plan 04-05 n'en ajoute aucun, et l'écrire est la moitié de la règle.** Il inscrit
+#: les deux premières entrées réelles du registre ; les quatre rendus ci-dessous existent
+#: déjà et lisent tous le registre, donc les deux clés produisent `2 × 4 = 8` assertions
+#: sans qu'un rendu soit créé. La règle du plan 03-06 est donc **respectée par le fait
+#: qu'il n'y a rien à ajouter**, et non ignorée — la distinction compte, parce qu'une
+#: liste qu'on n'a pas eu à toucher et une liste qu'on a oublié de toucher se ressemblent
+#: dans un diff. La route de la photo du plan 04-06 reposera la question, et ce sera à ce
+#: plan-là de la trancher.
 RENDUS = ["api", "export", "document", "catalogue"]
 
 
@@ -376,10 +385,12 @@ def test_perm06_champ_protege_absent_de_lapi_de_lexport_et_du_document(
     satisfait « absent » trois fois sur trois ; les assertions sur le propriétaire sont ce
     qui distingue une projection d'une panne.
 
-    Ce que ce test garantit pour la suite : une ligne ajoutée à `CHAMPS_PROTEGES` en phase 8
-    devient trois assertions ici, sans qu'aucun développeur n'y pense. Il lui reste
-    exactement une chose à écrire — l'entrée correspondante dans `_sujet_pour`, faute de
-    quoi le test devient rouge en le disant.
+    Ce que ce test garantit pour la suite : une ligne ajoutée à `CHAMPS_PROTEGES` devient
+    **quatre** assertions ici — une par rendu — sans qu'aucun développeur n'y pense. Il
+    lui reste exactement une chose à écrire : l'entrée correspondante dans `_sujet_pour`,
+    faute de quoi le test devient rouge en le disant. Le plan 04-05 l'a vérifié en
+    conditions réelles — le message écrit par le plan 03-06 s'est bien affiché, mot pour
+    mot, sur les deux clés neuves avant que leurs sujets n'existent.
     """
     sujet = _sujet_pour(cle, ressource, fiche_avec_ordonnance)
     classe_serializer, instance = sujet.serializer, sujet.instance

@@ -190,6 +190,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/clients/{client_id}/ordonnances/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * L'historique des ordonnances d'un client
+         * @description Toutes les versions, la plus récente d'abord. Une version enregistrée se rend **telle qu'elle a été saisie** : l'affichage ne la revalide jamais, donc une valeur que les bornes d'aujourd'hui refuseraient s'affiche sans avertissement, sans badge d'erreur et sans annotation (CLIENT-06).
+         */
+        get: operations["clients_ordonnances_list"];
+        put?: never;
+        /**
+         * Saisir une ordonnance
+         * @description Crée une **nouvelle version**. Le numéro de version est émis par le serveur, sous verrou, dans la transaction d'insertion : un `version` envoyé dans le corps est ignoré. Les versions précédentes ne sont jamais réécrites — une correction porte `supersede` et un motif.
+         */
+        post: operations["clients_ordonnances_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/clients/{client_id}/ordonnances/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Une version d'ordonnance
+         * @description La ressource ordonnance, en lecture et en création seules. Voir l'en-tête du module.
+         */
+        get: operations["clients_ordonnances_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/clients/{id}/": {
         parameters: {
             query?: never;
@@ -617,6 +661,8 @@ export interface components {
              */
             reappliquer?: boolean;
         };
+        /** @enum {unknown} */
+        BlankEnum: "";
         /**
          * @description Le cylindre, qui porte en plus le nom de la convention stockée.
          *
@@ -951,6 +997,13 @@ export interface components {
             readonly par: string;
         };
         /**
+         * @description * `binoculaire` - Binoculaire
+         *     * `monoculaire` - Monoculaire (par œil)
+         *     * `les_deux` - Les deux
+         * @enum {string}
+         */
+        EpSaisiEnum: "binoculaire" | "monoculaire" | "les_deux";
+        /**
          * @description La personne qui achète : ce qui se saisit, et ce qui s'affiche.
          *
          *     **Les trois colonnes dérivées sont absentes de `fields`, et c'est une décision.**
@@ -984,6 +1037,13 @@ export interface components {
             readonly score: number | null;
             /** @description Par quelle couche ce résultat a été trouvé : exact, telephone, orthographe, phonetique ou equivalence. Null hors recherche. */
             readonly raison: (components["schemas"]["RaisonEnum"] | components["schemas"]["NullEnum"]) | null;
+            /**
+             * Format: date
+             * @description La date de prescription de la version en cours, en ISO. `null` si le client n'a aucune ordonnance. **Absente de la charge utile** — et non `null` — pour qui ne détient pas `ordonnance.voir` : les deux se distinguent, et les confondre dirait « pas d'ordonnance » à qui n'a simplement pas le droit.
+             */
+            readonly derniere_ordonnance?: string | null;
+            /** @description Le bloc de correction de la version en cours, rendu tel qu'il a été saisi et **jamais revalidé** (CLIENT-06). Mêmes règles de présence que `derniere_ordonnance`. */
+            readonly resume_ordonnance?: components["schemas"]["ResumeOrdonnance"] | null;
         };
         /**
          * @description L'état d'un code pour un compte : sa valeur, et les magasins où elle vaut.
@@ -1006,6 +1066,105 @@ export interface components {
         };
         /** @enum {unknown} */
         NullEnum: null;
+        /**
+         * @description Une version stockée, rendue **sans être revalidée**. CLIENT-06.
+         *
+         *     Tous les champs sont en lecture seule, y compris ceux que l'écriture accepte : il n'y
+         *     a aucune route de modification (plan 04-05, menace T-04-29), donc un champ
+         *     inscriptible ici serait une porte qui ne mène nulle part aujourd'hui et une porte tout
+         *     court le jour où quelqu'un monte un verbe de plus.
+         *
+         *     `client` et `magasin` sortent en clés primaires. Le `magasin` est de la **provenance**
+         *     — qui a saisi — et jamais un critère de filtrage : un gérant qui voit le client voit
+         *     tout son historique, quel que soit le comptoir (D-4a).
+         */
+        Ordonnance: {
+            readonly id: number;
+            readonly client: number;
+            readonly magasin: number;
+            readonly version: number;
+            readonly supersede: number | null;
+            readonly type_revision: components["schemas"]["TypeRevisionEnum"];
+            readonly motif_revision: string;
+            readonly source: components["schemas"]["SourceEnum"];
+            readonly prescripteur: string;
+            /** Format: date */
+            readonly date_prescription: string;
+            /** Format: decimal */
+            readonly sphere_od: string | null;
+            /** Format: decimal */
+            readonly sphere_og: string | null;
+            /** Format: decimal */
+            readonly cylindre_od: string | null;
+            /** Format: decimal */
+            readonly cylindre_og: string | null;
+            readonly axe_od: number | null;
+            readonly axe_og: number | null;
+            /** Format: decimal */
+            readonly addition_od: string | null;
+            /** Format: decimal */
+            readonly addition_og: string | null;
+            /** Format: decimal */
+            readonly ep_binoculaire: string | null;
+            /** Format: decimal */
+            readonly ep_mono_od: string | null;
+            /** Format: decimal */
+            readonly ep_mono_og: string | null;
+            readonly ep_saisi: components["schemas"]["EpSaisiEnum"];
+            /** Format: date-time */
+            readonly created_at: string;
+            readonly created_par: string;
+        };
+        /**
+         * @description Ce qu'un comptoir envoie. **`version` n'y est pas, et c'est la garantie.**
+         *
+         *     Un champ absent du sérialiseur n'atteint jamais `validated_data` : un corps qui nomme
+         *     `{"version": 7}` est donc **ignoré**, pas obéi — et pas non plus refusé par un 400,
+         *     parce que DRF ne lève sur aucune clé inconnue. C'est le même raisonnement que la
+         *     projection des champs protégés (menace T-03-34), appliqué au numéro de série
+         *     (T-04-31).
+         *
+         *     Le `magasin` est un champ lié **restreint aux magasins accordés**. La vue restreint la
+         *     lecture ; elle ne restreint pas la création, et un POST nommant un magasin étranger ne
+         *     consulte aucun queryset de vue. DRF valide la clé primaire contre le queryset **du
+         *     champ**, donc l'écriture inter-magasins est un 400 et non un 201 (P5, T-03-40).
+         */
+        OrdonnanceASaisir: {
+            /** @description Le comptoir qui saisit. C'est de la **provenance** : l'ordonnance appartient au client, pas au magasin, et tout l'historique se lit depuis n'importe quel comptoir (D-4a). */
+            magasin: number;
+            source: components["schemas"]["SourceEnum"];
+            /** @default  */
+            prescripteur?: string;
+            /** Format: date */
+            date_prescription: string;
+            /** @description La version que celle-ci remplace. Portée par la **nouvelle** ligne : un drapeau posé sur l'ancienne serait une écriture sur une ligne immuable. */
+            supersede?: number | null;
+            /** @default  */
+            type_revision?: components["schemas"]["TypeRevisionEnum"] | components["schemas"]["BlankEnum"];
+            /** @default  */
+            motif_revision?: string;
+            /** Format: decimal */
+            sphere_od?: string | null;
+            /** Format: decimal */
+            sphere_og?: string | null;
+            /** Format: decimal */
+            cylindre_od?: string | null;
+            /** Format: decimal */
+            cylindre_og?: string | null;
+            axe_od?: number | null;
+            axe_og?: number | null;
+            /** Format: decimal */
+            addition_od?: string | null;
+            /** Format: decimal */
+            addition_og?: string | null;
+            /** Format: decimal */
+            ep_binoculaire?: string | null;
+            /** Format: decimal */
+            ep_mono_od?: string | null;
+            /** Format: decimal */
+            ep_mono_og?: string | null;
+            ep_saisi: components["schemas"]["EpSaisiEnum"];
+        };
         /**
          * @description La personne qui achète : ce qui se saisit, et ce qui s'affiche.
          *
@@ -1040,6 +1199,13 @@ export interface components {
             readonly score?: number | null;
             /** @description Par quelle couche ce résultat a été trouvé : exact, telephone, orthographe, phonetique ou equivalence. Null hors recherche. */
             readonly raison?: (components["schemas"]["RaisonEnum"] | components["schemas"]["NullEnum"]) | null;
+            /**
+             * Format: date
+             * @description La date de prescription de la version en cours, en ISO. `null` si le client n'a aucune ordonnance. **Absente de la charge utile** — et non `null` — pour qui ne détient pas `ordonnance.voir` : les deux se distinguent, et les confondre dirait « pas d'ordonnance » à qui n'a simplement pas le droit.
+             */
+            readonly derniere_ordonnance?: string | null;
+            /** @description Le bloc de correction de la version en cours, rendu tel qu'il a été saisi et **jamais revalidé** (CLIENT-06). Mêmes règles de présence que `derniere_ordonnance`. */
+            readonly resume_ordonnance?: components["schemas"]["ResumeOrdonnance"] | null;
         };
         /**
          * @description `PATCH` sur la fiche : le nom et l'adresse, rien d'autre (`03-UI-SPEC.md` 7.3 A).
@@ -1077,11 +1243,43 @@ export interface components {
             readonly magasins_accordes: string[];
             readonly magasins_etendus: string[];
         };
+        /**
+         * @description Ce que la fiche client montre de la version en cours. `04-UI-SPEC.md` §19.3.
+         *
+         *     **Pourquoi la fiche porte ce bloc plutôt qu'un lien.** « Quelle est la correction
+         *     actuelle de ce client » est la question la plus fréquente du comptoir ; en faire une
+         *     seconde navigation est la friction que ce produit existe pour supprimer.
+         *
+         *     Et pourquoi il est **protégé** : l'ordonnance en tant qu'objet est une *ligne*, gardée
+         *     par `ordonnance.voir` au niveau du queryset. Ce résumé-ci est un **champ** posé sur un
+         *     objet que l'appelant a par ailleurs le droit de voir, et son contenu est clinique.
+         *     C'est exactement la forme que `CHAMPS_PROTEGES` existe pour traiter.
+         */
+        ResumeOrdonnance: {
+            version: number;
+            /** Format: date */
+            date_prescription: string;
+            source: components["schemas"]["SourceEnum"];
+            prescripteur: string;
+            type_revision: components["schemas"]["TypeRevisionEnum"] | components["schemas"]["BlankEnum"];
+            od: components["schemas"]["_Oeil"];
+            og: components["schemas"]["_Oeil"];
+            ep_saisi: components["schemas"]["EpSaisiEnum"];
+            ep_binoculaire: string | null;
+            ep_mono_od: string | null;
+            ep_mono_og: string | null;
+        };
         /** @description Un bloc de l'écran de droits, dans l'ordre d'affichage (`03-UI-SPEC.md` 7.4). */
         SectionCatalogue: {
             readonly titre: string;
             readonly droits: components["schemas"]["DroitCatalogue"][];
         };
+        /**
+         * @description * `ordonnance_medicale` - Ordonnance médicale
+         *     * `refraction_opticien` - Réfraction opticien
+         * @enum {string}
+         */
+        SourceEnum: "ordonnance_medicale" | "refraction_opticien";
         /**
          * @description `{"actif": false}` — la désactivation, et son inverse (`03-UI-SPEC.md` 7.9).
          *
@@ -1092,6 +1290,12 @@ export interface components {
         Statut: {
             actif: boolean;
         };
+        /**
+         * @description * `renouvellement` - Renouvellement
+         *     * `correction` - Correction d'une erreur de saisie
+         * @enum {string}
+         */
+        TypeRevisionEnum: "renouvellement" | "correction";
         /** @description `{code, accorde}` — le bouton `Uniformiser` de 7.5, qui replie une ligne mixte. */
         Uniformisation: {
             code: components["schemas"]["CodeEnum"];
@@ -1122,6 +1326,19 @@ export interface components {
             readonly est_proprietaire: boolean;
             /** Doit changer son mot de passe */
             readonly doit_changer_mot_de_passe: boolean;
+        };
+        /**
+         * @description Les quatre valeurs d'un œil. Une classe, pour que le contrat les nomme.
+         *
+         *     Les décimaux voyagent en **chaîne**, comme les bornes de l'amorçage : JSON n'a pas de
+         *     type décimal, et le contournement habituel — `float(...)` — est exactement la faute
+         *     que CLAUDE.md #7 interdit.
+         */
+        _Oeil: {
+            sphere: string | null;
+            cylindre: string | null;
+            axe: number | null;
+            addition: string | null;
         };
     };
     responses: never;
@@ -1282,6 +1499,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FicheClient"];
+                };
+            };
+        };
+    };
+    clients_ordonnances_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Ordonnance"][];
+                };
+            };
+        };
+    };
+    clients_ordonnances_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrdonnanceASaisir"];
+                "application/x-www-form-urlencoded": components["schemas"]["OrdonnanceASaisir"];
+                "multipart/form-data": components["schemas"]["OrdonnanceASaisir"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Ordonnance"];
+                };
+            };
+        };
+    };
+    clients_ordonnances_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: number;
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Ordonnance"];
                 };
             };
         };

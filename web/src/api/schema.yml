@@ -233,6 +233,97 @@ paths:
               schema:
                 $ref: '#/components/schemas/FicheClient'
           description: ''
+  /api/clients/{client_id}/ordonnances/:
+    get:
+      operationId: clients_ordonnances_list
+      description: 'Toutes les versions, la plus récente d''abord. Une version enregistrée
+        se rend **telle qu''elle a été saisie** : l''affichage ne la revalide jamais,
+        donc une valeur que les bornes d''aujourd''hui refuseraient s''affiche sans
+        avertissement, sans badge d''erreur et sans annotation (CLIENT-06).'
+      summary: L'historique des ordonnances d'un client
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - clients
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Ordonnance'
+          description: ''
+    post:
+      operationId: clients_ordonnances_create
+      description: 'Crée une **nouvelle version**. Le numéro de version est émis par
+        le serveur, sous verrou, dans la transaction d''insertion : un `version` envoyé
+        dans le corps est ignoré. Les versions précédentes ne sont jamais réécrites
+        — une correction porte `supersede` et un motif.'
+      summary: Saisir une ordonnance
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - clients
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrdonnanceASaisir'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OrdonnanceASaisir'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OrdonnanceASaisir'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ordonnance'
+          description: ''
+  /api/clients/{client_id}/ordonnances/{id}/:
+    get:
+      operationId: clients_ordonnances_retrieve
+      description: La ressource ordonnance, en lecture et en création seules. Voir
+        l'en-tête du module.
+      summary: Une version d'ordonnance
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: integer
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - clients
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ordonnance'
+          description: ''
   /api/clients/{id}/:
     get:
       operationId: clients_retrieve
@@ -865,6 +956,9 @@ components:
       required:
       - accorde
       - magasin_code
+    BlankEnum:
+      enum:
+      - ''
     BorneCylindre:
       type: object
       description: |-
@@ -1464,6 +1558,16 @@ components:
       - libelle
       - nature
       - par
+    EpSaisiEnum:
+      enum:
+      - binoculaire
+      - monoculaire
+      - les_deux
+      type: string
+      description: |-
+        * `binoculaire` - Binoculaire
+        * `monoculaire` - Monoculaire (par œil)
+        * `les_deux` - Les deux
     FicheClient:
       type: object
       description: |-
@@ -1521,6 +1625,24 @@ components:
           oneOf:
           - $ref: '#/components/schemas/RaisonEnum'
           - $ref: '#/components/schemas/NullEnum'
+        derniere_ordonnance:
+          type: string
+          format: date
+          nullable: true
+          readOnly: true
+          description: 'La date de prescription de la version en cours, en ISO. `null`
+            si le client n''a aucune ordonnance. **Absente de la charge utile** —
+            et non `null` — pour qui ne détient pas `ordonnance.voir` : les deux se
+            distinguent, et les confondre dirait « pas d''ordonnance » à qui n''a
+            simplement pas le droit.'
+        resume_ordonnance:
+          allOf:
+          - $ref: '#/components/schemas/ResumeOrdonnance'
+          nullable: true
+          readOnly: true
+          description: Le bloc de correction de la version en cours, rendu tel qu'il
+            a été saisi et **jamais revalidé** (CLIENT-06). Mêmes règles de présence
+            que `derniere_ordonnance`.
       required:
       - created_at
       - id
@@ -1573,6 +1695,255 @@ components:
     NullEnum:
       enum:
       - null
+    Ordonnance:
+      type: object
+      description: |-
+        Une version stockée, rendue **sans être revalidée**. CLIENT-06.
+
+        Tous les champs sont en lecture seule, y compris ceux que l'écriture accepte : il n'y
+        a aucune route de modification (plan 04-05, menace T-04-29), donc un champ
+        inscriptible ici serait une porte qui ne mène nulle part aujourd'hui et une porte tout
+        court le jour où quelqu'un monte un verbe de plus.
+
+        `client` et `magasin` sortent en clés primaires. Le `magasin` est de la **provenance**
+        — qui a saisi — et jamais un critère de filtrage : un gérant qui voit le client voit
+        tout son historique, quel que soit le comptoir (D-4a).
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        client:
+          type: integer
+          readOnly: true
+        magasin:
+          type: integer
+          readOnly: true
+        version:
+          type: integer
+          readOnly: true
+        supersede:
+          type: integer
+          readOnly: true
+          nullable: true
+        type_revision:
+          allOf:
+          - $ref: '#/components/schemas/TypeRevisionEnum'
+          readOnly: true
+        motif_revision:
+          type: string
+          readOnly: true
+        source:
+          allOf:
+          - $ref: '#/components/schemas/SourceEnum'
+          readOnly: true
+        prescripteur:
+          type: string
+          readOnly: true
+        date_prescription:
+          type: string
+          format: date
+          readOnly: true
+        sphere_od:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,2}(?:\.\d{0,2})?$
+          readOnly: true
+          nullable: true
+        sphere_og:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,2}(?:\.\d{0,2})?$
+          readOnly: true
+          nullable: true
+        cylindre_od:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,2}(?:\.\d{0,2})?$
+          readOnly: true
+          nullable: true
+        cylindre_og:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,2}(?:\.\d{0,2})?$
+          readOnly: true
+          nullable: true
+        axe_od:
+          type: integer
+          readOnly: true
+          nullable: true
+        axe_og:
+          type: integer
+          readOnly: true
+          nullable: true
+        addition_od:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,1}(?:\.\d{0,2})?$
+          readOnly: true
+          nullable: true
+        addition_og:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,1}(?:\.\d{0,2})?$
+          readOnly: true
+          nullable: true
+        ep_binoculaire:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,1})?$
+          readOnly: true
+          nullable: true
+        ep_mono_od:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,1})?$
+          readOnly: true
+          nullable: true
+        ep_mono_og:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,1})?$
+          readOnly: true
+          nullable: true
+        ep_saisi:
+          allOf:
+          - $ref: '#/components/schemas/EpSaisiEnum'
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        created_par:
+          type: string
+          readOnly: true
+      required:
+      - addition_od
+      - addition_og
+      - axe_od
+      - axe_og
+      - client
+      - created_at
+      - created_par
+      - cylindre_od
+      - cylindre_og
+      - date_prescription
+      - ep_binoculaire
+      - ep_mono_od
+      - ep_mono_og
+      - ep_saisi
+      - id
+      - magasin
+      - motif_revision
+      - prescripteur
+      - source
+      - sphere_od
+      - sphere_og
+      - supersede
+      - type_revision
+      - version
+    OrdonnanceASaisir:
+      type: object
+      description: |-
+        Ce qu'un comptoir envoie. **`version` n'y est pas, et c'est la garantie.**
+
+        Un champ absent du sérialiseur n'atteint jamais `validated_data` : un corps qui nomme
+        `{"version": 7}` est donc **ignoré**, pas obéi — et pas non plus refusé par un 400,
+        parce que DRF ne lève sur aucune clé inconnue. C'est le même raisonnement que la
+        projection des champs protégés (menace T-03-34), appliqué au numéro de série
+        (T-04-31).
+
+        Le `magasin` est un champ lié **restreint aux magasins accordés**. La vue restreint la
+        lecture ; elle ne restreint pas la création, et un POST nommant un magasin étranger ne
+        consulte aucun queryset de vue. DRF valide la clé primaire contre le queryset **du
+        champ**, donc l'écriture inter-magasins est un 400 et non un 201 (P5, T-03-40).
+      properties:
+        magasin:
+          type: integer
+          description: 'Le comptoir qui saisit. C''est de la **provenance** : l''ordonnance
+            appartient au client, pas au magasin, et tout l''historique se lit depuis
+            n''importe quel comptoir (D-4a).'
+        source:
+          $ref: '#/components/schemas/SourceEnum'
+        prescripteur:
+          type: string
+          default: ''
+          maxLength: 120
+        date_prescription:
+          type: string
+          format: date
+        supersede:
+          type: integer
+          nullable: true
+          description: 'La version que celle-ci remplace. Portée par la **nouvelle**
+            ligne : un drapeau posé sur l''ancienne serait une écriture sur une ligne
+            immuable.'
+        type_revision:
+          default: ''
+          oneOf:
+          - $ref: '#/components/schemas/TypeRevisionEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        motif_revision:
+          type: string
+          default: ''
+          maxLength: 300
+        sphere_od:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,2}(?:\.\d{0,2})?$
+          nullable: true
+        sphere_og:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,2}(?:\.\d{0,2})?$
+          nullable: true
+        cylindre_od:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,2}(?:\.\d{0,2})?$
+          nullable: true
+        cylindre_og:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,2}(?:\.\d{0,2})?$
+          nullable: true
+        axe_od:
+          type: integer
+          nullable: true
+        axe_og:
+          type: integer
+          nullable: true
+        addition_od:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,1}(?:\.\d{0,2})?$
+          nullable: true
+        addition_og:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,1}(?:\.\d{0,2})?$
+          nullable: true
+        ep_binoculaire:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,1})?$
+          nullable: true
+        ep_mono_od:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,1})?$
+          nullable: true
+        ep_mono_og:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,1})?$
+          nullable: true
+        ep_saisi:
+          $ref: '#/components/schemas/EpSaisiEnum'
+      required:
+      - date_prescription
+      - ep_saisi
+      - magasin
+      - source
     PatchedFicheClient:
       type: object
       description: |-
@@ -1630,6 +2001,24 @@ components:
           oneOf:
           - $ref: '#/components/schemas/RaisonEnum'
           - $ref: '#/components/schemas/NullEnum'
+        derniere_ordonnance:
+          type: string
+          format: date
+          nullable: true
+          readOnly: true
+          description: 'La date de prescription de la version en cours, en ISO. `null`
+            si le client n''a aucune ordonnance. **Absente de la charge utile** —
+            et non `null` — pour qui ne détient pas `ordonnance.voir` : les deux se
+            distinguent, et les confondre dirait « pas d''ordonnance » à qui n''a
+            simplement pas le droit.'
+        resume_ordonnance:
+          allOf:
+          - $ref: '#/components/schemas/ResumeOrdonnance'
+          nullable: true
+          readOnly: true
+          description: Le bloc de correction de la version en cours, rendu tel qu'il
+            a été saisi et **jamais revalidé** (CLIENT-06). Mêmes règles de présence
+            que `derniere_ordonnance`.
     PatchedModificationIdentite:
       type: object
       description: |-
@@ -1702,6 +2091,60 @@ components:
       - lignes
       - magasins_accordes
       - magasins_etendus
+    ResumeOrdonnance:
+      type: object
+      description: |-
+        Ce que la fiche client montre de la version en cours. `04-UI-SPEC.md` §19.3.
+
+        **Pourquoi la fiche porte ce bloc plutôt qu'un lien.** « Quelle est la correction
+        actuelle de ce client » est la question la plus fréquente du comptoir ; en faire une
+        seconde navigation est la friction que ce produit existe pour supprimer.
+
+        Et pourquoi il est **protégé** : l'ordonnance en tant qu'objet est une *ligne*, gardée
+        par `ordonnance.voir` au niveau du queryset. Ce résumé-ci est un **champ** posé sur un
+        objet que l'appelant a par ailleurs le droit de voir, et son contenu est clinique.
+        C'est exactement la forme que `CHAMPS_PROTEGES` existe pour traiter.
+      properties:
+        version:
+          type: integer
+        date_prescription:
+          type: string
+          format: date
+        source:
+          $ref: '#/components/schemas/SourceEnum'
+        prescripteur:
+          type: string
+        type_revision:
+          oneOf:
+          - $ref: '#/components/schemas/TypeRevisionEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        od:
+          $ref: '#/components/schemas/_Oeil'
+        og:
+          $ref: '#/components/schemas/_Oeil'
+        ep_saisi:
+          $ref: '#/components/schemas/EpSaisiEnum'
+        ep_binoculaire:
+          type: string
+          nullable: true
+        ep_mono_od:
+          type: string
+          nullable: true
+        ep_mono_og:
+          type: string
+          nullable: true
+      required:
+      - date_prescription
+      - ep_binoculaire
+      - ep_mono_od
+      - ep_mono_og
+      - ep_saisi
+      - od
+      - og
+      - prescripteur
+      - source
+      - type_revision
+      - version
     SectionCatalogue:
       type: object
       description: Un bloc de l'écran de droits, dans l'ordre d'affichage (`03-UI-SPEC.md`
@@ -1718,6 +2161,14 @@ components:
       required:
       - droits
       - titre
+    SourceEnum:
+      enum:
+      - ordonnance_medicale
+      - refraction_opticien
+      type: string
+      description: |-
+        * `ordonnance_medicale` - Ordonnance médicale
+        * `refraction_opticien` - Réfraction opticien
     Statut:
       type: object
       description: |-
@@ -1731,6 +2182,14 @@ components:
           type: boolean
       required:
       - actif
+    TypeRevisionEnum:
+      enum:
+      - renouvellement
+      - correction
+      type: string
+      description: |-
+        * `renouvellement` - Renouvellement
+        * `correction` - Correction d'une erreur de saisie
     Uniformisation:
       type: object
       description: '`{code, accorde}` — le bouton `Uniformiser` de 7.5, qui replie
@@ -1783,6 +2242,32 @@ components:
       - est_proprietaire
       - id
       - nom_complet
+    _Oeil:
+      type: object
+      description: |-
+        Les quatre valeurs d'un œil. Une classe, pour que le contrat les nomme.
+
+        Les décimaux voyagent en **chaîne**, comme les bornes de l'amorçage : JSON n'a pas de
+        type décimal, et le contournement habituel — `float(...)` — est exactement la faute
+        que CLAUDE.md #7 interdit.
+      properties:
+        sphere:
+          type: string
+          nullable: true
+        cylindre:
+          type: string
+          nullable: true
+        axe:
+          type: integer
+          nullable: true
+        addition:
+          type: string
+          nullable: true
+      required:
+      - addition
+      - axe
+      - cylindre
+      - sphere
   securitySchemes:
     cookieAuth:
       type: apiKey
