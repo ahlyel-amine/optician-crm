@@ -199,3 +199,36 @@ class DroitAccordeFactory(factory.django.DjangoModelFactory):
     magasin_code = "ANFA"
     code = "stock.voir"
     accorde_par = factory.SubFactory(UtilisateurFactory)
+
+
+# ======================================================================================
+# Clients — base métier (phase 4)
+# ======================================================================================
+
+
+class FicheClientFactory(factory.django.DjangoModelFactory):
+    """La fiche d'une personne qui achète, dans la base du client actuellement lié.
+
+    **Le nom `FicheClientFactory`, et pas `ClientFactory`.** Le second est pris, dans ce
+    même fichier, par l'affaire d'un opticien — une ligne du plan de contrôle, sur
+    `default`. Ce n'est pas une question de goût : les tests de locataire et les tests
+    métier se croisent ici, et deux fabriques homonymes produiraient le mauvais objet
+    **sans erreur**, dans la mauvaise base, avec un `django_get_or_create` qui trouverait
+    parfois une ligne préexistante.
+
+    Aucun `database =` : comme `MagasinFactory`, elle laisse le routeur résoudre la
+    connexion depuis le contexte. Un alias en dur serait un `.using()` déguisé et
+    contournerait exactement le mécanisme que la suite existe pour vérifier.
+
+    **Pas de `django_get_or_create` sur le nom.** Deux clients peuvent légitimement
+    s'appeler « Mohamed Alaoui » — c'est même le cœur de CLIENT-10 — et une fabrique qui
+    dédoublonnerait par le nom rendrait la même fiche à deux appels, ce qui ferait passer
+    un test de doublon qui devrait échouer.
+    """
+
+    class Meta:
+        model = "clients.Client"
+
+    nom = factory.Sequence(lambda n: f"Client {n:04d}")
+    telephone = factory.Sequence(lambda n: f"06{n:08d}")
+    actif = True

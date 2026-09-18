@@ -466,3 +466,38 @@ def test_client10_la_garde_de_source_est_prouvee_sur_des_modules_synthetiques(
     fautes = reglages_de_session_nus([(etiquette, source)])
 
     assert bool(fautes) is fautif, f"{etiquette} : {fautes}"
+
+
+# ======================================================================================
+# CLIENT-01 — les colonnes dérivées, remplies à l'enregistrement
+# ======================================================================================
+def test_client01_les_colonnes_derivees_sont_remplies_a_l_enregistrement(tenant_a):
+    """Les trois colonnes dérivées sont **persistées**, pas seulement calculées en mémoire.
+
+    La relecture depuis la base est le test. Un `save()` qui calculerait les dérivées et
+    les laisserait hors du `INSERT` — un `update_fields` trop étroit, une affectation
+    après `super().save()` — produirait des objets parfaitement corrects en Python et une
+    recherche indexée qui ne trouve **rien**, parce que l'index porte sur la colonne et
+    non sur l'attribut. C'est le mode de défaillance le plus silencieux de cette phase.
+
+    `Aïcha` couvre le pliage des accents, `06 12 34 56 78` le pliage du téléphone, et la
+    clé phonétique non vide prouve que l'aller-retour vers `metaphone` a bien eu lieu
+    pendant l'enregistrement — donc que `fuzzystrmatch` est là et que l'alias a été
+    résolu sans qu'on le lui passe.
+    """
+    from domaine.clients.models import Client
+
+    cree = Client.objects.create(nom="Aïcha EL Alaoui", telephone="06 12 34 56 78")
+    relu = Client.objects.get(pk=cree.pk)
+
+    assert relu.nom == "Aïcha EL Alaoui", "le nom saisi n'est pas modifié"
+    assert relu.nom_recherche == "aicha el alaoui", (
+        f"nom_recherche vaut {relu.nom_recherche!r} en base"
+    )
+    assert relu.telephone_normalise == "0612345678", (
+        f"telephone_normalise vaut {relu.telephone_normalise!r} en base"
+    )
+    assert relu.cle_phonetique != "", (
+        "la clé phonétique est vide en base pour un nom latin ; soit `save()` ne la "
+        "calcule pas, soit elle ne la persiste pas"
+    )
