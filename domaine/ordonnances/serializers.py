@@ -119,6 +119,14 @@ class OrdonnanceLectureSerializer(SerializerProjete):
     tout son historique, quel que soit le comptoir (D-4a).
     """
 
+    #: La presence de la photo, jamais son chemin. Un booleen plutot que le nom stocke :
+    #: l'ecran a besoin de savoir s'il affiche la vignette ou le controle d'attache
+    #: (`04-UI-SPEC.md` §22.3), et il n'a besoin de rien d'autre.
+    a_une_photo = serializers.SerializerMethodField()
+
+    def get_a_une_photo(self, ordonnance) -> bool:
+        return bool(ordonnance.photo)
+
     class Meta:
         model = Ordonnance
         fields = [
@@ -146,6 +154,15 @@ class OrdonnanceLectureSerializer(SerializerProjete):
             "ep_saisi",
             "created_at",
             "created_par",
+            # CLIENT-09 (plan 04-06). **`photo` — le nom stocke — n'est PAS ici**, et
+            # c'est une decision : c'est un detail interne du stockage, et un
+            # `ModelSerializer` qui le rendrait appellerait `storage.url()`, qui leve.
+            # Ce que l'ecran consomme est le booleen ci-dessous plus ces trois colonnes.
+            "a_une_photo",
+            "photo_type",
+            "photo_octets",
+            "photo_attachee_le",
+            "photo_par",
         ]
         read_only_fields = fields
 
@@ -423,3 +440,42 @@ class ChampResumeOrdonnance(serializers.SerializerMethodField):
     composant `ResumeOrdonnance` est le contrat, et il est généré depuis la même classe
     que celle qui décrit la charge.
     """
+
+
+# ======================================================================================
+# CLIENT-09 — la photo : ce que le contrat en dit, et ce qu'il n'en dit pas
+# ======================================================================================
+class PhotoTeleverseeSerializer(serializers.Serializer):
+    """Le corps d'une attache : **un** fichier, et rien d'autre.
+
+    Aucun champ de métadonnée n'est accepté. Le type et la taille sont **mesurés** par le
+    service, jamais recopiés depuis ce que l'appelant annonce — l'extension et le type
+    MIME sont tous deux choisis par lui, donc ni l'un ni l'autre n'est une preuve.
+    """
+
+    fichier = serializers.FileField(
+        help_text="L'image de l'ordonnance papier. JPG, PNG, WEBP ou HEIC, 10 Mo au plus.",
+    )
+
+
+@extend_schema_serializer(component_name="PhotoOrdonnance")
+class PhotoOrdonnanceSerializer(serializers.Serializer):
+    """Ce qu'une attache réussie rend, et ce que la fiche montre d'une photo.
+
+    **Le nom stocké n'y est pas, et c'est une décision.** C'est un détail interne du
+    stockage ; le publier inviterait un appelant à le présenter, c'est-à-dire exactement
+    la chose que `domaine/ordonnances/stockage.py` refuse de résoudre. Les octets se
+    demandent par l'identifiant de l'ordonnance, jamais par un chemin.
+
+    **Le nom du fichier envoyé n'y est pas non plus**, et celle-là est la décision qui
+    coûte quelque chose : `04-UI-SPEC.md` §22.2 voulait l'afficher à côté de la vignette
+    comme contrôle de mauvaise pièce jointe. Il porte couramment le nom du patient, il
+    n'est donc conservé nulle part — ni sur le disque, ni en colonne — et l'écran n'a
+    rien à afficher. Consigné en D-4-4.
+    """
+
+    a_une_photo = serializers.BooleanField(read_only=True)
+    photo_type = serializers.CharField(read_only=True, allow_blank=True)
+    photo_octets = serializers.IntegerField(read_only=True, allow_null=True)
+    photo_attachee_le = serializers.DateTimeField(read_only=True, allow_null=True)
+    photo_par = serializers.CharField(read_only=True, allow_blank=True)

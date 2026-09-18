@@ -599,6 +599,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/ordonnances/{id}/photo/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Les octets de la photo d'une ordonnance
+         * @description Les octets sortent d'une vue qui a **déjà résolu** `ordonnance.voir` et `client.voir`. Il n'existe aucune adresse directe, aucun service de fichiers statiques et aucune adresse pré-signée : une adresse qui contournerait la permission ferait de la couche de projection un théâtre. `Storage.url()` lève, précisément pour que personne n'en fabrique une.
+         */
+        get: operations["ordonnances_photo_retrieve"];
+        put?: never;
+        /**
+         * Attacher la photo d'une ordonnance, **une fois**
+         * @description `null → posée` est la seule mutation permise sur une version enregistrée (CLIENT-06, décision §28-Q5) : le papier arrive souvent le lendemain. Une photo ne se remplace ni ne s'efface — sur la mauvaise version, elle se corrige par une nouvelle version. Taille, type déclaré **et octets magiques** sont vérifiés.
+         */
+        post: operations["ordonnances_photo_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1114,6 +1138,12 @@ export interface components {
             /** Format: date-time */
             readonly created_at: string;
             readonly created_par: string;
+            readonly a_une_photo: boolean;
+            readonly photo_type: string;
+            readonly photo_octets: number | null;
+            /** Format: date-time */
+            readonly photo_attachee_le: string | null;
+            readonly photo_par: string;
         };
         /**
          * @description Ce qu'un comptoir envoie. **`version` n'y est pas, et c'est la garantie.**
@@ -1219,6 +1249,42 @@ export interface components {
             nom_complet?: string;
             /** Format: email */
             email?: string;
+        };
+        /**
+         * @description Ce qu'une attache réussie rend, et ce que la fiche montre d'une photo.
+         *
+         *     **Le nom stocké n'y est pas, et c'est une décision.** C'est un détail interne du
+         *     stockage ; le publier inviterait un appelant à le présenter, c'est-à-dire exactement
+         *     la chose que `domaine/ordonnances/stockage.py` refuse de résoudre. Les octets se
+         *     demandent par l'identifiant de l'ordonnance, jamais par un chemin.
+         *
+         *     **Le nom du fichier envoyé n'y est pas non plus**, et celle-là est la décision qui
+         *     coûte quelque chose : `04-UI-SPEC.md` §22.2 voulait l'afficher à côté de la vignette
+         *     comme contrôle de mauvaise pièce jointe. Il porte couramment le nom du patient, il
+         *     n'est donc conservé nulle part — ni sur le disque, ni en colonne — et l'écran n'a
+         *     rien à afficher. Consigné en D-4-4.
+         */
+        PhotoOrdonnance: {
+            readonly a_une_photo: boolean;
+            readonly photo_type: string;
+            readonly photo_octets: number | null;
+            /** Format: date-time */
+            readonly photo_attachee_le: string | null;
+            readonly photo_par: string;
+        };
+        /**
+         * @description Le corps d'une attache : **un** fichier, et rien d'autre.
+         *
+         *     Aucun champ de métadonnée n'est accepté. Le type et la taille sont **mesurés** par le
+         *     service, jamais recopiés depuis ce que l'appelant annonce — l'extension et le type
+         *     MIME sont tous deux choisis par lui, donc ni l'un ni l'autre n'est une preuve.
+         */
+        PhotoTeleversee: {
+            /**
+             * Format: uri
+             * @description L'image de l'ordonnance papier. JPG, PNG, WEBP ou HEIC, 10 Mo au plus.
+             */
+            fichier: string;
         };
         /** @enum {string} */
         RaisonEnum: "exact" | "telephone" | "orthographe" | "phonetique" | "equivalence";
@@ -1889,6 +1955,66 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["CatalogueOffrable"];
                 };
+            };
+        };
+    };
+    ordonnances_photo_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/*": string;
+                };
+            };
+            /** @description Aucune photo sur cette version. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ordonnances_photo_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["PhotoTeleversee"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PhotoOrdonnance"];
+                };
+            };
+            /** @description Cette version porte déjà une photo. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

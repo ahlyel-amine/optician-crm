@@ -20,6 +20,7 @@ alias passes every isolation test.
 """
 
 import copy
+import tempfile
 
 from .base import *  # noqa: F403
 from .base import DATABASES, PG_ADMIN_HOST, PG_ADMIN_PORT
@@ -47,6 +48,14 @@ DATABASES["tenant_b"] = _tenant("optique_test_b")
 for _alias in ("default", "tenant_a", "tenant_b"):
     DATABASES[_alias]["HOST"] = PG_ADMIN_HOST
     DATABASES[_alias]["PORT"] = str(PG_ADMIN_PORT)
+
+# Ou les photos d'ordonnance de la suite atterrissent : un repertoire temporaire de
+# session, **jamais** l'arbre du depot. Une photo d'ordonnance commise serait une fuite
+# de donnee de sante dans l'historique git, et l'historique git n'est pas revocable.
+#
+# `mkdtemp` et non un chemin fixe sous /tmp : chaque worker xdist importe ces reglages,
+# donc chacun obtient sa propre racine et deux workers ne peuvent pas se lire.
+ORDONNANCE_MEDIA_ROOT = tempfile.mkdtemp(prefix="optique-test-media-")
 
 # The context guard raises instead of merely logging. A leak must fail the test, loudly.
 TENANCY_STRICT = True

@@ -231,6 +231,26 @@ CHAMPS_PUBLICS: frozenset[str] = frozenset(
         "ordonnances.Ordonnance.ep_saisi",
         "ordonnances.Ordonnance.created_at",
         "ordonnances.Ordonnance.created_par",
+        # ------------------------------------------------------------------------------
+        # La photo de l'ordonnance (plan 04-06). « Public » veut dire ici : **quiconque
+        # atteint la ligne**, donc quiconque détient `ordonnance.voir`. L'image est la
+        # même donnée de santé que les valeurs structurées ; la servir derrière un droit
+        # plus faible ferait de cette couche un théâtre, et la servir derrière un droit
+        # *plus fort* cacherait à qui lit déjà la prescription la pièce qui la justifie.
+        #
+        # **`photo` — le nom stocké — est classée publique et n'est exposée nulle part**,
+        # et les deux affirmations tiennent ensemble : la classer dit que la décision a
+        # été prise, l'absence du sérialiseur dit qu'on n'en publie pas l'intérêt. Le nom
+        # stocké est un détail du stockage ; le publier inviterait un appelant à le
+        # présenter, ce que `domaine/ordonnances/stockage.py` refuse de résoudre.
+        #
+        # `photo_par` suit `created_par` : la provenance d'une pièce justificative de
+        # santé est ce qui rend une mauvaise pièce jointe discutable au comptoir.
+        "ordonnances.Ordonnance.photo",
+        "ordonnances.Ordonnance.photo_type",
+        "ordonnances.Ordonnance.photo_octets",
+        "ordonnances.Ordonnance.photo_attachee_le",
+        "ordonnances.Ordonnance.photo_par",
     }
 )
 

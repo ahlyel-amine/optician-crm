@@ -18,11 +18,16 @@ a établi au plan 03-08.
 
 from __future__ import annotations
 
+from decimal import ROUND_UP, Decimal
+
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import router, transaction
 from django.db.models import Max, Prefetch
+from django.utils import timezone
 
 from domaine.ordonnances.models import Ordonnance, TypeRevision
+from domaine.ordonnances.stockage import EXTENSIONS
 from plateforme.numerotation import numero_suivant
 
 #: L'attribut que `avec_la_derniere_ordonnance` pose sur chaque fiche. Nommé ici plutôt
@@ -186,3 +191,169 @@ def derniere_ordonnance_de(fiche) -> Ordonnance | None:
     if prechargees is not None:
         return prechargees[0] if prechargees else None
     return fiche.ordonnances.order_by("-version").first()
+
+
+# ======================================================================================
+# CLIENT-09 — attacher la photo, une fois
+# ======================================================================================
+#: Les cinq colonnes que l'attache écrit, et les seules. Nommées ici plutôt que recopiées
+#: dans l'appel : c'est ce qui rend mécanique le « cette transition et rien d'autre » de
+#: `04-UI-SPEC.md` §22.3, et c'est ce que le test compare champ par champ.
+COLONNES_DE_LA_PHOTO = (
+    "photo",
+    "photo_type",
+    "photo_octets",
+    "photo_attachee_le",
+    "photo_par",
+)
+
+#: Les octets magiques, par type réel. **L'extension et le type MIME sont tous deux
+#: choisis par l'appelant**, donc ni l'un ni l'autre n'est une preuve ; ces octets-ci
+#: sont produits par l'encodeur.
+#:
+#: Pillow n'est **pas** ajoutée pour autant. `ImageField` prouverait seulement que les
+#: octets sont décodables, et poser une bibliothèque d'images sur un flux non fiable
+#: élargit la surface d'attaque au service d'une garantie dont ce plan n'a pas besoin
+#: (T-04-43).
+_MARQUES_HEIC = frozenset({b"heic", b"heix", b"hevc", b"hevx", b"mif1", b"msf1"})
+
+#: Combien d'octets il faut lire pour trancher. Douze suffisent pour WEBP (`RIFF....WEBP`)
+#: et pour HEIC (`....ftypheic`) ; seize par confort de lecture.
+_TETE = 16
+
+MESSAGE_PAS_UNE_IMAGE = (
+    "Ce fichier n'est pas une image. Formats acceptés : JPG, PNG, WEBP, HEIC."
+)
+MESSAGE_UNE_SEULE_FOIS = (
+    "Une photo ne se remplace pas. Pour corriger, enregistrez une nouvelle version."
+)
+
+
+class PhotoDejaAttachee(Exception):
+    """Cette version porte déjà une photo. Ce n'est pas une requête mal formée.
+
+    **Pas une `ValidationError`, et la distinction porte jusqu'au code HTTP.** Le corps
+    de la requête est parfaitement valide ; c'est l'**état de la ressource** qui interdit
+    l'écriture. La vue rend donc 409 et non 400 — et surtout jamais 200, qui est la seule
+    réponse que ce refus existe pour empêcher.
+    """
+
+
+def _type_des_octets(tete: bytes) -> str | None:
+    """Le type que les **octets** revendiquent, ou `None` si ce n'est aucun des quatre."""
+    if tete.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if tete.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if tete.startswith(b"RIFF") and tete[8:12] == b"WEBP":
+        return "image/webp"
+    # `ftyp` est à l'offset 4 d'un conteneur ISO-BMFF, mais l'écrire ainsi recopierait un
+    # littéral que la garde des nombres cliniques attrape — `4` est l'addition maximale.
+    # Le chercher dans la tête et **épingler la marque** à sa position exacte dit la même
+    # chose sans le nombre, et la marque est le contrôle qui compte.
+    if b"ftyp" in tete[:12] and tete[8:12] in _MARQUES_HEIC:
+        return "image/heic"
+    return None
+
+
+#: Un mégaoctet, en `Decimal` — jamais en flottant. Même règle que l'argent (CLAUDE.md
+#: #7) : le nombre affiché est calculé, donc il se calcule juste.
+UN_MEGAOCTET = Decimal(1024 * 1024)
+_UN_DIXIEME = Decimal("0.1")
+
+
+def _en_megaoctets(octets: int) -> str:
+    """`10,1` — arrondi **vers le haut** au dixième, virgule décimale.
+
+    Vers le haut parce qu'un plafond annoncé plus petit que la taille réelle fait
+    relancer le même fichier. En mégaoctets parce que `10485761` ne dit rien à personne
+    (`04-UI-SPEC.md` §22.1 : jamais des octets, jamais un type MIME à l'écran).
+
+    L'arrondi passe par `quantize` et non par une division entière : la forme naturelle
+    — `ceil(octets * 10 / (1024 * 1024))` — recopie deux littéraux que la garde des
+    nombres cliniques attrape, `10` étant la borne du cylindre.
+    """
+    megaoctets = (Decimal(octets) / UN_MEGAOCTET).quantize(
+        _UN_DIXIEME, rounding=ROUND_UP
+    )
+    return f"{megaoctets:f}".rstrip("0").rstrip(".").replace(".", ",")
+
+
+def attacher_photo(ordonnance, fichier, *, par: str):
+    """Pose la photo sur une version qui n'en a pas. La seule mutation permise. CLIENT-09.
+
+    ## `null -> posée`, et rien d'autre
+
+    Une ordonnance est immuable (CLIENT-06). La décision §28-Q5 ouvre **une** exception,
+    et pour une raison de comptoir : le papier est souvent scanné le lendemain, et
+    interdire l'ajout obligerait à créer une version qui ne change aucune valeur
+    clinique — donc à polluer l'historique que CLIENT-06 existe pour protéger.
+
+    L'écriture nomme donc ses colonnes par `update_fields`, et non un `save()` nu. C'est
+    ce qui rend la promesse mécanique plutôt que documentaire : un `save()` nu
+    réécrirait toute la ligne, et un `UPDATE` général reviendrait par cette porte-là.
+
+    **Mesuré, et à savoir avant de lire le SQL :** `Ordonnance.save()` élargit
+    `update_fields` avec `COLONNES_CANONICALISEES` (plan 04-04), donc l'ordre nomme neuf
+    colonnes et non cinq. Les quatre supplémentaires sont réécrites à l'identique — elles
+    étaient déjà canoniques, les contraintes de base l'exigent — et l'élargissement
+    existe pour qu'une écriture ciblée ne puisse pas laisser un axe de 0 en base. La
+    garantie « rien d'autre n'a bougé » est donc tenue sur les **valeurs**, et c'est
+    ainsi que le test la vérifie.
+
+    ## Ce qui est refusé, et dans cet ordre
+
+    1. une photo déjà posée — `PhotoDejaAttachee`, donc 409 ;
+    2. la taille, **avant** de lire le moindre octet du contenu ;
+    3. le type déclaré, contre la liste du réglage ;
+    4. les **octets magiques**, qui priment sur le type déclaré.
+
+    ## Le nom du fichier envoyé ne survit à rien
+
+    Ni sur le disque, ni en colonne, ni dans un message d'erreur. Un nom de fichier
+    téléversé porte couramment le nom du patient (`ordonnance_benali_ahmed.jpg`), et une
+    chaîne d'erreur est la seule chaîne du produit qui atteint Sentry de façon fiable.
+    Le nom stocké est fabriqué par `StockageOrdonnances.get_available_name` — dans le
+    stockage, pas seulement ici, pour qu'un futur appelant distrait ne puisse pas
+    contourner la règle.
+    """
+    if ordonnance.photo:
+        raise PhotoDejaAttachee(MESSAGE_UNE_SEULE_FOIS)
+
+    taille = int(fichier.size or 0)
+    if taille > settings.ORDONNANCE_TAILLE_MAX_OCTETS:
+        raise ValidationError(
+            {
+                "fichier": (
+                    f"Cette image fait {_en_megaoctets(taille)} Mo. La limite est de "
+                    f"{_en_megaoctets(settings.ORDONNANCE_TAILLE_MAX_OCTETS)} Mo."
+                )
+            }
+        )
+    if taille == 0:
+        raise ValidationError({"fichier": MESSAGE_PAS_UNE_IMAGE})
+
+    declare = (getattr(fichier, "content_type", "") or "").split(";")[0].strip().lower()
+    if declare not in settings.ORDONNANCE_TYPES_ACCEPTES:
+        raise ValidationError({"fichier": MESSAGE_PAS_UNE_IMAGE})
+
+    fichier.seek(0)
+    reel = _type_des_octets(fichier.read(_TETE))
+    fichier.seek(0)
+    if reel is None or reel != declare:
+        # Le message est **le même** que pour un type refusé, et c'est délibéré : la
+        # vérité utile à l'opticien est identique, et un message distinct apprendrait à
+        # un appelant hostile que les octets sont inspectés.
+        raise ValidationError({"fichier": MESSAGE_PAS_UNE_IMAGE})
+
+    # `<version>/<nom>` : le stockage remplace le nom par un `uuid4` et ne garde que le
+    # dossier et l'extension. Le dossier est le numéro de version, et le stockage refuse
+    # tout dossier qui n'est pas un nombre.
+    nom = f"{ordonnance.version}/photo{EXTENSIONS[reel]}"
+    ordonnance.photo.save(nom, fichier, save=False)
+    ordonnance.photo_type = reel
+    ordonnance.photo_octets = taille
+    ordonnance.photo_attachee_le = timezone.now()
+    ordonnance.photo_par = par
+    ordonnance.save(update_fields=list(COLONNES_DE_LA_PHOTO))
+    return ordonnance

@@ -126,6 +126,12 @@ def test_perm06_le_contrat_porte_les_routes_montees_et_aucune_route_de_test(tmp_
         # d'appeler une URL que le contrat ne décrit plus.
         "/api/clients/{client_id}/ordonnances/",
         "/api/clients/{client_id}/ordonnances/{id}/",
+        # Phase 4, plan 04-06. La photo, et c'est **l'`APIView` nue** que ce test décrit
+        # depuis le début : pas de routeur, pas de `serializer_class`, un corps
+        # `multipart` et une réponse binaire. Sans `extend_schema` sur les deux verbes,
+        # le générateur l'ignore en silence — la route est servie et le client généré
+        # n'en sait rien.
+        "/api/ordonnances/{id}/photo/",
     }
     manquants = attendus - chemins
     assert not manquants, (

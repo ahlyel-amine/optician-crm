@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from django.urls import path
 
-from domaine.ordonnances.vues import VueOrdonnances
+from domaine.ordonnances.vues import VueOrdonnances, VuePhotoOrdonnance
 
 urlpatterns = [
     path(
@@ -36,5 +36,27 @@ urlpatterns = [
         "<int:client_id>/ordonnances/<int:pk>/",
         VueOrdonnances.as_view({"get": "retrieve"}),
         name="ordonnance-detail",
+    ),
+]
+
+#: La route de la photo, **plate** et non imbriquée sous la fiche. Montée sous un préfixe
+#: distinct par `config/urls.py`, donc dans une seconde liste nommée plutôt que dans
+#: `urlpatterns` — même forme que `plateforme/comptes/urls.py::urlpatterns_gestion`, et
+#: pour la même raison : `include()` prendrait la première liste du module.
+#:
+#: **Pourquoi plate.** Une ordonnance n'est pas scopée au magasin (D-4a) et son
+#: identifiant est déjà borné par la base du locataire : le segment `client` n'ajouterait
+#: aucune borne, seulement un second identifiant à tenir cohérent et un 404 de plus à
+#: distinguer. L'imbrication de l'historique, elle, existe pour éviter un `?client=` dans
+#: `PARAMETRES_RESERVES` — une raison qui ne s'applique pas ici.
+#:
+#: **Aucune route de retrait.** `VuePhotoOrdonnance.http_method_names` ne porte pas
+#: `delete`, donc un `DELETE` rend **405** — pas 403, qui dirait qu'une route existe
+#: derrière un droit (`04-UI-SPEC.md` §22.3).
+urlpatterns_photo = [
+    path(
+        "<int:pk>/photo/",
+        VuePhotoOrdonnance.as_view(),
+        name="ordonnance-photo",
     ),
 ]

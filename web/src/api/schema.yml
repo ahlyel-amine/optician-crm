@@ -851,6 +851,68 @@ paths:
               schema:
                 $ref: '#/components/schemas/CatalogueOffrable'
           description: ''
+  /api/ordonnances/{id}/photo/:
+    get:
+      operationId: ordonnances_photo_retrieve
+      description: 'Les octets sortent d''une vue qui a **déjà résolu** `ordonnance.voir`
+        et `client.voir`. Il n''existe aucune adresse directe, aucun service de fichiers
+        statiques et aucune adresse pré-signée : une adresse qui contournerait la
+        permission ferait de la couche de projection un théâtre. `Storage.url()` lève,
+        précisément pour que personne n''en fabrique une.'
+      summary: Les octets de la photo d'une ordonnance
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - ordonnances
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            image/*:
+              schema:
+                type: string
+                format: binary
+          description: ''
+        '404':
+          description: Aucune photo sur cette version.
+    post:
+      operationId: ordonnances_photo_create
+      description: '`null → posée` est la seule mutation permise sur une version enregistrée
+        (CLIENT-06, décision §28-Q5) : le papier arrive souvent le lendemain. Une
+        photo ne se remplace ni ne s''efface — sur la mauvaise version, elle se corrige
+        par une nouvelle version. Taille, type déclaré **et octets magiques** sont
+        vérifiés.'
+      summary: Attacher la photo d'une ordonnance, **une fois**
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - ordonnances
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PhotoTeleversee'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PhotoOrdonnance'
+          description: ''
+        '409':
+          description: Cette version porte déjà une photo.
 components:
   schemas:
     Amorcage:
@@ -1816,7 +1878,26 @@ components:
         created_par:
           type: string
           readOnly: true
+        a_une_photo:
+          type: boolean
+          readOnly: true
+        photo_type:
+          type: string
+          readOnly: true
+        photo_octets:
+          type: integer
+          readOnly: true
+          nullable: true
+        photo_attachee_le:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        photo_par:
+          type: string
+          readOnly: true
       required:
+      - a_une_photo
       - addition_od
       - addition_og
       - axe_od
@@ -1834,6 +1915,10 @@ components:
       - id
       - magasin
       - motif_revision
+      - photo_attachee_le
+      - photo_octets
+      - photo_par
+      - photo_type
       - prescripteur
       - source
       - sphere_od
@@ -2035,6 +2120,62 @@ components:
         email:
           type: string
           format: email
+    PhotoOrdonnance:
+      type: object
+      description: |-
+        Ce qu'une attache réussie rend, et ce que la fiche montre d'une photo.
+
+        **Le nom stocké n'y est pas, et c'est une décision.** C'est un détail interne du
+        stockage ; le publier inviterait un appelant à le présenter, c'est-à-dire exactement
+        la chose que `domaine/ordonnances/stockage.py` refuse de résoudre. Les octets se
+        demandent par l'identifiant de l'ordonnance, jamais par un chemin.
+
+        **Le nom du fichier envoyé n'y est pas non plus**, et celle-là est la décision qui
+        coûte quelque chose : `04-UI-SPEC.md` §22.2 voulait l'afficher à côté de la vignette
+        comme contrôle de mauvaise pièce jointe. Il porte couramment le nom du patient, il
+        n'est donc conservé nulle part — ni sur le disque, ni en colonne — et l'écran n'a
+        rien à afficher. Consigné en D-4-4.
+      properties:
+        a_une_photo:
+          type: boolean
+          readOnly: true
+        photo_type:
+          type: string
+          readOnly: true
+        photo_octets:
+          type: integer
+          readOnly: true
+          nullable: true
+        photo_attachee_le:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        photo_par:
+          type: string
+          readOnly: true
+      required:
+      - a_une_photo
+      - photo_attachee_le
+      - photo_octets
+      - photo_par
+      - photo_type
+    PhotoTeleversee:
+      type: object
+      description: |-
+        Le corps d'une attache : **un** fichier, et rien d'autre.
+
+        Aucun champ de métadonnée n'est accepté. Le type et la taille sont **mesurés** par le
+        service, jamais recopiés depuis ce que l'appelant annonce — l'extension et le type
+        MIME sont tous deux choisis par lui, donc ni l'un ni l'autre n'est une preuve.
+      properties:
+        fichier:
+          type: string
+          format: uri
+          description: L'image de l'ordonnance papier. JPG, PNG, WEBP ou HEIC, 10
+            Mo au plus.
+      required:
+      - fichier
     RaisonEnum:
       enum:
       - exact

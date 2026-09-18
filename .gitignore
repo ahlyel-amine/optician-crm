@@ -23,6 +23,13 @@ htmlcov/
 *.dump
 *.sql.gz
 
+# Ordonnance photographs — SECURITY CONTROL, not housekeeping.
+# A photographed prescription is a named patient's health data under law 09-08. Committed
+# once, it is in the history forever: git history is not revocable, and a rewrite does not
+# reach the clones. `/media/` is the development storage root (ORDONNANCE_MEDIA_ROOT); the
+# test suite writes to a temporary directory instead. Never remove this line.
+/media/
+
 # Frontend (web/)
 # Dependencies and build output only. Nothing under web/src/api/ is ignored: the
 # committed OpenAPI document and its generated types are the diff gate that makes

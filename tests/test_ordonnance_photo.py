@@ -89,10 +89,32 @@ def _nom_stocke(ordonnance):
     return Ordonnance.objects.get(pk=ordonnance.pk).photo.name
 
 
+def _toutes_les_colonnes(instance) -> dict:
+    """Toutes les colonnes concrètes, **y compris les non modifiables**.
+
+    Et non `model_to_dict`, qui **saute silencieusement** tout champ `editable=False` —
+    donc précisément `photo`, la colonne que ce fichier existe pour surveiller. Mesuré :
+    la première version de la comparaison champ par champ ne voyait pas l'attache du
+    tout, et seule l'assertion de contrôle « au moins une colonne de photo a bougé » l'a
+    révélé. Un comparateur aveugle à la moitié de la ligne est vert pour toujours.
+    """
+    return {
+        champ.name: champ.value_from_object(instance)
+        for champ in instance._meta.concrete_fields
+    }
+
+
 def _racine_du_locataire(alias):
+    """La racine attendue, **résolue**.
+
+    `.resolve()` et non le chemin brut : sur macOS `/var` est un lien vers
+    `/private/var`, donc `tempfile.mkdtemp()` rend un chemin que le stockage résout
+    différemment. Sans cette ligne, l'assertion échoue sur un détail de plateforme au
+    lieu d'échouer sur la garantie — ce qui est la pire façon de la faire rougir.
+    """
     from django.conf import settings
 
-    return Path(settings.ORDONNANCE_MEDIA_ROOT) / alias
+    return (Path(settings.ORDONNANCE_MEDIA_ROOT) / alias).resolve()
 
 
 def _proprietaire():
@@ -327,15 +349,25 @@ def test_client09_une_photo_s_attache_une_fois_et_ne_se_remplace_jamais(
     La comparaison est donc champ par champ, avant et après, et non « la sphère n'a pas
     bougé ».
     """
-    from django.forms.models import model_to_dict
-
     from domaine.ordonnances.models import Ordonnance
     from plateforme.comptes.permissions_catalogue import Permission
 
-    COLONNES_DE_LA_PHOTO = {"photo", "photo_type", "photo_octets", "photo_attachee_le"}
+    #: Les colonnes que l'attache a le droit de toucher. `photo_par` est la cinquième,
+    #: et elle est là pour la même raison que `created_par` : la provenance d'une pièce
+    #: justificative de santé est ce qui la rend discutable au comptoir dix ans plus
+    #: tard. **Recopiée ici plutôt qu'importée de `services.py`** — un test qui importe
+    #: la liste qu'il vérifie est vert quelle que soit cette liste, y compris quand
+    #: quelqu'un y ajoute `sphere_od`.
+    COLONNES_DE_LA_PHOTO = {
+        "photo",
+        "photo_type",
+        "photo_octets",
+        "photo_attachee_le",
+        "photo_par",
+    }
 
     ordonnance = _ordonnance()
-    avant = model_to_dict(Ordonnance.objects.get(pk=ordonnance.pk))
+    avant = _toutes_les_colonnes(Ordonnance.objects.get(pk=ordonnance.pk))
 
     saisisseur, _ = _gerant_avec(
         deux_magasins,
@@ -369,14 +401,14 @@ def test_client09_une_photo_s_attache_une_fois_et_ne_se_remplace_jamais(
         "effacer une pièce justificative."
     )
 
-    apres = model_to_dict(Ordonnance.objects.get(pk=ordonnance.pk))
+    apres = _toutes_les_colonnes(Ordonnance.objects.get(pk=ordonnance.pk))
     bouges = {
         cle for cle in avant if avant[cle] != apres[cle]
     } | (set(apres) - set(avant))
     assert bouges <= COLONNES_DE_LA_PHOTO, (
         f"L'attache a modifié {sorted(bouges - COLONNES_DE_LA_PHOTO)}. `null -> posé` sur "
-        "les quatre colonnes de la photo est la seule mutation permise sur une "
-        "ordonnance enregistrée."
+        "les colonnes de la photo est la seule mutation permise sur une ordonnance "
+        "enregistrée."
     )
     assert "photo" in bouges, (
         "Aucune colonne de photo n'a bougé : la comparaison ci-dessus passerait aussi "

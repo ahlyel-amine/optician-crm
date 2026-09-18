@@ -23,6 +23,7 @@ from django.db.models.lookups import Exact
 
 from domaine.ordonnances.bornes import BORNES, BORNES_ENTIERES
 from domaine.ordonnances.optique import canonicaliser_axe
+from domaine.ordonnances.stockage import stockage_des_photos
 
 #: Le zéro, nommé une fois. Ce n'est pas une borne — c'est la frontière entre « pas
 #: d'astigmatisme » et « astigmatisme mesuré », et elle ne bougera jamais.
@@ -311,6 +312,46 @@ class Ordonnance(models.Model):
     #: `AccesMagasin.magasin_code`, dans l'autre sens. La chaîne reste lisible dix ans
     #: plus tard, même si le compte a été désactivé.
     created_par = models.CharField(max_length=254, blank=True)
+
+    # ----------------------------------------------------------------------------------
+    # CLIENT-09 — la photo du papier. `null -> posee` est la SEULE mutation permise sur
+    # une ligne par ailleurs immuable (decision §28-Q5, `04-UI-SPEC.md` §22.3).
+    # ----------------------------------------------------------------------------------
+    #
+    # **Le chemin, jamais les octets.** Une colonne binaire de plusieurs Mo par
+    # ordonnance rendrait la sauvegarde par client (TENANT-09) et la retention a dix ans
+    # (art. 211 CGI) couteuses, sur une table qu'on lit a chaque ouverture de fiche.
+    #
+    # **`storage=` recoit un APPELABLE, et c'est deliberement le seul endroit du produit
+    # ou cette forme est correcte.** `FileField.__init__` fait `self.storage =
+    # self.storage()` une fois, a la construction du champ : cela fige *quel back-end*,
+    # ce qui est un choix de deploiement, et cela ne peut pas figer *quel locataire*, qui
+    # est un choix par requete. Le prefixe du locataire est donc redderive dans chaque
+    # methode de `StockageOrdonnances`. Ne pas « corriger » ceci vers une instance :
+    # l'appelable est aussi ce qui garde la migration independante du reglage.
+    #
+    # `editable=False` : aucun formulaire et aucun serialiseur n'ecrit ni ne rend cette
+    # colonne. Le nom stocke est un detail interne, et un `ModelSerializer` qui le
+    # rendrait appellerait `storage.url()`, qui **leve** par decision.
+    photo = models.FileField(
+        storage=stockage_des_photos,
+        upload_to="",
+        max_length=120,
+        blank=True,
+        null=True,
+        editable=False,
+    )
+    #: Le type **verifie** a l'attache — declare *et* confirme par les octets magiques —
+    #: et non celui que l'appelant a annonce. C'est lui que la lecture renvoie en
+    #: `Content-Type`.
+    photo_type = models.CharField(max_length=40, blank=True)
+    photo_octets = models.PositiveIntegerField(null=True, blank=True)
+    photo_attachee_le = models.DateTimeField(null=True, blank=True)
+    #: Qui a attache, en **adresse** et non en cle etrangere — meme choix que
+    #: `created_par`, pour la meme raison (CLAUDE.md #11 : les comptes vivent dans le plan
+    #: de controle). La provenance d'une piece justificative de sante est ce qui rend une
+    #: mauvaise pieces jointe discutable au comptoir, dix ans plus tard.
+    photo_par = models.CharField(max_length=254, blank=True)
 
     class Meta:
         ordering = ["-date_prescription", "-version"]

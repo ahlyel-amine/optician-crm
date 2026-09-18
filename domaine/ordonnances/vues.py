@@ -75,18 +75,29 @@ plutôt que par vigilance.
 
 from __future__ import annotations
 
+from django.http import FileResponse
 from django.shortcuts import get_object_or_404
-from drf_spectacular.utils import extend_schema, extend_schema_view
-from rest_framework import mixins, permissions, status, viewsets
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view
+from rest_framework import exceptions, mixins, permissions, status, viewsets
+from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from domaine.clients.models import Client
 from domaine.ordonnances.models import Ordonnance
 from domaine.ordonnances.serializers import (
     OrdonnanceEcritureSerializer,
     OrdonnanceLectureSerializer,
+    PhotoOrdonnanceSerializer,
+    PhotoTeleverseeSerializer,
 )
-from domaine.ordonnances.services import enregistrer_ordonnance
+from domaine.ordonnances.services import (
+    PhotoDejaAttachee,
+    attacher_photo,
+    enregistrer_ordonnance,
+)
+from domaine.ordonnances.stockage import EXTENSIONS
 from plateforme.comptes.permissions_catalogue import Permission
 from plateforme.erreurs import erreurs_de_service
 from plateforme.projection.vues import acces_de_la_requete
@@ -239,3 +250,140 @@ class VueOrdonnances(
             ordonnance, context=self.get_serializer_context()
         )
         return Response(lecture.data, status=status.HTTP_201_CREATED)
+
+
+# ======================================================================================
+# CLIENT-09 — la photo : deux verbes, une route, et aucune adresse directe
+# ======================================================================================
+class Conflit(exceptions.APIException):
+    """409. L'état de la ressource interdit l'écriture, pas la forme de la requête.
+
+    Un 400 dirait à l'appelant « corrigez votre corps de requête et recommencez », ce qui
+    est faux : aucun corps ne fera accepter une seconde photo. Un 409 dit que la
+    ressource est déjà dans l'état demandé et le restera.
+    """
+
+    status_code = status.HTTP_409_CONFLICT
+    default_code = "conflit"
+
+
+@extend_schema_view(
+    get=extend_schema(
+        summary="Les octets de la photo d'une ordonnance",
+        description=(
+            "Les octets sortent d'une vue qui a **déjà résolu** `ordonnance.voir` et "
+            "`client.voir`. Il n'existe aucune adresse directe, aucun service de "
+            "fichiers statiques et aucune adresse pré-signée : une adresse qui "
+            "contournerait la permission ferait de la couche de projection un théâtre. "
+            "`Storage.url()` lève, précisément pour que personne n'en fabrique une."
+        ),
+        responses={
+            (200, "image/*"): OpenApiTypes.BINARY,
+            404: OpenApiResponse(description="Aucune photo sur cette version."),
+        },
+    ),
+    post=extend_schema(
+        summary="Attacher la photo d'une ordonnance, **une fois**",
+        description=(
+            "`null → posée` est la seule mutation permise sur une version enregistrée "
+            "(CLIENT-06, décision §28-Q5) : le papier arrive souvent le lendemain. Une "
+            "photo ne se remplace ni ne s'efface — sur la mauvaise version, elle se "
+            "corrige par une nouvelle version. Taille, type déclaré **et octets "
+            "magiques** sont vérifiés."
+        ),
+        request={"multipart/form-data": PhotoTeleverseeSerializer},
+        responses={
+            201: PhotoOrdonnanceSerializer,
+            409: OpenApiResponse(description="Cette version porte déjà une photo."),
+        },
+    ),
+)
+class VuePhotoOrdonnance(APIView):
+    """`/api/ordonnances/<id>/photo/` — lire les octets, ou les poser une fois.
+
+    **Une `APIView` rendant un `FileResponse`, et non un rendu au sens de
+    `plateforme/projection/`.** La distinction est tranchée ici plutôt que laissée en
+    suspens : cette vue ne sérialise aucun champ et ne consulte pas le registre, donc la
+    liste `RENDUS` de `tests/test_projection.py` reste à **quatre**. Ce qui la garde,
+    c'est son test de droit dédié — `test_client09_l_image_exige_le_droit_ordonnance_voir` —
+    et non le test paramétré du registre. Une omission et une décision se ressemblent en
+    diff ; celle-ci est écrite.
+
+    **La route est plate, alors que l'historique est imbriqué sous la fiche.** Une
+    ordonnance n'est pas scopée au magasin (D-4a) et son identifiant est déjà borné par
+    la base du locataire, donc le segment `client` n'ajouterait aucune borne — il
+    ajouterait un second identifiant à tenir cohérent, et un 404 de plus à distinguer.
+
+    **`queryset` est déclaré sur une `APIView` exprès.** Il n'est pas utilisé par DRF
+    ici ; il fait entrer cette vue dans `_modele_de_la_vue`, donc dans
+    `test_client06_aucune_route_ne_modifie_une_ordonnance`, qui vérifie qu'aucune vue
+    servant `Ordonnance` ne porte `put`, `patch` ni `delete`. Une garde qui existe déjà
+    et qu'il suffit de rejoindre vaut mieux qu'une garde de plus.
+    """
+
+    queryset = Ordonnance.objects.all()
+    permission_classes = [
+        permissions.IsAuthenticated,
+        PeutVoirLesOrdonnances,
+        PeutSaisirUneOrdonnance,
+    ]
+    parser_classes = [MultiPartParser]
+    #: `delete` est absent, donc `DELETE` rend **405** et non 403. Un 403 dirait que la
+    #: route existe et qu'un droit la garde — donc qu'il suffirait d'accorder ce droit
+    #: pour effacer une pièce justificative de santé.
+    http_method_names = ["get", "post", "head", "options"]
+
+    def _ordonnance(self, pk) -> Ordonnance:
+        """La ligne, ou 404 — **après** que le droit a été résolu.
+
+        L'ordre est la garantie : DRF appelle `check_permissions` dans `initial()`, donc
+        avant ce corps. Un appelant sans `ordonnance.voir` reçoit exactement le même 403
+        pour un identifiant qui existe et pour un identifiant qui n'existe pas, et il
+        n'apprend donc rien sur ce que contient la base de cet opticien.
+        """
+        return get_object_or_404(Ordonnance, pk=pk)
+
+    def get(self, request, pk):
+        ordonnance = self._ordonnance(pk)
+        if not ordonnance.photo:
+            raise exceptions.NotFound("Cette version n'a pas de photo.")
+        fichier = ordonnance.photo.storage.open(ordonnance.photo.name)
+        return FileResponse(
+            fichier,
+            content_type=ordonnance.photo_type or "application/octet-stream",
+            # Un nom **fabriqué** pour l'éventuel « enregistrer sous » : la version et
+            # rien d'autre. Le nom du fichier envoyé n'existe plus depuis l'attache, et
+            # le nom stocké est un détail interne qui n'a rien à faire dans un en-tête.
+            filename=f"ordonnance-v{ordonnance.version}"
+            f"{EXTENSIONS.get(ordonnance.photo_type, '')}",
+        )
+
+    def post(self, request, pk):
+        ordonnance = self._ordonnance(pk)
+        entree = PhotoTeleverseeSerializer(data=request.data)
+        entree.is_valid(raise_exception=True)
+
+        try:
+            with erreurs_de_service():
+                attacher_photo(
+                    ordonnance,
+                    entree.validated_data["fichier"],
+                    par=getattr(request.user, "email", "") or "",
+                )
+        except PhotoDejaAttachee as erreur:
+            # Traduit ici et non dans `erreurs_de_service` : ce n'est pas une erreur de
+            # validation, et la faire passer par le traducteur commun la rendrait 400.
+            raise Conflit(str(erreur)) from erreur
+
+        return Response(
+            PhotoOrdonnanceSerializer(
+                {
+                    "a_une_photo": True,
+                    "photo_type": ordonnance.photo_type,
+                    "photo_octets": ordonnance.photo_octets,
+                    "photo_attachee_le": ordonnance.photo_attachee_le,
+                    "photo_par": ordonnance.photo_par,
+                }
+            ).data,
+            status=status.HTTP_201_CREATED,
+        )

@@ -27,6 +27,7 @@ from django.contrib import admin
 from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView
 
+from domaine.ordonnances.urls import urlpatterns_photo
 from plateforme.comptes.urls import urlpatterns_gestion
 
 urlpatterns = [
@@ -50,6 +51,12 @@ urlpatterns = [
     # `PARAMETRES_RESERVES` : un parametre de moins est un oracle de moins.
     path("api/clients/", include("domaine.ordonnances.urls")),
     path("api/clients/", include("domaine.clients.urls")),
+    # CLIENT-09. Les octets de la photo d'une ordonnance, derriere `ordonnance.voir`.
+    # **Route plate** : une ordonnance n'est pas scopee au magasin (D-4a) et son
+    # identifiant est deja borne par la base du locataire, donc un segment `client`
+    # n'ajouterait aucune borne. Il n'existe **aucun service de fichiers statiques et
+    # aucune adresse pre-signee** pour ces octets : `Storage.url()` leve, exprès.
+    path("api/ordonnances/", include(urlpatterns_photo)),
     # PERM-06 applique aux types. Le client TypeScript est genere depuis le document
     # **commite** (`web/src/api/schema.yml`), jamais depuis cette route : commite, un
     # changement de contrat apparait en diff, dans la revue, a cote du code qui l'a cause.

@@ -144,6 +144,37 @@ BACKUP_STORAGE = env(
 )
 BACKUP_LOCAL_ROOT = env("BACKUP_LOCAL_ROOT", default=str(BASE_DIR / "backups"))
 
+# --------------------------------------------------------------------------------------
+# La photo de l'ordonnance (CLIENT-09, plan 04-06)
+# --------------------------------------------------------------------------------------
+# Meme precedent que BACKUP_STORAGE / BACKUP_LOCAL_ROOT, et pour la meme raison : le
+# back-end de stockage est une decision d'approvisionnement, pas une constante du code.
+#
+# **Le back-end de production est une sortie de la PHASE 1 (LEGAL-02, juridiction
+# d'hebergement), pas de la phase 4.** Le developpement est sur systeme de fichiers
+# local. Le critere 3 de la phase 1 exige que l'infrastructure vive dans la juridiction
+# choisie *avant* qu'une donnee client reelle y soit stockee, et la phase 1 n'a pas
+# commence. Le defaut ci-dessous est donc deliberement un chemin local et non un seau
+# plausible que quelqu'un pourrait livrer.
+#
+# Il n'existe volontairement **aucun reglage d'adresse publique de media** et aucun
+# service de fichiers statiques pour ces octets : ils sortent par une vue DRF qui a
+# deja resolu `ordonnance.voir`. Voir `domaine/ordonnances/stockage.py`.
+ORDONNANCE_STORAGE = env(
+    "ORDONNANCE_STORAGE", default="domaine.ordonnances.stockage.StockageOrdonnances"
+)
+ORDONNANCE_MEDIA_ROOT = env("ORDONNANCE_MEDIA_ROOT", default=str(BASE_DIR / "media"))
+
+# 10 Mo. Une photo de telephone d'une feuille A4 pese 2 a 5 Mo ; le plafond laisse de la
+# marge sans faire du televersement un vecteur d'epuisement de stockage (T-04-44).
+ORDONNANCE_TAILLE_MAX_OCTETS = 10 * 1024 * 1024
+
+# Les types acceptes. **Aucun PDF en phase 4** — un PDF demande une visionneuse et le
+# chemin documentaire est la phase 9 (consigne en D-4-3 de `deferred-items.md`). Le type
+# declare ne suffit pas : les octets magiques sont verifies en plus, parce que
+# l'extension et le type MIME sont tous deux choisis par l'appelant.
+ORDONNANCE_TYPES_ACCEPTES = ("image/jpeg", "image/png", "image/webp", "image/heic")
+
 # `02-RESEARCH.md` assumption **A5**, and it is a legal question rather than a technical
 # one: art. 211 CGI's ten years is a **records** obligation, not a backup-rotation
 # obligation. Conflating the two makes storage cost explode and over-collects personal
