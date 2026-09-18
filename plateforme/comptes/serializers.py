@@ -25,6 +25,7 @@ from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from domaine.magasins.models import Magasin
+from domaine.ordonnances.bornes import BORNES
 from plateforme.comptes.models import Utilisateur
 from plateforme.comptes.permissions_catalogue import (
     EXPLICATIONS,
@@ -191,6 +192,83 @@ class CatalogueSerializer(serializers.Serializer):
     )
 
 
+class BorneSimpleSerializer(serializers.Serializer):
+    """Une borne décimale : un plancher, un plafond, un pas. **Les nombres sont des
+    chaînes.**
+
+    `"-20.00"`, pas `-20.0`. JSON n'a pas de type décimal : un flottant ici produirait
+    `20.0` dans le contrat, donc une comparaison flottante côté client, donc le refus
+    d'un `-0,25` parfaitement légitime le jour où la somme binaire tombe à côté de la
+    grille. C'est la règle que CLAUDE.md #7 pose pour l'argent, appliquée à une valeur
+    qui décide d'une paire de verres.
+    """
+
+    min = serializers.CharField(read_only=True)
+    max = serializers.CharField(read_only=True)
+    pas = serializers.CharField(read_only=True)
+
+
+class BorneSphereSerializer(BorneSimpleSerializer):
+    """La sphère, qui porte en plus la consigne de signe.
+
+    **Une classe par forme, plutôt qu'un champ facultatif partagé.** Un `required=False`
+    n'aurait servi à rien : un champ `read_only` est toujours `required` dans un schéma
+    de sortie, donc le type généré aurait promis `convention` sur la sphère et
+    `signe_obligatoire` sur le cylindre — deux clés que la charge utile ne porte pas.
+    Un contrat qui déclare une clé absente est exactement ce que PERM-06 refuse pour les
+    champs protégés, un étage plus bas.
+    """
+
+    signe_obligatoire = serializers.BooleanField(read_only=True)
+
+
+class BorneCylindreSerializer(BorneSimpleSerializer):
+    """Le cylindre, qui porte en plus le nom de la convention stockée.
+
+    La convention voyage avec la borne parce qu'une convention affichée ailleurs que la
+    valeur qu'elle gouverne finit par la contredire — et les deux conventions ne sont
+    pas interchangeables : la même correction s'écrit `+2,00 −1,00 × 90` ou
+    `+1,00 +1,00 × 180`.
+    """
+
+    convention = serializers.CharField(read_only=True)
+
+
+class BorneEntiereSerializer(serializers.Serializer):
+    """Une borne dont la valeur est un entier — l'axe, en degrés."""
+
+    min = serializers.IntegerField(read_only=True)
+    max = serializers.IntegerField(read_only=True)
+    pas = serializers.IntegerField(read_only=True)
+
+
+class BornesCliniquesSerializer(serializers.Serializer):
+    """Les bornes de saisie d'une ordonnance. **Déclarées pour le schéma.**
+
+    La charge utile vient de `domaine.ordonnances.bornes.BORNES` — un seul endroit, côté
+    serveur. Ce sérialiseur ne sérialise rien : il existe pour que `drf-spectacular`
+    produise un composant, donc un type TypeScript, donc un client qui sait ce qu'il
+    reçoit.
+
+    **Q1, tranchée par le propriétaire le 2026-09-18 : les bornes sont SERVIES, pas
+    compilées.** D-4b veut les bornes à **un** endroit nommé ; une constante TypeScript
+    en serait un second, et deux sources dérivent — c'est le mode de défaillance que
+    PERM-06 combat pour les champs, appliqué ici aux nombres. Un client qui refuse ce
+    que le serveur accepte, ou l'inverse, est un appel au support sans cause visible.
+
+    Et elles voyagent sur l'amorçage plutôt que par une sixième route parce que
+    l'amorçage existe précisément pour épargner un aller-retour au comptoir — le même
+    argument que le catalogue des droits, une classe plus haut.
+    """
+
+    sphere = BorneSphereSerializer(read_only=True)
+    cylindre = BorneCylindreSerializer(read_only=True)
+    axe = BorneEntiereSerializer(read_only=True)
+    addition = BorneSimpleSerializer(read_only=True)
+    ep_binoculaire = BorneSimpleSerializer(read_only=True)
+    ep_monoculaire = BorneSimpleSerializer(read_only=True)
+
+
 class AmorcageSerializer(serializers.Serializer):
     """La forme de `/api/auth/moi/`. **Déclarée pour le schéma, pas pour sérialiser.**
 
@@ -210,6 +288,7 @@ class AmorcageSerializer(serializers.Serializer):
     permissions = serializers.ListField(child=serializers.CharField(), read_only=True)
     magasins = MagasinSerializer(many=True, read_only=True)
     catalogue = CatalogueSerializer(read_only=True)
+    bornes_ordonnance = BornesCliniquesSerializer(read_only=True)
 
 
 def catalogue_des_droits() -> dict:
@@ -281,6 +360,13 @@ def charge_utile_moi(utilisateur, acces, client, magasins) -> dict:
         ],
         "magasins": MagasinSerializer(magasins, many=True).data,
         "catalogue": catalogue_des_droits(),
+        # **Servies à tout utilisateur authentifié, sans condition de droit.** Une borne
+        # n'est pas une donnée : c'est une règle de saisie, identique pour tous les
+        # clients du produit, donc elle ne divulgue rien — exactement l'argument déjà
+        # écrit pour le catalogue des droits, qui est servi en entier et non
+        # pré-intersecté. Le dictionnaire est passé tel quel : le convertir ici serait le
+        # second endroit que D-4b interdit.
+        "bornes_ordonnance": BORNES,
     }
 
 

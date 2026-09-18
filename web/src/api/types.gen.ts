@@ -578,6 +578,7 @@ export interface components {
             readonly permissions: string[];
             readonly magasins: components["schemas"]["Magasin"][];
             readonly catalogue: components["schemas"]["Catalogue"];
+            readonly bornes_ordonnance: components["schemas"]["BornesCliniques"];
         };
         /**
          * @description `{code, accorde, magasins?}` — un interrupteur, et rien d'autre.
@@ -615,6 +616,83 @@ export interface components {
              * @default true
              */
             reappliquer?: boolean;
+        };
+        /**
+         * @description Le cylindre, qui porte en plus le nom de la convention stockée.
+         *
+         *     La convention voyage avec la borne parce qu'une convention affichée ailleurs que la
+         *     valeur qu'elle gouverne finit par la contredire — et les deux conventions ne sont
+         *     pas interchangeables : la même correction s'écrit `+2,00 −1,00 × 90` ou
+         *     `+1,00 +1,00 × 180`.
+         */
+        BorneCylindre: {
+            readonly min: string;
+            readonly max: string;
+            readonly pas: string;
+            readonly convention: string;
+        };
+        /** @description Une borne dont la valeur est un entier — l'axe, en degrés. */
+        BorneEntiere: {
+            readonly min: number;
+            readonly max: number;
+            readonly pas: number;
+        };
+        /**
+         * @description Une borne décimale : un plancher, un plafond, un pas. **Les nombres sont des
+         *     chaînes.**
+         *
+         *     `"-20.00"`, pas `-20.0`. JSON n'a pas de type décimal : un flottant ici produirait
+         *     `20.0` dans le contrat, donc une comparaison flottante côté client, donc le refus
+         *     d'un `-0,25` parfaitement légitime le jour où la somme binaire tombe à côté de la
+         *     grille. C'est la règle que CLAUDE.md #7 pose pour l'argent, appliquée à une valeur
+         *     qui décide d'une paire de verres.
+         */
+        BorneSimple: {
+            readonly min: string;
+            readonly max: string;
+            readonly pas: string;
+        };
+        /**
+         * @description La sphère, qui porte en plus la consigne de signe.
+         *
+         *     **Une classe par forme, plutôt qu'un champ facultatif partagé.** Un `required=False`
+         *     n'aurait servi à rien : un champ `read_only` est toujours `required` dans un schéma
+         *     de sortie, donc le type généré aurait promis `convention` sur la sphère et
+         *     `signe_obligatoire` sur le cylindre — deux clés que la charge utile ne porte pas.
+         *     Un contrat qui déclare une clé absente est exactement ce que PERM-06 refuse pour les
+         *     champs protégés, un étage plus bas.
+         */
+        BorneSphere: {
+            readonly min: string;
+            readonly max: string;
+            readonly pas: string;
+            readonly signe_obligatoire: boolean;
+        };
+        /**
+         * @description Les bornes de saisie d'une ordonnance. **Déclarées pour le schéma.**
+         *
+         *     La charge utile vient de `domaine.ordonnances.bornes.BORNES` — un seul endroit, côté
+         *     serveur. Ce sérialiseur ne sérialise rien : il existe pour que `drf-spectacular`
+         *     produise un composant, donc un type TypeScript, donc un client qui sait ce qu'il
+         *     reçoit.
+         *
+         *     **Q1, tranchée par le propriétaire le 2026-09-18 : les bornes sont SERVIES, pas
+         *     compilées.** D-4b veut les bornes à **un** endroit nommé ; une constante TypeScript
+         *     en serait un second, et deux sources dérivent — c'est le mode de défaillance que
+         *     PERM-06 combat pour les champs, appliqué ici aux nombres. Un client qui refuse ce
+         *     que le serveur accepte, ou l'inverse, est un appel au support sans cause visible.
+         *
+         *     Et elles voyagent sur l'amorçage plutôt que par une sixième route parce que
+         *     l'amorçage existe précisément pour épargner un aller-retour au comptoir — le même
+         *     argument que le catalogue des droits, une classe plus haut.
+         */
+        BornesCliniques: {
+            readonly sphere: components["schemas"]["BorneSphere"];
+            readonly cylindre: components["schemas"]["BorneCylindre"];
+            readonly axe: components["schemas"]["BorneEntiere"];
+            readonly addition: components["schemas"]["BorneSimple"];
+            readonly ep_binoculaire: components["schemas"]["BorneSimple"];
+            readonly ep_monoculaire: components["schemas"]["BorneSimple"];
         };
         /** @description Le catalogue servi à la SPA : les sections, et la carte des prérequis (7.6). */
         Catalogue: {
