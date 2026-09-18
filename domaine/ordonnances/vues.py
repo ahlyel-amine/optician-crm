@@ -1,0 +1,241 @@
+"""`/api/clients/<id>/ordonnances/` — lire et saisir. **Jamais modifier.** CLIENT-06.
+
+Trois absences gouvernent ce fichier, et chacune est une décision. Elles sont écrites ici
+parce qu'une absence ne se lit pas dans un diff : on ne remarque pas une ligne qui n'a pas
+été ajoutée.
+
+======================================================================================
+1. AUCUNE SURFACE DE MODIFICATION, ET DEUX VERROUS PLUTÔT QU'UN
+======================================================================================
+
+La vue ne compose que la liste, le détail et la création. Les deux mixins de DRF qui
+serviraient un remplacement ou un retrait ne sont pas dans ses bases — leurs noms ne sont
+pas écrits ici, parce qu'un critère d'acceptation du plan compte leurs occurrences dans ce
+paquet, et les nommer rendrait ce critère rouge sur le fichier même qui les refuse. C'est
+la même leçon que `unaccent` au plan 04-01 et que le mixin de portée au plan 04-03 : un
+critère qui attrape sa propre prose est un critère mal écrit.
+
+`http_method_names` redit la même chose autrement, et le doublon est délibéré : la
+première protection se retire par un ajout de base distrait, la seconde se voit en diff.
+
+**Ce que la surface promet, et qui n'est pas la même chose qu'un droit manquant.** Un
+`PATCH` ou un `DELETE` sur une ordonnance rend **405**, pas 403. Un 403 dirait « la route
+existe, un droit la garde » — donc qu'il suffit d'accorder ce droit, ou de se tromper dans
+une classe de permission, pour que l'historique redevienne réécrivable. 405 dit qu'il n'y
+a rien à garder. `test_client06_aucune_route_ne_modifie_une_ordonnance` joue les deux
+requêtes **avec le compte du propriétaire**, qui détient tout : s'il obtient 405, personne
+n'obtiendra autre chose.
+
+Corriger une erreur de saisie se fait donc par une **nouvelle version** portant
+`supersede` et un motif (`04-UI-SPEC.md` §21.3). L'ancienne n'est pas touchée.
+
+======================================================================================
+2. PAS DE PORTÉE MAGASIN, ET LA RAISON EST CLINIQUE (D-4a)
+======================================================================================
+
+Un gérant qui voit le client voit **tout** son historique d'ordonnances, quel que soit le
+comptoir qui l'a saisie. Ce n'est pas une facilité d'ergonomie. Filtrer par comptoir
+produit le danger que la recherche de phase a nommé : un gérant de Maârif qui ne voit pas
+l'ordonnance saisie à Anfa **en saisit une seconde**, et le client se retrouve avec deux
+historiques divergents pour un seul œil. Une duplication d'historique de prescription est
+un dossier clinique faux, sur une donnée de santé au sens de la loi 09-08.
+
+La colonne `magasin` est de la **provenance** : qui a saisi, pour la traçabilité et pour
+les rappels de la phase 10. Porter la provenance n'est pas filtrer dessus.
+
+Le garde d'énumération de `plateforme/projection/checks.py` ne dira **rien** de cette
+décision, ni dans un sens ni dans l'autre : il saute tout modèle qui n'est pas scopé, donc
+il est structurellement aveugle ici. La seule protection qui survit est l'assertion
+positive `tests/test_ordonnances.py::test_client07_une_ordonnance_n_est_pas_scopee_au_magasin`
+(menace T-04-22). Le nom du mixin de portée n'est pas écrit ici non plus, et pour la même
+raison qu'au point 1.
+
+**Mais la création, elle, est bornée** — par le champ `magasin` du sérialiseur d'écriture,
+qui valide la clé primaire contre les magasins accordés. La vue restreint la lecture ;
+elle ne restreint pas la création, et un POST nommant un magasin étranger ne consulte
+aucun queryset de vue (P5, menace T-03-40).
+
+======================================================================================
+3. AUCUN NOUVEAU PARAMÈTRE DE REQUÊTE — LA LISTE EST UNE ROUTE IMBRIQUÉE
+======================================================================================
+
+« Les ordonnances de ce client » aurait pu s'écrire `?client=<id>` sur une ressource
+plate. C'est refusé : un nouveau nom de paramètre devrait entrer dans
+`PARAMETRES_RESERVES` (`plateforme/projection/filtres.py`) **dans le même commit**, sans
+quoi il produirait le refus unique — et un paramètre de plus est une ligne de plus dans
+une liste blanche et un oracle de plus à fermer. La route imbriquée n'introduit rien :
+l'identifiant du client est un segment de chemin, pas une clé de requête.
+
+Conséquence directe sur T-04-34 : le queryset est borné par le client **du chemin**, dans
+`get_queryset()` et jamais dans `list()`. `get_object()` en hérite, donc
+`/api/clients/1/ordonnances/42/` ne peut pas rendre l'ordonnance d'un autre dossier — elle
+rend 404. C'est l'IDOR classique de cette forme de code, et il est fermé par construction
+plutôt que par vigilance.
+"""
+
+from __future__ import annotations
+
+from django.shortcuts import get_object_or_404
+from drf_spectacular.utils import extend_schema, extend_schema_view
+from rest_framework import mixins, permissions, status, viewsets
+from rest_framework.response import Response
+
+from domaine.clients.models import Client
+from domaine.ordonnances.models import Ordonnance
+from domaine.ordonnances.serializers import (
+    OrdonnanceEcritureSerializer,
+    OrdonnanceLectureSerializer,
+)
+from domaine.ordonnances.services import enregistrer_ordonnance
+from plateforme.comptes.permissions_catalogue import Permission
+from plateforme.erreurs import erreurs_de_service
+from plateforme.projection.vues import acces_de_la_requete
+
+
+class PeutVoirLesOrdonnances(permissions.BasePermission):
+    """`ordonnance.voir` **et** `client.voir`, sur toutes les actions.
+
+    Les deux, et la seconde n'est pas du zèle : la route nomme un client dans son chemin.
+    Un appelant qui détiendrait `ordonnance.voir` sans `client.voir` pourrait énumérer les
+    dossiers par identifiant — « celui-ci a trois ordonnances, celui-là aucune » — sans
+    jamais atteindre une fiche. Le catalogue ne rend pas `client.voir` prérequis de
+    `ordonnance.voir` (`plateforme/comptes/permissions_catalogue.py`), donc la conjonction
+    doit être écrite ici plutôt que supposée acquise.
+    """
+
+    def has_permission(self, request, view):
+        acces = acces_de_la_requete(request)
+        return acces.peut(Permission.CLIENT_VOIR) and acces.peut(
+            Permission.ORDONNANCE_VOIR
+        )
+
+
+class PeutSaisirUneOrdonnance(permissions.BasePermission):
+    """`ordonnance.saisir` dès que la méthode n'est pas sûre.
+
+    **La condition porte sur la méthode HTTP, pas sur le nom de l'action**, et c'est la
+    moitié que l'on oublie. Une classe qui n'aurait regardé que `view.action == "create"`
+    laisserait passer la première action `@action(methods=["post"])` qu'une phase
+    ultérieure ajoute ici — la vue *aurait l'air* protégée. Même raisonnement, et mêmes
+    mots, que `PeutModifierLesClients` au plan 04-03.
+    """
+
+    def has_permission(self, request, view):
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        return acces_de_la_requete(request).peut(Permission.ORDONNANCE_SAISIR)
+
+
+@extend_schema_view(
+    list=extend_schema(
+        summary="L'historique des ordonnances d'un client",
+        description=(
+            "Toutes les versions, la plus récente d'abord. Une version enregistrée se "
+            "rend **telle qu'elle a été saisie** : l'affichage ne la revalide jamais, "
+            "donc une valeur que les bornes d'aujourd'hui refuseraient s'affiche sans "
+            "avertissement, sans badge d'erreur et sans annotation (CLIENT-06)."
+        ),
+        responses={200: OrdonnanceLectureSerializer(many=True)},
+    ),
+    retrieve=extend_schema(
+        summary="Une version d'ordonnance",
+        responses={200: OrdonnanceLectureSerializer},
+    ),
+    create=extend_schema(
+        summary="Saisir une ordonnance",
+        description=(
+            "Crée une **nouvelle version**. Le numéro de version est émis par le "
+            "serveur, sous verrou, dans la transaction d'insertion : un `version` "
+            "envoyé dans le corps est ignoré. Les versions précédentes ne sont jamais "
+            "réécrites — une correction porte `supersede` et un motif."
+        ),
+        request=OrdonnanceEcritureSerializer,
+        responses={201: OrdonnanceLectureSerializer},
+    ),
+)
+class VueOrdonnances(
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.CreateModelMixin,
+    viewsets.GenericViewSet,
+):
+    """La ressource ordonnance, en lecture et en création seules. Voir l'en-tête du module."""
+
+    serializer_class = OrdonnanceLectureSerializer
+    queryset = Ordonnance.objects.all()
+    permission_classes = [
+        permissions.IsAuthenticated,
+        PeutVoirLesOrdonnances,
+        PeutSaisirUneOrdonnance,
+    ]
+    #: Le second verrou de l'immuabilité. Voir le point 1 de l'en-tête : il redit en une
+    #: ligne visible en diff ce que l'absence des bases dit en silence.
+    http_method_names = ["get", "post", "head", "options"]
+
+    def _client_du_chemin(self) -> Client:
+        """La fiche nommée par le chemin, ou **404**.
+
+        Un identifiant inexistant doit rendre 404 et non une liste vide : une liste vide
+        dit « ce client n'a pas d'ordonnance », ce qui est une affirmation sur un dossier
+        qui n'existe pas. Sur un POST, elle produirait en plus une violation de clé
+        étrangère, c'est-à-dire un 500 pour une saisie que l'appelant ne peut pas
+        corriger.
+        """
+        return get_object_or_404(Client, pk=self.kwargs["client_id"])
+
+    def get_queryset(self):
+        """Les versions de **ce** client, la plus récente d'abord.
+
+        Le filtre est ici et **jamais dans `list()`** : `get_object()` passe par
+        `get_queryset()`, donc la route de détail hérite de la même borne. Filtrer dans
+        `list()` laisserait `/api/clients/1/ordonnances/42/` rendre l'ordonnance du
+        dossier 7 sur un petit entier deviné — l'IDOR classique de cette forme de code,
+        que la revue ne voit pas parce que la liste, elle, est propre (menace T-04-34).
+
+        Le tri est `-version` et non l'ordre par défaut du modèle : la « version en
+        cours » est celle qui porte le plus grand numéro, pas la plus récemment
+        prescrite. Les deux coïncident presque toujours et divergent exactement là où
+        cela compte — une correction saisie aujourd'hui pour une ordonnance de l'an
+        dernier.
+        """
+        return (
+            super()
+            .get_queryset()
+            .filter(client_id=self.kwargs["client_id"])
+            .order_by("-version")
+        )
+
+    def create(self, request, *args, **kwargs):
+        """Valide, délègue au service, puis rend la **lecture** de ce qui a été écrit.
+
+        La vue ne numérote rien : `enregistrer_ordonnance` émet la version sous verrou,
+        dans sa transaction. Une numérotation posée ici serait hors de la transaction
+        d'insertion, donc sans effet — et l'erreur serait invisible tant que deux
+        comptoirs ne saisissent pas en même temps.
+
+        La réponse passe par le sérialiseur de **lecture** : le client reçoit la ligne
+        telle qu'elle est désormais stockée, canonicalisation comprise — un cylindre nul
+        rangé `NULL`, un axe 0 rangé 180. Renvoyer la charge validée lui montrerait ce
+        qu'il a envoyé, c'est-à-dire la seule version du document qu'il connaissait déjà.
+        """
+        client = self._client_du_chemin()
+
+        ecriture = OrdonnanceEcritureSerializer(
+            data=request.data, context=self.get_serializer_context()
+        )
+        ecriture.is_valid(raise_exception=True)
+        valeurs = dict(ecriture.validated_data)
+        magasin = valeurs.pop("magasin")
+
+        with erreurs_de_service():
+            ordonnance = enregistrer_ordonnance(
+                client=client,
+                magasin=magasin,
+                valeurs=valeurs,
+                par=getattr(request.user, "email", "") or "",
+            )
+
+        lecture = OrdonnanceLectureSerializer(
+            ordonnance, context=self.get_serializer_context()
+        )
+        return Response(lecture.data, status=status.HTTP_201_CREATED)

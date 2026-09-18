@@ -36,10 +36,8 @@ from __future__ import annotations
 
 import logging
 import math
-from contextlib import contextmanager
 
 from django.contrib.auth import authenticate, login, logout
-from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
 from drf_spectacular.utils import extend_schema, extend_schema_view
@@ -79,6 +77,7 @@ from plateforme.comptes.services import (
     magasins_actifs_par_id,
     mot_de_passe_provisoire,
 )
+from plateforme.erreurs import erreurs_de_service
 from plateforme.projection.vues import acces_de_la_requete
 
 logger = logging.getLogger("plateforme.comptes")
@@ -439,25 +438,15 @@ def _refuser_si_non_gerable(acces, cible):
         )
 
 
-@contextmanager
-def _erreurs_de_service():
-    """Traduire les exceptions du service en réponses, et nulle part ailleurs.
-
-    Le service lève les exceptions de **Django** — `ValidationError` et
-    `PermissionDenied` — parce qu'il doit rester appelable depuis une commande de gestion
-    et depuis l'inscription en libre service de la phase 12, qui n'ont pas de requête
-    HTTP. DRF ne convertit pas `django.core.exceptions.ValidationError` : sans cette
-    traduction, un magasin non accordé produirait un **500** avec sa trace.
-    """
-    try:
-        yield
-    except DjangoValidationError as erreur:
-        detail = (
-            erreur.message_dict
-            if hasattr(erreur, "message_dict")
-            else list(erreur.messages)
-        )
-        raise exceptions.ValidationError(detail) from erreur
+#: Traduire les exceptions du service en réponses, et nulle part ailleurs.
+#:
+#: Le corps vivait ici depuis le plan 03-08. Le plan 04-05 en a eu besoin pour
+#: `domaine/ordonnances/vues.py` et l'a **déplacé** dans `plateforme/erreurs.py` plutôt
+#: que de le recopier : deux traductions d'exceptions divergent sur la forme du corps
+#: d'erreur, et la SPA verrait alors deux formats de 400 selon la route sans qu'aucun
+#: test ne compare les deux. L'alias est conservé pour que les trois sites d'appel de ce
+#: module ne changent pas de nom dans un plan qui n'en parle pas.
+_erreurs_de_service = erreurs_de_service
 
 
 @extend_schema_view(

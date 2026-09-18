@@ -10,6 +10,11 @@ from rest_framework import serializers
 
 from domaine.clients.models import Client
 from domaine.clients.recherche import RAISONS
+from domaine.ordonnances.serializers import (
+    ChampResumeOrdonnance,
+    resume_de,
+)
+from domaine.ordonnances.services import derniere_ordonnance_de
 from plateforme.projection.serializers import SerializerProjete
 
 # ======================================================================================
@@ -68,6 +73,43 @@ class FicheClientSerializer(SerializerProjete):
         )
     )
 
+    # ==================================================================================
+    # LES DEUX PREMIERS CHAMPS PROTÉGÉS DU PRODUIT — NE PAS LES RENDRE INCONDITIONNELS
+    # ==================================================================================
+    #
+    # Ils sont déclarés ici comme n'importe quel champ, **sans aucune condition écrite à
+    # la main** : `SerializerProjete.get_fields()` les retire par leur nom quand
+    # `ordonnance.voir` manque, en lisant `CHAMPS_PROTEGES`. Le registre est clé par
+    # champ de modèle, et les deux clés `clients.Client.derniere_ordonnance` /
+    # `clients.Client.resume_ordonnance` s'y rangent sans que `Client` porte ces
+    # colonnes — le retrait se fait par nom, donc un `SerializerMethodField` se retire
+    # comme une colonne.
+    #
+    # **Un `if acces.peut(...)` ici serait la faute**, et elle est facile à commettre
+    # parce qu'elle a l'air plus explicite : elle produirait une seconde source de
+    # vérité que ni l'export, ni le document, ni le schéma OpenAPI ne liraient. Le
+    # champ disparaîtrait de l'API et resterait dans le CSV.
+    #
+    # `04-UI-SPEC.md` §15.5 tranche la zone grise 5 : l'ordonnance en tant qu'objet est
+    # une **ligne** (gardée par le queryset de `VueOrdonnances`), ces deux résumés sont
+    # des **champs** posés sur un objet que l'appelant a par ailleurs le droit de voir.
+    derniere_ordonnance = serializers.SerializerMethodField(
+        help_text=(
+            "La date de prescription de la version en cours, en ISO. `null` si le "
+            "client n'a aucune ordonnance. **Absente de la charge utile** — et non "
+            "`null` — pour qui ne détient pas `ordonnance.voir` : les deux se "
+            "distinguent, et les confondre dirait « pas d'ordonnance » à qui n'a "
+            "simplement pas le droit."
+        )
+    )
+    resume_ordonnance = ChampResumeOrdonnance(
+        help_text=(
+            "Le bloc de correction de la version en cours, rendu tel qu'il a été saisi "
+            "et **jamais revalidé** (CLIENT-06). Mêmes règles de présence que "
+            "`derniere_ordonnance`."
+        )
+    )
+
     class Meta:
         model = Client
         fields = [
@@ -81,6 +123,8 @@ class FicheClientSerializer(SerializerProjete):
             "created_at",
             "score",
             "raison",
+            "derniere_ordonnance",
+            "resume_ordonnance",
         ]
         read_only_fields = ["id", "created_at"]
 
@@ -93,3 +137,28 @@ class FicheClientSerializer(SerializerProjete):
     )
     def get_raison(self, fiche):
         return getattr(fiche, "raison", None)
+
+    @extend_schema_field(serializers.DateField(allow_null=True))
+    def get_derniere_ordonnance(self, fiche):
+        """La date de prescription de la version en cours, **en ISO et en chaîne**.
+
+        Une chaîne plutôt que l'objet `date`, et la raison est mesurable : les quatre
+        rendus du registre n'en font pas la même chose. Le JSON de DRF produirait bien
+        l'ISO, mais le gabarit de document passe la valeur à `{{ }}`, où Django applique
+        le format de date de la locale — donc « 23 juillet 2019 » côté document et
+        « 2019-07-23 » côté API, pour la même donnée. Le transport est ISO
+        (`04-UI-SPEC.md` §15.4) et c'est la SPA qui formate en `jj/mm/aaaa`.
+        """
+        ordonnance = derniere_ordonnance_de(fiche)
+        return None if ordonnance is None else ordonnance.date_prescription.isoformat()
+
+    def get_resume_ordonnance(self, fiche):
+        """Le bloc de correction de la version en cours, ou `null`.
+
+        `null` ici veut dire « ce client n'a aucune ordonnance », et c'est une
+        information. « Vous n'avez pas le droit de la voir » est l'autre cas, et il
+        s'exprime par l'**absence de la clé** — jamais par `null`. Les deux se
+        distinguent, et les confondre ferait afficher « aucune ordonnance » à un gérant
+        qui en a simplement perdu la vue.
+        """
+        return resume_de(derniere_ordonnance_de(fiche))

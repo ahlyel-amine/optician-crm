@@ -12,6 +12,7 @@ from rest_framework import mixins, permissions, viewsets
 from domaine.clients.models import Client
 from domaine.clients.recherche import LIMITE_PAR_DEFAUT, chercher_clients
 from domaine.clients.serializers import FicheClientSerializer
+from domaine.ordonnances.services import avec_la_derniere_ordonnance
 from plateforme.comptes.permissions_catalogue import Permission
 from plateforme.projection.filtres import ProjectedFieldFilter, ProjectedOrderingFilter
 from plateforme.projection.vues import acces_de_la_requete
@@ -174,14 +175,30 @@ class VueClients(
 
         Le classement n'est appliqué qu'à `list` : `/api/clients/42/?search=…` doit rendre
         la fiche 42, pas le premier candidat d'une recherche.
+
+        **Le préchargement des ordonnances s'applique aux trois chemins**, et c'est
+        pourquoi il enveloppe chaque retour plutôt que d'être posé une fois au-dessus :
+        `chercher_clients` construit son propre queryset, donc un `prefetch_related`
+        appliqué avant lui serait perdu. Sans lui, une liste de deux cents clients
+        ferait deux cents requêtes de plus — une par résumé — et rien ne le dirait :
+        c'est `test_client06_le_resume_de_la_fiche_ne_fait_pas_une_requete_par_ligne`
+        qui le compte.
+
+        Le préchargement n'est **pas** conditionné au droit `ordonnance.voir`. Il
+        pourrait l'être, et ce serait une optimisation ; ce serait aussi une seconde
+        décision de visibilité écrite hors du registre, donc une qui peut diverger de
+        lui. La visibilité est décidée à un seul endroit — `CHAMPS_PROTEGES` — et le
+        sérialiseur retire les deux clés avant que quiconque ne les lise.
         """
         queryset = super().get_queryset()
         if getattr(self, "action", None) != "list":
-            return queryset
+            return avec_la_derniere_ordonnance(queryset)
         terme = self._terme_de_recherche()
         if not terme:
-            return queryset
+            return avec_la_derniere_ordonnance(queryset)
         # L'alias vient du routeur, qui lit le contextvar et **lève** quand rien n'est
         # lié — jamais d'un défaut. Il est passé explicitement au service parce que
         # `seuil_de_mot` doit poser le seuil sur la transaction de cette connexion-là.
-        return chercher_clients(terme, alias=router.db_for_read(Client))
+        return avec_la_derniere_ordonnance(
+            chercher_clients(terme, alias=router.db_for_read(Client))
+        )

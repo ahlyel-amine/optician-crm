@@ -43,6 +43,12 @@ urlpatterns = [
     # translitterations. Le composant OpenAPI de cette ressource s'appelle `FicheClient`
     # et non `Client` : `Client` designe deja l'**affaire** de l'opticien, servie par
     # `/api/auth/moi/`. Voir l'entete de `domaine/clients/serializers.py`.
+    # CLIENT-06. L'historique des ordonnances, **imbrique sous la fiche** :
+    # `/api/clients/<id>/ordonnances/`. Monte avant le routeur des clients — ses motifs
+    # sont ancres, donc l'ordre ne change rien, mais il epargne la verification au
+    # prochain lecteur. La route imbriquee est ce qui evite d'ajouter un `?client=` a
+    # `PARAMETRES_RESERVES` : un parametre de moins est un oracle de moins.
+    path("api/clients/", include("domaine.ordonnances.urls")),
     path("api/clients/", include("domaine.clients.urls")),
     # PERM-06 applique aux types. Le client TypeScript est genere depuis le document
     # **commite** (`web/src/api/schema.yml`), jamais depuis cette route : commite, un

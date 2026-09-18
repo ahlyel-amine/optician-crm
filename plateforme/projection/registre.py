@@ -141,6 +141,51 @@ CHAMPS_PUBLICS: frozenset[str] = frozenset(
         "clients.Client.notes",
         "clients.Client.actif",
         "clients.Client.created_at",
+        # ------------------------------------------------------------------------------
+        # L'ordonnance (plan 04-05). « Public » veut dire ici : **quiconque atteint la
+        # ressource**, donc quiconque détient `ordonnance.voir` — et `client.voir`, que
+        # `VueOrdonnances` exige en plus. La LIGNE est gardée par le droit ; le registre
+        # ne décide que de ce qu'elle rend une fois atteinte.
+        #
+        # Vingt-quatre lignes, et c'est le prix assumé de la règle que `04-UI-SPEC.md`
+        # §15.5 pose : **chaque champ exposé est classé dans le commit de son
+        # sérialiseur**, jamais dans un plan de nettoyage. Le coût est de vingt-quatre
+        # lignes une fois ; l'alternative est une colonne clinique servie parce que
+        # personne n'a décidé qui la voit.
+        #
+        # **Il n'y a PAS de sous-ensemble protégé ici, et c'est une décision.** On
+        # pourrait imaginer réserver `created_par` — qui a saisi — à un droit
+        # d'administration. Refusé : la provenance d'une donnée de santé est ce qui rend
+        # une correction discutable au comptoir (« c'est Karim qui l'a saisie le 12 »),
+        # et la cacher à qui lit déjà la prescription ne protège personne.
+        #
+        # `motif_revision` est du texte libre saisi par un opticien à propos d'une faute
+        # de frappe. Public, et l'écran le dit au moment de l'écrire :
+        # « Dites ce qui était faux. Cela restera lisible. » (`04-UI-SPEC.md` §21.3)
+        "ordonnances.Ordonnance.id",
+        "ordonnances.Ordonnance.client",
+        "ordonnances.Ordonnance.magasin",
+        "ordonnances.Ordonnance.version",
+        "ordonnances.Ordonnance.supersede",
+        "ordonnances.Ordonnance.type_revision",
+        "ordonnances.Ordonnance.motif_revision",
+        "ordonnances.Ordonnance.source",
+        "ordonnances.Ordonnance.prescripteur",
+        "ordonnances.Ordonnance.date_prescription",
+        "ordonnances.Ordonnance.sphere_od",
+        "ordonnances.Ordonnance.sphere_og",
+        "ordonnances.Ordonnance.cylindre_od",
+        "ordonnances.Ordonnance.cylindre_og",
+        "ordonnances.Ordonnance.axe_od",
+        "ordonnances.Ordonnance.axe_og",
+        "ordonnances.Ordonnance.addition_od",
+        "ordonnances.Ordonnance.addition_og",
+        "ordonnances.Ordonnance.ep_binoculaire",
+        "ordonnances.Ordonnance.ep_mono_od",
+        "ordonnances.Ordonnance.ep_mono_og",
+        "ordonnances.Ordonnance.ep_saisi",
+        "ordonnances.Ordonnance.created_at",
+        "ordonnances.Ordonnance.created_par",
     }
 )
 
