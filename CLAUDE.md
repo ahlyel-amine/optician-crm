@@ -109,6 +109,14 @@ identical — but the history misattributes four files.
 - The tenancy fixtures provide **two** tenants, never one — isolation cannot be tested against a
   single client.
 - No coverage percentage target.
+- **An acceptance check greps a call, an import or an assignment — never a bare word.** Ten
+  times across phases 3 and 4 a criterion matched its own explanatory prose and failed for a
+  reason unrelated to the code: `grep 'supprimer'` hit a comment saying deletion is refused;
+  `grep 'Magasin.objects.all()'` hit `AccesMagasin.objects.all()` by substring; `grep
+  'unaccent'` hit the migration explaining why `unaccent` is not installed. **If a plan tells
+  someone to write a comment naming X, no check in that plan may grep bare X.** Grep
+  `CreateExtension("unaccent")`, an import line, or a `\b`-bounded symbol. This has also
+  happened *inside* a validation document, so it is not only a planning defect.
 
 Phase 1 has no tests by design — its evidence is documentary (filing references, the hosting
 decision). Test code starts in Phase 2.
