@@ -139,11 +139,19 @@ Plans:
   3. Invalid ordonnance values are refused at entry — an axe outside 0-180, an inconsistent cylinder sign convention, or a monocular value entered where a binocular écart pupillaire is expected
   4. Recording a new ordonnance for a client creates a new version, and every earlier ordonnance is still readable exactly as it was entered
   5. A commande spéciale created from an ordonnance carries those prescription values through onto the order that goes to the fournisseur
-**Plans**: TBD
+**Plans**: 9 plans in 6 waves
 **UI hint**: yes
 
 Plans:
-- [ ] 04-01: TBD
+- [ ] 04-01-PLAN.md (vague 1) — Le socle : application `clients`, extensions `pg_trgm`/`fuzzystrmatch` par migration, normalisation NFKD, seuil `SET LOCAL`, modèle `Client`
+- [ ] 04-02-PLAN.md (vague 1) — Primitives d'interface : `formaterTelephone`, `ChampDate`, `ChampNombre`, blocs shadcn, mesure du nom accessible
+- [ ] 04-03-PLAN.md (vague 2) — L'API fiche client et la recherche tolérante aux translittérations (CLIENT-01, CLIENT-10)
+- [ ] 04-04-PLAN.md (vague 3) — Le domaine ordonnance : bornes en un seul endroit, transposition, contraintes croisées (CLIENT-03/04/05/07)
+- [ ] 04-05-PLAN.md (vague 4) — Versionnement sous verrou, surface sans modification, deux premières entrées de `CHAMPS_PROTEGES` (CLIENT-06)
+- [ ] 04-06-PLAN.md (vague 5) — La photo : stockage par locataire, attache unique, lecture authentifiée, télémétrie (CLIENT-09)
+- [ ] 04-07-PLAN.md (vague 3) — Écrans clients : liste, palette, création avec garde de doublon
+- [ ] 04-08-PLAN.md (vague 5) — Saisie d'ordonnance : grille OD/OG, avertissements non bloquants, panneau de relecture
+- [ ] 04-09-PLAN.md (vague 6) — Fiche, historique, impression, photo, et la passe humaine en cinq étapes
 
 ### Phase 5: Stock & Catalogue
 **Goal**: Each magasin's stock is a derived balance over an append-only ledger, searchable the way a counter actually searches, with a client's special order tracked to pickup
