@@ -223,3 +223,36 @@ Les entrées complètes sont dans `04-clients-ordonnances/deferred-items.md`. R�
 
 **Verdict de phase :** en attente
 </content>
+
+---
+
+## Contrainte d'exécution — les vagues parallèles ne lancent pas deux `build` à la fois
+
+**Relevé par le vérificateur de plans, 2026-09-18.** Aucun plan ne le portait.
+
+Les vagues 3 (`04-04` ‖ `04-07`) et 5 (`04-06` ‖ `04-08`) tournent dans **un seul worktree**.
+Dans chacune, les deux plans frères appellent `npm --prefix web run build` dans leurs propres
+vérifications. Or ce script est :
+
+```
+tsc -b && tsc -p tsconfig.test.json && vite build
+```
+
+`tsc -b` écrit un cache incrémental `.tsbuildinfo` et `vite build` écrit `dist/`. **Ni l'un
+ni l'autre n'est cloisonné par plan.** Deux invocations simultanées dans le même arbre
+peuvent se marcher dessus et produire un échec de build — ou pire, un résultat incrémental
+périmé — **sans aucun rapport avec le code de l'un ou de l'autre**.
+
+La section « Parallel execution » de CLAUDE.md couvre l'hygiène de l'index git (nommer les
+chemins au commit, ne jamais indexer tout l'arbre). **Elle ne couvre pas la sortie de build
+partagée**, qui est une seconde ressource partagée du même worktree.
+
+**Règle pour l'exécution de cette phase :** dans une vague parallèle, **un seul** des deux
+plans exécute `npm --prefix web run build`. Le second s'arrête à `npm --prefix web test`, et
+l'orchestrateur lance le build une fois la vague terminée. À défaut, exécuter la vague
+séquentiellement — ce qui a déjà été fait pour la vague 1 de la phase 03.1, pour la même
+raison plus la collision des bases de test.
+
+**Ce n'est pas une préférence de rapidité.** Un échec de build fantôme au milieu d'une vague
+coûte plus cher à diagnostiquer que la parallélisation ne fait gagner, parce qu'il ne se
+reproduit pas.

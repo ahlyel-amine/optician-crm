@@ -355,7 +355,21 @@ focusable and `Enter` activates it.
 | `telephone` | `Téléphone` | left | `formaterTelephone`, `tabular-nums` — §18.3 |
 | `date_naissance` | `Date de naissance` | left | `formaterDateCourte`, or nothing when null |
 | `derniere_ordonnance` | `Dernière ordonnance` | left | `formaterDateCourte`. **Protected field** — absent without `ordonnance.voir` (§15.5) |
-| `derniere_visite` | `Dernière visite` | left | `formaterDateCourte`, or `Jamais` |
+
+> **Amendement daté — 2026-09-18, vérificateur de plans.** Une cinquième colonne
+> `derniere_visite` figurait ici. **Elle est retirée : elle ne pouvait pas s'afficher.**
+> `colonnesVisiblesSurLignes` (`web/src/tableau/registre.ts:104`) filtre sur
+> `lignes.every((ligne) => colonne.champ in ligne)`, et le registre distingue
+> délibérément **clé absente** — « vous n'avez pas le droit de voir ceci » — de
+> **`null`** — « la donnée est inconnue ». Pour rendre `Jamais`, `derniere_visite`
+> devrait donc être **présente et nulle** dans la charge utile. Or les visites
+> supposent les ventes, qui sont la **phase 6** : aucun plan de la phase 4 n'ajoute ce
+> champ, donc la colonne aurait été filtrée à chaque rendu, en silence et sans test
+> pour le dire.
+>
+> La colonne revient en phase 6, avec le champ qui la porte. Contraste avec
+> `derniere_ordonnance`, qui est correctement absente en vague 3 puis servie par la
+> vague 4 : là, l'absence est une étape, pas un cul-de-sac.
 
 **No `Actions` column and no row menu.** Everything is on the fiche, one click away.
 
