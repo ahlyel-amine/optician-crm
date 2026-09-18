@@ -75,7 +75,7 @@ const chargerFormat = async <T>(nom: string): Promise<T> => {
   const charger = modulesFormat[`../src/format/${nom}.ts`];
   if (!charger) {
     throw new Error(
-      `src/format/${nom}.ts n'existe pas encore — il est ecrit au plan 03-11. ` +
+      `src/format/${nom}.ts n'existe pas encore — il est ecrit par le plan qui le livre. ` +
         `Modules trouves : ${JSON.stringify(Object.keys(modulesFormat))}`,
     );
   }
@@ -317,3 +317,116 @@ describe("le formateur prend la chaine que l'API livre", () => {
     expect(() => formaterMontant("")).toThrow(TypeError);
   });
 });
+
+/* ===========================================================================
+ * ACTIF depuis le plan 04-02. Le TROISIEME format du produit.
+ *
+ * `formaterTelephone` rejoint `montant.ts` et `date.ts` dans `src/format/` —
+ * pas parce que le formatage d'un numero est difficile, mais parce que
+ * `${client.telephone}` ecrit en ligne dans trois composants est exactement la
+ * divergence que la fixture monetaire existe pour empecher (04-UI-SPEC.md
+ * 18.3, 03-UI-SPEC.md 8.1).
+ *
+ * L'espace entre les paires est un U+00A0 pour la meme raison que celui des
+ * milliers : un espace ordinaire laisse la ligne se couper au milieu d'une
+ * paire, et jsdom ne le verrait jamais. L'assertion porte donc sur les POINTS
+ * DE CODE, pas sur une egalite qui se lit a l'oeil.
+ *
+ * Aucun cas de ce bloc n'attend un appel reseau : aucun `await` de tour de
+ * boucle d'evenements n'y a sa place (piege 2 de la phase 3 — un `await`
+ * inutile masque une assertion jamais atteinte).
+ * ======================================================================== */
+describe("formaterTelephone", () => {
+  const chargerTelephone = () =>
+    chargerFormat<{
+      formaterTelephone: (valeur: string) => string;
+      SEPARATEUR_PAIRES: string;
+    }>("telephone");
+
+  it("rend un numero marocain par paires, avec des espaces insecables", async () => {
+    const { formaterTelephone, SEPARATEUR_PAIRES } = await chargerTelephone();
+    const rendu = formaterTelephone("0612345678");
+
+    expect(rendu).toBe("06 12 34 56 78");
+    expect(SEPARATEUR_PAIRES.codePointAt(0)).toBe(ESPACE_INSECABLE);
+    const points = pointsDeCode(rendu);
+    expect(points.filter((point) => point === ESPACE_INSECABLE)).toHaveLength(4);
+    expect(points).not.toContain(ESPACE_ORDINAIRE);
+    expect(points).not.toContain(ESPACE_FINE_INSECABLE);
+  });
+
+  it("rend la forme internationale", async () => {
+    const { formaterTelephone } = await chargerTelephone();
+    const rendu = formaterTelephone("212612345678");
+
+    expect(rendu).toBe("+212 6 12 34 56 78");
+    expect(pointsDeCode(rendu)).not.toContain(ESPACE_ORDINAIRE);
+  });
+
+  it("rend verbatim ce qu'il ne reconnait pas", async () => {
+    const { formaterTelephone } = await chargerTelephone();
+
+    // JAMAIS de refus a l'affichage. Une fiche importee d'un tableur porte
+    // n'importe quoi, et un formateur qui leverait mettrait la LISTE ENTIERE
+    // en erreur pour une seule fiche mal saisie (menace T-04-12, acceptee).
+    expect(formaterTelephone("12-34")).toBe("12-34");
+    expect(formaterTelephone("")).toBe("");
+    expect(formaterTelephone("0612 345 678 poste 4")).toBe("0612 345 678 poste 4");
+  });
+
+  it("ne consulte aucune locale", async () => {
+    const { formaterTelephone } = await chargerTelephone();
+
+    // Controle contre la reecriture « simplifiee » par `Intl`. Le module est
+    // charge AVANT le sabotage, et le resultat est compare APRES la
+    // restauration : si l'assertion echouait pendant, le formateur de message
+    // de vitest toucherait un Intl en piege et masquerait la vraie cause.
+    const rendu = sansAucuneLocale(() => formaterTelephone("0612345678"));
+
+    expect(rendu).toBe("06 12 34 56 78");
+  });
+});
+
+/**
+ * Execute `operation` avec la locale du processus forcee ailleurs qu'en
+ * francais ET tout acces a `Intl` piege.
+ *
+ * Forcer `LC_ALL` seul ne prouverait pas grand-chose : Node lit
+ * l'environnement au demarrage. Le piege sur `Intl`, lui, est categorique —
+ * la moindre consultation leve.
+ */
+function sansAucuneLocale<T>(operation: () => T): T {
+  const intlOriginal = globalThis.Intl;
+  const localeOriginale = process.env.LC_ALL;
+
+  process.env.LC_ALL = "en_US.UTF-8";
+  Object.defineProperty(globalThis, "Intl", {
+    configurable: true,
+    writable: true,
+    value: new Proxy(
+      {},
+      {
+        get(_cible, propriete) {
+          throw new Error(
+            `formaterTelephone a consulte Intl.${String(propriete)} : aucune locale ne decide de ce format`,
+          );
+        },
+      },
+    ),
+  });
+
+  try {
+    return operation();
+  } finally {
+    Object.defineProperty(globalThis, "Intl", {
+      configurable: true,
+      writable: true,
+      value: intlOriginal,
+    });
+    if (localeOriginale === undefined) {
+      delete process.env.LC_ALL;
+    } else {
+      process.env.LC_ALL = localeOriginale;
+    }
+  }
+}
