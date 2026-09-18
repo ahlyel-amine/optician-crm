@@ -13,6 +13,7 @@ import { NAV, sousEntreesVisibles, type EntreeNav } from "@/layout/nav";
 import { Connexion } from "@/pages/Connexion";
 import { MotDePasse } from "@/pages/MotDePasse";
 import { ListeClients } from "@/pages/clients/ListeClients";
+import { useFournisseurDeRechercheDesClients } from "@/pages/clients/rechercheClients";
 import { DetailCompte } from "@/pages/comptes/DetailCompte";
 import { ListeComptes } from "@/pages/comptes/ListeComptes";
 
@@ -118,6 +119,15 @@ function SessionRequise({ children }: { children: React.ReactNode }) {
  * aller-retour et une page blanche, rien de plus.
  */
 function ContenuDuShell() {
+  // LE PREMIER FOURNISSEUR REEL DE LA PALETTE, enregistre ICI et non dans la
+  // liste des clients : la palette est le mode d'acces PRINCIPAL du produit
+  // (`03` 5.5), donc elle doit trouver un client depuis n'importe quel ecran.
+  // L'enregistrer dans `ListeClients` la rendrait muette partout ailleurs.
+  //
+  // `web/src/layout/Recherche.tsx` ne change pas d'une ligne — c'etait la
+  // promesse de la phase 3, et elle tient.
+  useFournisseurDeRechercheDesClients();
+
   return (
     <Routes>
       {NAV.map((entree) => (

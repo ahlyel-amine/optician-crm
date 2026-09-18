@@ -308,13 +308,61 @@ describe("la recherche de la liste (CLIENT-10)", () => {
     await Promise.resolve();
     expect(chemin()).toBe("/");
 
+    // Et le surlignage que personne n'a demande est retire VISUELLEMENT aussi.
+    // **Assertion de CLASSE, pas de visibilite** : jsdom ne calcule aucun CSS,
+    // donc ce test constate la classe et la verification manuelle constate la
+    // couleur. Une ligne qui a l'air selectionnee et qu'`Entree` ignore serait
+    // une interface qui ment.
+    const palette = document.querySelector("[cmdk-root]");
+    expect(palette?.className).toContain("data-selected=true");
+
     // LA MOITIE POSITIVE, sans laquelle un fournisseur qui ne poserait JAMAIS
     // `correspondance_exacte` serait vert : un numero complet et unique, lui,
     // navigue bien — c'est ce dont une douchette et un comptoir presse ont
     // besoin.
     fireEvent.change(saisie, { target: { value: "0661223344" } });
     await waitFor(() => {
+      expect(termesCherches()).toContain("0661223344");
+    });
+    // Un resultat marque exact court-circuite la liste, donc rien ne s'affiche :
+    // la disparition de la ligne precedente est le seul point de synchronisation
+    // disponible avant d'envoyer `Entree`.
+    await waitFor(() => {
+      expect(screen.queryByText("Mohammed Alaoui · proche de « mhamed »")).toBeNull();
+    });
+    fireEvent.keyDown(saisie, { key: "Enter" });
+    await waitFor(() => {
       expect(chemin()).toBe("/clients/2");
+    });
+  });
+
+  it("une fleche puis Entree ouvre bien la fiche CHOISIE, au clavier seul", async () => {
+    // LE REVERS DU TEST PRECEDENT, et il est indispensable : desarmer `Entree`
+    // sans laisser de chemin clavier fermerait la palette a qui n'utilise pas
+    // de souris. Ce test est ce qui empeche de corriger une divulgation par une
+    // regression d'accessibilite — et il assert qu'on atterrit sur la ligne
+    // CHOISIE, pas sur celle que `cmdk` surligne tout seul.
+    rendre(
+      {
+        "/api/clients/": () =>
+          json([
+            fiche({ id: 6, nom: "Mohammed Alaoui", score: 0.7, raison: "orthographe" }),
+            fiche({ id: 7, nom: "Mhamed Alaoui", score: 0.333, raison: "phonetique" }),
+          ]),
+      },
+      "/",
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Recherche" }));
+    const saisie = await screen.findByPlaceholderText("Recherche");
+    fireEvent.change(saisie, { target: { value: "mhamed" } });
+    await screen.findByText("Mhamed Alaoui · proche de « mhamed »");
+
+    fireEvent.keyDown(saisie, { key: "ArrowDown" });
+    fireEvent.keyDown(saisie, { key: "Enter" });
+
+    await waitFor(() => {
+      expect(chemin()).toBe("/clients/7");
     });
   });
 

@@ -105,3 +105,6 @@ export const gardeDecompte = (nombre: number): string =>
  */
 export const AVERTISSEMENT_SANS_TELEPHONE =
   "À vérifier — sans téléphone, ce client ne recevra aucun rappel.";
+
+/** Le nom du groupe de la palette du shell. Il s'affiche en en-tete de groupe. */
+export const GROUPE_PALETTE = "Clients";

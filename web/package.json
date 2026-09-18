@@ -10,6 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "audit:format": "grep -rnE 'Intl\\.NumberFormat|toLocaleString|fr-MA' src --include=*.ts --include=*.tsx | grep -v '^src/format/' && { echo 'INTERDIT (03-UI-SPEC.md 8.1) : aucune locale ne decide du format de l_argent hors de src/format/'; exit 1; } || exit 0",
+    "audit:projection": "! grep -rnE '\\? *<[^>]*> *: *null|peut *\\?' src/pages/clients/",
+    "audit:clinique": "! grep -rnE '(^|[^0-9.])(20\\.00|-10\\.00|0\\.75|4\\.00|0\\.25|180)([^0-9]|$)' src/pages/clients/",
     "api:types": "openapi-typescript src/api/schema.yml -o src/api/types.gen.ts --default-non-nullable=false"
   },
   "dependencies": {

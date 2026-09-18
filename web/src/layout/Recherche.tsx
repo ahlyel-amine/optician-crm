@@ -56,6 +56,19 @@ export type FournisseurDeRecherche = {
   chercher: (requete: string, signal: AbortSignal) => Promise<ResultatDeRecherche[]>;
 };
 
+/**
+ * Les touches par lesquelles un utilisateur CHOISIT une ligne.
+ *
+ * Elles sont laissees passer jusqu'a `cmdk`, qui deplace le surlignage ; ce
+ * fichier ne fait que retenir que le choix a eu lieu.
+ */
+const TOUCHES_DE_SELECTION: ReadonlySet<string> = new Set([
+  "ArrowDown",
+  "ArrowUp",
+  "Home",
+  "End",
+]);
+
 export const LARGEUR_EMPLACEMENT = "w-[480px]";
 export const DELAI_ANTI_REBOND = 200;
 export const MAX_PAR_GROUPE = 5;
@@ -142,6 +155,30 @@ export function Recherche() {
   const [ouverte, setOuverte] = useState(false);
   const [requete, setRequete] = useState("");
   const [resultats, setResultats] = useState<ResultatDeRecherche[]>([]);
+  /**
+   * LA SELECTION A-T-ELLE ETE VOULUE ? Trouvaille du plan 04-07.
+   *
+   * Le contrat « rien n'auto-navigue sur un nom » (04-UI-SPEC.md 18.4) etait
+   * cense tenir par `correspondance_exacte`, que le serveur ne pose que sur un
+   * numero complet. **Il ne tenait pas.** `cmdk` surligne le PREMIER element
+   * des qu'une liste arrive et lie `Entree` a l'element surligne : taper un
+   * nom puis envoyer `Entree` ouvrait le premier candidat, quelle que soit la
+   * prudence du fournisseur. Aucun fournisseur ne pouvait l'empecher, donc
+   * l'abstraction de la phase 3 etait incomplete et le correctif est ici.
+   *
+   * Pourquoi cela compte : aucun seuil ne separe la verite de l'erreur dans ce
+   * classement — `mhamed` vers `mohammed alaoui` vaut 0,333 quand `fatima`
+   * vers `fatiha bennani` vaut 0,571, mesures du plan 04-03, donc le classement
+   * est INVERSE. Le premier candidat est un reflexe, pas une reponse, et avec
+   * des ordonnances sur la fiche l'ouvrir est une divulgation de donnee de
+   * sante.
+   *
+   * La regle posee ici : `Entree` active ce que l'utilisateur a DELIBEREMENT
+   * choisi — a la fleche, ou au clic — ou ce que le SERVEUR a marque exact.
+   * Jamais un surlignage que personne n'a demande. La navigation au clavier
+   * reste entiere : c'est une fleche de plus, pas un chemin ferme.
+   */
+  const [selectionDeliberee, setSelectionDeliberee] = useState(false);
   const declencheur = useRef<HTMLElement | null>(null);
 
   const disponible = nombreDeFournisseurs > 0;
@@ -216,6 +253,13 @@ export function Recherche() {
     };
   }, [ouverte, requete]);
 
+  // Une nouvelle frappe annule le choix : sans cela, une fleche pressee sur une
+  // requete rendrait `Entree` active sur la SUIVANTE, dont les resultats sont
+  // d'autres personnes.
+  useEffect(() => {
+    setSelectionDeliberee(false);
+  }, [requete, ouverte]);
+
   const exact = resultatExact(resultats);
   const groupes = grouperResultats(resultats);
 
@@ -263,7 +307,21 @@ export function Recherche() {
                   Chercher un client, un article, un document
                 </DialogDescription>
               </DialogHeader>
-              <Command shouldFilter={false}>
+              <Command
+                shouldFilter={false}
+                /*
+                  `cmdk` surligne le premier element tout seul. Tant que
+                  personne n'a choisi, ce surlignage est retire VISUELLEMENT
+                  aussi, pas seulement desarme : une ligne qui a l'air
+                  selectionnee et qu'`Entree` ignore serait une interface qui
+                  ment. Revendication de CLASSE — jsdom ne calcule aucun CSS,
+                  donc le test assert la classe, et l'oeil humain la couleur
+                  (04-VALIDATION.md).
+                */
+                className={
+                  selectionDeliberee ? undefined : "[&_[data-selected=true]]:bg-transparent"
+                }
+              >
                 <div className="border-b border-border p-2">
                   <Input
                     autoFocus
@@ -271,9 +329,30 @@ export function Recherche() {
                     value={requete}
                     onChange={(evenement) => setRequete(evenement.target.value)}
                     onKeyDown={(evenement) => {
-                      if (evenement.key === "Enter" && exact !== undefined) {
+                      if (TOUCHES_DE_SELECTION.has(evenement.key)) {
+                        // La fleche EST le choix. A partir d'ici `Entree`
+                        // active ce que l'utilisateur regarde.
+                        setSelectionDeliberee(true);
+                        return;
+                      }
+                      if (evenement.key !== "Enter") {
+                        return;
+                      }
+                      if (exact !== undefined) {
+                        // Le raccourci de reference exacte, decide par le
+                        // SERVEUR et jamais pose sur un nom : une douchette
+                        // clavier tape une reference et envoie `Entree`.
                         evenement.preventDefault();
+                        evenement.stopPropagation();
                         aller(exact.route);
+                        return;
+                      }
+                      if (!selectionDeliberee) {
+                        // L'evenement est ARRETE, pas seulement annule :
+                        // `cmdk` ecoute sur la racine et ne consulte pas
+                        // `defaultPrevented`.
+                        evenement.preventDefault();
+                        evenement.stopPropagation();
                       }
                     }}
                   />

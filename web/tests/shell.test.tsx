@@ -520,12 +520,20 @@ describe("la portee de route", () => {
 
 describe("l'emplacement de recherche", () => {
   it("conserve ses 480px sans fournisseur enregistre, et ne rend aucun champ", async () => {
-    rendreShell();
+    // **Amende au plan 04-07.** La phase 4 a enregistre le premier fournisseur
+    // reel, `Clients`, et elle le conditionne a `client.voir` — sans le droit,
+    // chaque frappe produirait un 403 avale en silence. Ce test montait
+    // jusqu'ici un proprietaire, qui detient ce code : il decrivait donc un
+    // etat que le produit n'atteint plus.
+    //
+    // Il garde exactement son objet — l'emplacement tient ses 480px quand il
+    // n'y a rien a chercher, pour que la barre superieure ne se reflue pas —
+    // en le mesurant sur l'utilisateur qui est encore dans ce cas. La moitie
+    // jumelle, « avec le droit, le champ est la », vit dans
+    // `tests/clients.test.tsx`, qui clique ce bouton deux fois.
+    rendreShell(amorcageDe({ permissions: ["stock.voir"] }));
     await screen.findByRole("navigation", { name: "Navigation principale" });
 
-    // La phase 3 n'a rien a chercher. L'emplacement existe quand meme, pour que
-    // la barre superieure ne se reflue pas quand la phase 4 enregistre son
-    // premier fournisseur.
     const emplacement = screen.getByTestId("emplacement-recherche");
     expect(emplacement.className).toContain("480");
     expect(emplacement.querySelector("input")).toBeNull();

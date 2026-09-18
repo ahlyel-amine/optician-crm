@@ -16,6 +16,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { MESSAGE_SERVICE_INDISPONIBLE } from "@/etats/messages";
 
+import { GardeDeDoublon } from "./GardeDeDoublon";
+
 import {
   ACTION_CONFIRMER,
   ACTION_RETOUR,
@@ -148,6 +150,14 @@ export function CreerClient({
         <DialogHeader>
           <DialogTitle>{TITRE_CREATION}</DialogTitle>
         </DialogHeader>
+
+        {/*
+          LA GARDE DE DOUBLON EST RENDUE AU-DESSUS DU FORMULAIRE, jamais en
+          dessous : l'information doit arriver AVANT la saisie qu'elle informe.
+          Placee sous les champs, elle serait lue apres la decision qu'elle
+          existe pour eclairer.
+        */}
+        <GardeDeDoublon nom={nom} />
 
         <div className="grid gap-4">
           <div className="grid gap-2">
