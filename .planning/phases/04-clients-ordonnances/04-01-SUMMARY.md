@@ -364,6 +364,20 @@ qu'il fait écrire l'a trouvée. Aucun élargissement de fonctionnalité.
   parle. Écrit dans la docstring du helper.
 - **`makemigrations` a nommé le fichier `0002_initial.py`.** Renommé à la main en
   `0002_client.py` ; `makemigrations --check --dry-run` reste à 0.
+- **Une passe de `-m slow` a rendu 17 failed / 11 errors, puis 31 passed trois fois de
+  suite sans qu'une ligne change.** Les messages nomment la cause :
+  `FATAL: database "test_optique_control" does not exist` et
+  `terminating connection due to administrator command`. **Les bases de test sont une
+  seconde ressource partagée du worktree**, au même titre que la sortie de `build`, et
+  la fin de session de pytest-django les *supprime* — y compris `test_optique_control`,
+  que le reaper de `conftest.py` ne touche pourtant jamais. Une seconde session pytest
+  qui se termine pendant la première la fait donc échouer dans des fichiers qui n'ont
+  rien demandé.
+
+  **`04-VALIDATION.md` couvre cette famille pour `npm run build` et pas pour pytest.**
+  La règle devrait être la même : dans une vague parallèle, **une seule** suite backend
+  à la fois. Noté pour `04-09` — c'est exactement le « échec fantôme au milieu d'une
+  vague qui ne se reproduit pas » que cette section décrit déjà.
 
 ## Configuration utilisateur requise
 
