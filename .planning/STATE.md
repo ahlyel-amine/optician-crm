@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Termine 04-04-PLAN.md (domaine ordonnance, bornes servies) — 04-07 en parallele
-last_updated: "2026-09-18T16:01:42.679Z"
+last_updated: "2026-09-18T16:05:56.695Z"
 last_activity: 2026-09-17
 progress:
   total_phases: 13
   completed_phases: 3
   total_plans: 34
-  completed_plans: 29
-  percent: 85
+  completed_plans: 30
+  percent: 88
 ---
 
 # Project State
@@ -86,6 +86,7 @@ Progress: [██████████] 100% (14/14 plans de la phase 3 écri
 | Phase 04 P01 | 95min | 3 tasks | 15 files |
 | Phase 04 P03 | 115 | 3 tasks | 16 files |
 | Phase 04 P04 | 40 | 3 tasks | 14 files |
+| Phase 04 P07 | 19min | 3 tasks | 15 files |
 
 ## Quick Tasks Completed
 
@@ -220,6 +221,7 @@ Recent decisions affecting current work:
 - [Phase 04]: 04-04 : les bornes cliniques vivent dans domaine/ordonnances/bornes.py et sont SERVIES sur l'amorcage, jamais compilees dans le SPA (Q1)
 - [Phase 04]: 04-04 : aucune table de commande speciale — STOCK-08 (phase 5) possede ce cycle de vie ; la phase 4 livre snapshot_pour_fournisseur, CLIENT-08 non cochee
 - [Phase 04]: 04-04 : le +/-20 de PITFALLS.md ecrase le +/-30 de la zone grise 1 — et aucun des deux n'a de source normative, ce qui est ecrit dans bornes.py
+- [Phase 04]: 04-07 : Recherche.tsx a du changer — cmdk surlignait le premier resultat et liait Entree a lui, donc aucun fournisseur ne pouvait empecher l'auto-navigation sur un nom. Entree n'active plus qu'un choix delibere ou la correspondance exacte du serveur
 
 ### Pending Todos
 

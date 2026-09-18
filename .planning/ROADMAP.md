@@ -149,7 +149,7 @@ Plans:
 - [x] 04-04-PLAN.md (vague 3) — Le domaine ordonnance : bornes en un seul endroit, transposition, contraintes croisées (CLIENT-03/04/05/07)
 - [ ] 04-05-PLAN.md (vague 4) — Versionnement sous verrou, surface sans modification, deux premières entrées de `CHAMPS_PROTEGES` (CLIENT-06)
 - [ ] 04-06-PLAN.md (vague 5) — La photo : stockage par locataire, attache unique, lecture authentifiée, télémétrie (CLIENT-09)
-- [ ] 04-07-PLAN.md (vague 3) — Écrans clients : liste, palette, création avec garde de doublon
+- [x] 04-07-PLAN.md (vague 3) — Écrans clients : liste, palette, création avec garde de doublon
 - [ ] 04-08-PLAN.md (vague 5) — Saisie d'ordonnance : grille OD/OG, avertissements non bloquants, panneau de relecture
 - [ ] 04-09-PLAN.md (vague 6) — Fiche, historique, impression, photo, et la passe humaine en cinq étapes
 
