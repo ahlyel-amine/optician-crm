@@ -94,9 +94,35 @@ def seed_new_client(client, magasins) -> list:
         )
         rows.append(magasin)
 
+    # ---- Phase 4 (clients) : la table d'équivalences de prénoms, CLIENT-10 ------------
+    #
+    # Par **base client** et non dans le plan de contrôle : le plan de contrôle porte
+    # l'identité, la base client porte les données métier (CLAUDE.md #11), et un opticien
+    # qui ajoute une variante locale ne doit pas l'imposer à la flotte.
+    #
+    # `get_or_create`, comme le module l'exige, et la contrainte d'unicité
+    # `unique_forme_dans_un_groupe` le rend vrai jusque dans la base : une reprise après
+    # interruption ne peut pas doubler une ligne (menace T-02-42).
+    #
+    # Les littéraux sont repassés par `normaliser_pour_recherche` plutôt que recopiés :
+    # une accentuation oubliée dans la liste produirait une ligne que la requête ne
+    # joindrait jamais, et l'échec serait muet.
+    from domaine.clients.models import AMORCE_DES_EQUIVALENCES, EquivalenceNom
+    from domaine.clients.recherche import normaliser_pour_recherche
+
+    for groupe, formes in AMORCE_DES_EQUIVALENCES.items():
+        for forme in formes:
+            EquivalenceNom.objects.get_or_create(
+                forme_normalisee=normaliser_pour_recherche(forme),
+                groupe=normaliser_pour_recherche(groupe),
+                defaults={"source": EquivalenceNom.AMORCE},
+            )
+
     # ----------------------------------------------------------------------------------
     # EXTENSION POINT — later phases seed their own defaults here, in this order:
     #
+    #   Phase 4 (clients)     : DONE, just above — `EquivalenceNom`, the curated
+    #                           first-name equivalence table behind CLIENT-10's layer 4.
     #   Phase 5 (stock)       : none currently foreseen; articles are entered, not seeded.
     #   Phase 6 (facturation) : TVA rates per article category, and the facture série.
     #                           Blocked on CLAUDE.md open questions #1 and #2 — which TVA

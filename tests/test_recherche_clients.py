@@ -219,3 +219,64 @@ def test_client10_la_recherche_emprunte_l_index_gin(db_all):
         "le plan n'emprunte pas `idx_client_nom_trgm`, l'index GIN `gin_trgm_ops` posé "
         f"par le plan 04-01. Plan obtenu :\n{plan}"
     )
+
+
+def test_client10_la_table_d_equivalences_est_amorcee_par_base_client(db_all):
+    """CLIENT-10 — la couche 4, et la seule paire que les trois autres ne peuvent pas rendre.
+
+    `khadija` / `khdija` est le cas discriminant, et il est choisi pour cela :
+
+    * couche 1 — ni égalité ni préfixe ;
+    * couche 2 — `word_similarity('khdija', 'khadija alaoui')` = 0,500, **sous** le seuil
+      de 0,65 qu'il faut tenir pour que Fatima et Fatiha ne fusionnent pas ;
+    * couche 3 — `metaphone('khdija', 8)` = `KTJ`, `metaphone('khadija alaoui', 8)`
+      commence par `KHTJ` : ni égal, ni préfixe.
+
+    Seule une équivalence curée peut donc rendre cette fiche, et l'amorce est écrite par
+    base client dans `seed_new_client`, pas dans le plan de contrôle (CLAUDE.md #11).
+
+    **Ce qu'il attrape :** le point d'extension de `seed_new_client` laissé vide, une
+    amorce placée dans une migration — donc absente des clients déjà provisionnés — ou
+    une jointure d'équivalence écrite sur la chaîne entière plutôt que sur les jetons.
+
+    **Le contrôle négatif est dans le test, avant l'amorce**, et il n'est pas décoratif :
+    ce test a été écrit après son implémentation — seul de ce fichier — et il était donc
+    vert à la première exécution. Un test vert d'emblée ne prouve rien tant qu'on ne l'a
+    pas vu rouge. La première assertion l'a vu : table vide, la fiche n'est pas rendue.
+    """
+    from domaine.clients.models import EquivalenceNom
+    from domaine.clients.recherche import chercher_clients
+    from plateforme.control_plane.seeding import seed_new_client
+    from plateforme.tenancy.context import tenant_context
+    from tests.factories import ClientFactory, FicheClientFactory
+
+    affaire = ClientFactory()
+
+    with tenant_context("tenant_a"):
+        FicheClientFactory(nom="Khadija Alaoui")
+
+    avant = _noms(chercher_clients("khdija", alias="tenant_a"))
+    assert "Khadija Alaoui" not in avant, (
+        "« khdija » rend « Khadija Alaoui » AVANT toute équivalence. Les couches 1 à 3 "
+        "ne le peuvent pas aux valeurs mesurées : soit le seuil trigramme a baissé, soit "
+        "la couche phonétique compare autre chose qu'un préfixe de clé — et ce test ne "
+        "prouve alors plus rien de la couche 4."
+    )
+
+    with tenant_context("tenant_a"):
+        seed_new_client(affaire, ["Anfa"])
+        # Idempotence : le second appel ne double aucune ligne — c'est la promesse du
+        # module, et une amorce est exactement ce qu'une reprise doublerait.
+        seed_new_client(affaire, ["Anfa"])
+        amorcees = EquivalenceNom.objects.using("tenant_a").count()
+
+    assert amorcees == 57, (
+        f"l'amorce a écrit {amorcees} lignes et non 57 — soit la liste a changé, soit "
+        "le second appel a doublé des lignes malgré `get_or_create`."
+    )
+
+    apres = _noms(chercher_clients("khdija", alias="tenant_a"))
+    assert "Khadija Alaoui" in apres, (
+        "« khdija » ne rend pas « Khadija Alaoui ». Aucune des trois premières couches "
+        "ne le peut : c'est la couche 4 qui manque, ou son amorce."
+    )

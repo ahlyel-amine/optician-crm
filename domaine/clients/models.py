@@ -141,3 +141,95 @@ class Client(models.Model):
 #: ci-dessus n'ait pas à les recopier, et pour que la reprise par `RunPython` du jour où
 #: la normalisation change les lise ici.
 DERIVEES = ("nom_recherche", "telephone_normalise", "cle_phonetique")
+
+
+class EquivalenceNom(models.Model):
+    """La couche 4 du rappel : les équivalences de prénoms, **en donnée et non en code**.
+
+    **Une appartenance à un groupe, jamais une paire, et c'est structurel.** Une table de
+    paires exigerait d'écrire les deux sens — `mhamed → mohamed` *et*
+    `mohamed → mhamed` — et l'un des deux manquerait, un jour, sur une ligne. La requête
+    joint son propre jeton normalisé à `groupe`, puis accepte **tout** membre de ce
+    groupe : la symétrie est alors une propriété de la forme, pas une discipline de
+    saisie.
+
+    **Amorcée par base client**, dans le point d'extension de `seed_new_client`, et non
+    dans le plan de contrôle. Deux raisons, indépendantes : le plan de contrôle porte
+    l'identité, la base client porte les données métier (CLAUDE.md #11) ; et un opticien
+    qui ajoute une variante locale — `source = "opticien"` — ne doit pas l'imposer à la
+    flotte.
+
+    **La liste d'amorce est courte, délibérément.** Les couches 2 et 3 couvrent la traîne.
+    Une grande table d'équivalences non validée est une machine à faux positifs,
+    c'est-à-dire à fiches du voisin : `AMORCE_DES_EQUIVALENCES` ci-dessous ne contient
+    donc **ni** `fatima`/`fatiha`, **ni** `abdelkader`/`abdelkrim`, **ni**
+    `rachid`/`rachida`, qui sont trois paires de personnes différentes mesurées comme
+    proches.
+    """
+
+    AMORCE = "amorce"
+    OPTICIEN = "opticien"
+    SOURCES = [
+        (AMORCE, "Livrée avec le produit"),
+        (OPTICIEN, "Ajoutée par l'opticien"),
+    ]
+
+    #: Le jeton tel que `normaliser_pour_recherche` le rend — `'mhamed'`.
+    forme_normalisee = models.CharField(max_length=80, db_index=True)
+    #: La clé canonique du groupe — `'mohamed'`. Elle est elle-même une forme, et elle a
+    #: sa propre ligne : sans cela, chercher la forme canonique ne rendrait pas ses
+    #: variantes.
+    groupe = models.CharField(max_length=80, db_index=True)
+    source = models.CharField(max_length=16, choices=SOURCES, default=AMORCE)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "équivalence de nom"
+        verbose_name_plural = "équivalences de noms"
+        constraints = [
+            # L'unicité est ce qui rend `get_or_create` de l'amorçage réellement
+            # idempotent plutôt qu'idempotent par convention : une amorce rejouée sur une
+            # base à demi provisionnée ne peut pas doubler une ligne.
+            models.UniqueConstraint(
+                fields=["forme_normalisee", "groupe"],
+                name="unique_forme_dans_un_groupe",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.forme_normalisee} → {self.groupe}"
+
+
+#: L'amorce : vingt familles de prénoms qui reviennent réellement au comptoir marocain.
+#:
+#: Écrites déjà normalisées — minuscules, sans accent — mais repassées par
+#: `normaliser_pour_recherche` à l'amorçage : une accentuation oubliée dans un littéral
+#: produirait une ligne que la requête ne joindrait jamais, et l'échec serait muet.
+#:
+#: **Ce qui n'y est pas est aussi une décision.** Les trois paires que la mesure rapproche
+#: et que la clinique sépare — `fatima`/`fatiha`, `abdelkader`/`abdelkrim`,
+#: `rachid`/`rachida` — sont absentes, et `test_client10_deux_prenoms_distincts_ne_fusionnent_pas`
+#: rougit le jour où l'une d'elles y entre.
+AMORCE_DES_EQUIVALENCES: dict[str, tuple[str, ...]] = {
+    "mohamed": ("mohamed", "mohammed", "mhamed", "mouhamed", "mohamad", "muhammad"),
+    "fatima": ("fatima", "fatma", "fatimazahra"),
+    "khadija": ("khadija", "khdija", "khadidja"),
+    "youssef": ("youssef", "yousef", "youssouf"),
+    "abdelkader": ("abdelkader", "abdelkadir", "abdelqader"),
+    "abdelkrim": ("abdelkrim", "abdelkarim", "abdulkarim"),
+    "el hassan": ("el hassan", "elhassan", "lhassan"),
+    "aicha": ("aicha", "aycha"),
+    "naima": ("naima", "nayma"),
+    "zoubair": ("zoubair", "zubair", "zoubeir"),
+    "abdellah": ("abdellah", "abdallah", "abdoullah"),
+    "ibrahim": ("ibrahim", "brahim"),
+    "meryem": ("meryem", "mariam", "maryam", "mariem"),
+    "yassine": ("yassine", "yacine", "yassin"),
+    "soukaina": ("soukaina", "soukayna"),
+    "zineb": ("zineb", "zeineb"),
+    "hicham": ("hicham", "hichame"),
+    "omar": ("omar", "oumar", "omer"),
+    "salma": ("salma", "selma"),
+    "karim": ("karim", "karime", "kareem"),
+}
