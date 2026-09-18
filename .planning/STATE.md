@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03.1-04-PLAN.md — phase 03.1 close, porte franchie, une reserve ecrite
-last_updated: "2026-09-18T14:17:24.902Z"
+stopped_at: Termine 04-03-PLAN.md (API fiche client + recherche CLIENT-10)
+last_updated: "2026-09-18T14:53:37.473Z"
 last_activity: 2026-09-17
 progress:
   total_phases: 13
   completed_phases: 3
   total_plans: 34
-  completed_plans: 27
-  percent: 79
+  completed_plans: 28
+  percent: 82
 ---
 
 # Project State
@@ -84,6 +84,7 @@ Progress: [██████████] 100% (14/14 plans de la phase 3 écri
 | Phase 03.1 P04 | ~100min (dont l'attente du proprietaire) | 3 tasks | 4 files |
 | Phase 04 P02 | 22 | 3 tasks | 14 files |
 | Phase 04 P01 | 95min | 3 tasks | 15 files |
+| Phase 04 P03 | 115 | 3 tasks | 16 files |
 
 ## Quick Tasks Completed
 
@@ -212,6 +213,9 @@ Recent decisions affecting current work:
 - [Phase 04]: Un reglage de session passe par SELECT set_config(nom, valeur, true) dans un transaction.atomic(), jamais par un SET nu — fuite T-02-02 reproduite a la main a travers PgBouncer
 - [Phase 04]: unaccent n'est installee nulle part : STABLE donc inindexable (42P17), remplacee par une normalisation NFKD cote Python
 - [Phase 04]: Client n'herite pas de MagasinScopedModel — une personne appartient a l'affaire, pas a un point de vente (D-4a)
+- [Phase 04]: SEUIL_MOT monte de 0.3 a 0.65 : a 0,3 Fatima fusionne avec Fatiha et Abdelkader avec Abdelkrim ; c'est la couche phonetique, par prefixe de cle metaphone, qui porte CLIENT-10
+- [Phase 04]: L'operateur pg_trgm <% compare avec >= et non > : le defaut 0,6 laisse passer une paire mesuree a 0,600 pile
+- [Phase 04]: Les requetes de rappel portent un order_by() vide : Meta.ordering detourne le planificateur vers idx_client_nom et l'index GIN n'est jamais consulte
 
 ### Pending Todos
 
@@ -228,8 +232,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-17T21:15:00.000Z
-Stopped at: Completed 03.1-04-PLAN.md — phase 03.1 close, porte franchie, une reserve ecrite
+Last session: 2026-09-18T14:53:37.470Z
+Stopped at: Termine 04-03-PLAN.md (API fiche client + recherche CLIENT-10)
 Resume file: None
 
 Serveurs de developpement laisses TOURNANTS : Vite sur 5173 (navigation filtree, l'etat livre) et sur 5174 (`VITE_NAV_COMPLET=1`, la densite a huit entrees), Django sur 127.0.0.1:8010 — le proprietaire peut reprendre la traversee, celle du shell (03-13) comme celle de l'ecran des droits (03-14).
