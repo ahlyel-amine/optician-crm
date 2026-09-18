@@ -11,6 +11,9 @@ Note the asymmetry, which mirrors the architecture:
 
 from __future__ import annotations
 
+import datetime
+from decimal import Decimal
+
 import factory
 from django.conf import settings
 
@@ -232,3 +235,60 @@ class FicheClientFactory(factory.django.DjangoModelFactory):
     nom = factory.Sequence(lambda n: f"Client {n:04d}")
     telephone = factory.Sequence(lambda n: f"06{n:08d}")
     actif = True
+
+
+# ======================================================================================
+# Ordonnances — base métier (phase 4, plan 04-04)
+# ======================================================================================
+
+
+class OrdonnanceFactory(factory.django.DjangoModelFactory):
+    """Une ordonnance cliniquement **valide** par défaut, invalidable sur demande.
+
+    Les défauts sont volontairement les plus simples qui passent toutes les contraintes :
+    une correction purement sphérique, sans cylindre donc sans axe, un écart pupillaire
+    binoculaire, et une source médicale avec son prescripteur. Un défaut qui porterait un
+    cylindre obligerait chaque test à raisonner sur l'axe qui l'accompagne.
+
+    **Les trois traits ci-dessous existent parce que les tests de refus n'ont rien à
+    rejeter sans eux.** Un trait plutôt qu'une seconde fabrique : deux fabriques
+    dériveraient, et la fautive finirait par être fausse pour une raison de plus que
+    celle qu'elle illustre.
+
+    Aucun `database =` : comme `FicheClientFactory`, elle laisse le routeur résoudre la
+    connexion depuis le contexte lié. Les tests de `bulk_create` appellent `.build()` et
+    passent `client=` et `magasin=` déjà enregistrés — une `SubFactory` en mode `build`
+    produirait des parents sans clé primaire.
+    """
+
+    class Meta:
+        model = "ordonnances.Ordonnance"
+
+    class Params:
+        #: Une sphère très au-delà de la borne. Le cas du `bulk_create` refusé.
+        hors_bornes = factory.Trait(sphere_od=Decimal("-40.00"))
+        #: La convention inversée — la faute qui produit des verres faux sans rien violer
+        #: d'autre.
+        cylindre_positif = factory.Trait(cylindre_od=Decimal("1.00"), axe_od=90)
+        #: La contrainte croisée : un axe que rien ne justifie.
+        axe_sans_cylindre = factory.Trait(cylindre_od=None, axe_od=45)
+
+    client = factory.SubFactory(FicheClientFactory)
+    magasin = factory.SubFactory(MagasinFactory)
+    version = factory.Sequence(lambda n: n + 1)
+    source = "ordonnance_medicale"
+    prescripteur = "Dr Bennani"
+    date_prescription = datetime.date(2026, 3, 14)
+    sphere_od = Decimal("-1.00")
+    sphere_og = Decimal("-1.25")
+    cylindre_od = None
+    cylindre_og = None
+    axe_od = None
+    axe_og = None
+    addition_od = None
+    addition_og = None
+    ep_binoculaire = Decimal("62.0")
+    ep_mono_od = None
+    ep_mono_og = None
+    ep_saisi = "binoculaire"
+    created_par = "comptoir@optique.test"
