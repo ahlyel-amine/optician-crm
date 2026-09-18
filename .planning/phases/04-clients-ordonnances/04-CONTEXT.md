@@ -175,3 +175,88 @@ du déploiement, pas à chaque plan.
   `cached_property`.
 - Le solde de **18 vérifications manuelles de la phase 3** est ouvert. La phase 4 ne doit pas
   en ajouter sans que quelqu'un ait l'intention de les faire.
+
+---
+
+## Décisions du propriétaire — 2026-09-18
+
+Prises après la recherche de phase (`04-RESEARCH.md`), qui a **infirmé trois des
+recommandations ci-dessus**. Ces décisions-ci priment sur les zones grises 1 et 5.
+
+### D-4a — l'ordonnance est à l'échelle du CLIENT, pas du magasin
+
+**Tranché par le propriétaire.** Un gérant qui voit le client voit tout son historique
+d'ordonnances, quel que soit le magasin qui l'a saisie.
+
+**La raison est clinique, pas ergonomique.** Scoper l'ordonnance au magasin produit le
+danger que la recherche a nommé : un gérant de Maârif qui ne voit pas l'ordonnance saisie à
+Anfa **en saisit une seconde**, et le client se retrouve avec deux historiques divergents
+pour un seul œil. Une duplication d'historique de prescription n'est pas une gêne
+d'interface.
+
+**Conséquence pour le plan :** `Ordonnance` **n'hérite pas** de `MagasinScopedViewSet`. Ce
+sera la première entité métier de la phase 4 à ne pas le faire, donc **l'exception doit être
+écrite à côté du modèle**, avec cette raison — sinon un relecteur de la phase 7 la prendra
+pour un oubli et « corrigera » le danger dans le code.
+
+**Ce qui reste vrai :** l'accès passe par le droit `ordonnance.voir`, et l'ordonnance
+**porte le magasin qui l'a saisie**, pour la traçabilité et pour les rappels de la phase 10.
+Porter la provenance n'est pas filtrer dessus.
+
+### D-4b — les bornes cliniques, arrêtées
+
+Trois jeux de chiffres coexistaient : ceux de `PITFALLS.md`, les miens (zone grise 1), et la
+mesure de la recherche. Le propriétaire a demandé qu'on tranche. Retenu :
+
+| Champ | Borne | D'où elle vient |
+|---|---|---|
+| Sphère | **−20,00 à +20,00**, pas de 0,25 | `PITFALLS.md:449`, recherche antérieure du projet. Mon ±30 n'avait aucune source. Au-delà de ±20 c'est du domaine spécialisé ; au comptoir, un −24 est bien plus souvent une faute de frappe qu'un patient |
+| Cylindre | **−10,00 à 0**, pas de 0,25 | Inchangé, non contesté |
+| Axe | **entier, 1 à 180** | La recherche a vérifié que l'axe s'écrit 1–180 : 180 s'emploie là où 0 serait, donc accepter 0 accepte une valeur qu'aucune ordonnance ne porte |
+| Addition | **+0,75 à +4,00**, pas de 0,25 | `PITFALLS.md:449`. Mon plancher à +0,50 admettait une valeur qui ne se prescrit pratiquement pas |
+
+**Et le contrôle qu'aucun des trois jeux ne portait :** l'addition est **normalement
+identique aux deux yeux**. Une addition différente est la signature de la faute de frappe
+plausible, celle qu'aucune borne n'attrape. **Avertissement, pas refus** — le cas légitime
+existe.
+
+**Les bornes vivent à UN endroit nommé**, pas dispersées dans des validateurs de champ. Le
+propriétaire a déjà changé d'avis une fois sur ces chiffres ; le prochain changement doit
+coûter une ligne.
+
+### Ce que la recherche a infirmé, et qui ne doit pas ressurgir
+
+1. **`unaccent` ne peut pas servir dans une expression d'index** — elle est `STABLE`, pas
+   `IMMUTABLE` (`42P17`), colonne générée comprise. Une normalisation NFKD côté Python dans
+   une colonne ordinaire fait le travail **et supprime le besoin de l'extension**.
+2. **Le rejet de Metaphone (zone grise 4) était faux**, et la mesure le dit :
+   `metaphone(n,8)` groupe `MHMT = {Mhamed, Mohamed, Mohammed, Mouhamed}` — exactement
+   l'exigence CLIENT-10 — tout en gardant *Abdelkader* et *Abdelkrim* séparés, ce que
+   soundex, dmetaphone **et** les trigrammes échouent tous à faire. La longueur de code ≥ 6
+   porte le résultat. **Prévoir une garde pour l'écriture arabe**, qui rend une clé vide et
+   collerait alors tous les noms entre eux.
+3. **Le trigramme seul échoue sur l'exemple de CLIENT-10** : `%` au défaut de 0,3 ne rend pas
+   *Mohammed*. Et aucun seuil ne sauve la méthode — `mohammed↔mhamed` = **0,333** passe
+   *sous* `fatima↔fatiha` = **0,400**. Le trigramme sert au rappel et au classement, **jamais
+   au filtrage**.
+4. **La transposition minus-cyl ↔ plus-cyl appartient à la phase 4**, en fonction pure. Les
+   ophtalmologistes prescrivent en cylindre négatif, **mais les opticiens et les labos
+   travaillent en positif et transposent quotidiennement** — et CLIENT-08 envoie ces valeurs
+   au fournisseur. Cela manquait entièrement à la zone grise 1.
+5. **`CREATE EXTENSION` doit être une migration, pas du provisionnement** :
+   `provision_client()` sort tôt sur `status == ACTIVE`, donc une création au
+   provisionnement sauterait en silence tous les clients existants.
+6. **La phase 4 est la première à toucher le danger PgBouncer T-02-02** : un `SET` nu a été
+   observé **fuyant vers une connexion fraîche du pool**. `SET LOCAL` dans un `atomic()`
+   revient correctement.
+7. **`FileField(storage=callable)` n'évalue son appelable qu'une fois**, à la construction du
+   champ : pas d'instance de stockage par locataire par ce chemin.
+
+### Trois points soulevés par la recherche, non tranchés, à traiter dans le plan
+
+- `date_naissance` est nécessaire sur `Client` (règle des moins de 16 ans, et RAPPEL-04 en
+  phase 10) alors qu'aucune exigence CLIENT ne la nomme.
+- `telemetry.SENSITIVE_KEY` ne couvre ni `photo`, ni `image`, ni `fichier`, ni `scan` — or un
+  nom de fichier téléversé porte couramment le nom du patient.
+- La sauvegarde par client de TENANT-09 ne couvre peut-être pas un magasin de fichiers vivant
+  hors de la base.
