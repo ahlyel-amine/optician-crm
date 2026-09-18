@@ -422,7 +422,9 @@ doit **pas** être déplacée dans `REQUIREMENTS.md`. C'est `04-09` qui coche.
 
 ## Self-Check: PASSED
 
-Les quinze fichiers annoncés existent sur le disque et les trois commits `fb01bf7`,
+Les quatorze fichiers annoncés existent sur le disque — plus
+`domaine/ordonnances/migrations/__init__.py`, marqueur de paquet non listé dans
+`key-files` mais bel et bien commité — et les trois commits `fb01bf7`,
 `21bf4f9` et `7eb472b` existent dans l'historique. Deux affirmations vérifiées plutôt
 que supposées :
 
