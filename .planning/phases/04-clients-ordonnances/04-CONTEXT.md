@@ -260,3 +260,73 @@ coûter une ligne.
   nom de fichier téléversé porte couramment le nom du patient.
 - La sauvegarde par client de TENANT-09 ne couvre peut-être pas un magasin de fichiers vivant
   hors de la base.
+
+---
+
+## Les six questions ouvertes de l'UI-SPEC §28 — tranchées, 2026-09-18
+
+### Q1 — les bornes sont **servies**, pas compilées. Retenu.
+
+L'argument de l'UI-SPEC tient et découle de D-4b : les bornes vivent à **un** endroit nommé.
+Une constante TypeScript en serait un second, et deux sources dérivent — c'est le mode de
+défaillance que PERM-06 combat pour les champs, appliqué ici aux nombres. Elles voyagent
+avec l'amorçage que l'application fait déjà, pas par un aller-retour supplémentaire.
+
+### Q2 — CLIENT-02 et CLIENT-08 restent dans la phase 4, **non cochées**
+
+Ni l'une ni l'autre n'est satisfaisable ici : CLIENT-02 veut l'historique d'achats, qui
+suppose les ventes (phase 6) ; CLIENT-08 veut le bon de commande fournisseur (phase 8).
+
+**Ne pas les déplacer dans `REQUIREMENTS.md`.** Le projet a déjà un précédent, tenu par les
+plans 03-05 à 03-10 : une exigence reste rattachée à la phase qui construit sa structure, et
+n'est **cochée** que par la phase où un opticien peut réellement l'accomplir. Déplacer la
+ligne perdrait la trace de qui a posé les fondations.
+
+La phase 4 livre donc la structure des deux et n'en coche aucune.
+
+### Q3 — pas de sélecteur de calendrier. Masque `jj/mm/aaaa` seul.
+
+Conforme au report déjà décidé dans l'UI-SPEC. Un opticien qui recopie une date depuis une
+ordonnance papier tape plus vite qu'il ne clique.
+
+### Q4 — **le discriminant 45 mm devient un AVERTISSEMENT, pas un refus**
+
+C'est le seul point où je renverse l'UI-SPEC.
+
+Elle fait du dépassement monoculaire/binoculaire un **refus**, en marquant les deux seuils
+`[JUGEMENT — sans source]`. Or :
+
+- Un **refus fondé sur un nombre deviné bloque une saisie légitime au comptoir.** Le coût
+  d'un faux refus est un opticien qui ne peut pas enregistrer une ordonnance réelle ; le coût
+  d'un faux avertissement est une phrase à lire.
+- Cela **contredit le principe que l'UI-SPEC applique partout ailleurs** : avertir, pas
+  refuser, dès qu'un seuil n'a pas de source.
+- Le critère 3 de la feuille de route dit « refused at entry » pour « a monocular value
+  entered where a binocular écart pupillaire is expected ». Le mécanisme de détection est
+  conservé et le critère reste servi ; c'est sa **sévérité** qui attend une source.
+
+**Le mécanisme ne change pas, la sévérité seule change** — et elle redevient un refus en une
+ligne le jour où un opticien confirme le seuil. Les deux messages restent ceux de l'UI-SPEC
+§20.5, qui nomment déjà la correction plutôt que la règle.
+
+**À poser à un opticien**, avec les quatre questions de facturation déjà en attente dans
+CLAUDE.md : *à partir de quel écart un nombre saisi comme binoculaire est-il certainement
+monoculaire, et réciproquement ?*
+
+### Q5 — la photo peut passer de `null` à posée sur une version immuable. Retenu.
+
+La photo est une **pièce jointe de preuve**, pas une valeur clinique. L'ordonnance papier est
+souvent scannée après la saisie, au comptoir suivant. Interdire l'ajout obligerait à créer une
+version qui ne change aucune valeur, ce qui polluerait l'historique que CLIENT-06 protège.
+
+**La règle qui tient l'immuabilité : on attache une fois.** Pas de remplacement, pas de
+suppression. Une photo posée sur la mauvaise version se corrige par une nouvelle version,
+comme tout le reste.
+
+### Q6 — la mesure du nom accessible est adoptée
+
+L'infrastructure de test `computeAccessibleName` que cette phase introduit attraperait le
+manquement D-1 déjà consigné (`03.1/deferred-items.md` : le sélecteur de magasin du shell n'a
+aucun nom accessible, `combobox` étant un rôle *name from author*). **La phase 4 ne le corrige
+pas** — hors périmètre — mais elle doit poser la mesure de sorte que le correctif soit
+trivial quand il viendra, et n'introduire aucun nouveau `combobox` sans nom.
