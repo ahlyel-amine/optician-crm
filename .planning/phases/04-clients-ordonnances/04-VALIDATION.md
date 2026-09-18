@@ -82,7 +82,7 @@ plan par plan est une erreur de ce document, pas du livré.
 |---|---|---|---|
 | G1 | Les deux applications métier sont **classées**, donc `tenancy.E001` ne dort pas | `uv run python manage.py check` code 0 **et** `grep -qE '^\s*"clients",' plateforme/tenancy/router.py` **et** `grep -qE '^\s*"ordonnances",' plateforme/tenancy/router.py` | |
 | G2 | **Aucun réglage de session nu** — la fuite T-02-02 ne peut pas revenir | `uv run pytest -q tests/test_recherche_outils.py -k aucun_reglage_de_session_nu` — garde **par AST** sur l'argument d'un `.execute()`, avec son contrôle positif synthétique | |
-| G3 | `unaccent` n'est installée nulle part | `! grep -rn 'CreateExtension("unaccent")' domaine/ plateforme/` **et** `grep -q 'unaccent' domaine/clients/migrations/0001_extensions.py && exit 1 \|\| exit 0` | |
+| G3 | `unaccent` n'est installée nulle part | `! grep -rn 'CreateExtension("unaccent")' domaine/ plateforme/` — **un appel, pas un mot**. *Seconde clause retirée le 2026-09-18 : elle exigeait que le mot `unaccent` n'apparaisse nulle part dans la migration, alors que le plan demande à cette même migration d'expliquer pourquoi `unaccent` n'est pas installée. Les deux ne pouvaient pas tenir. Neuvième occurrence dans ce projet d'un critère qui attrape sa propre prose — cette fois dans le document de validation lui-même.* | |
 | G4 | **`Ordonnance` n'est pas scopée au magasin, et porte quand même le magasin** | `uv run pytest -q tests/test_ordonnances.py -k n_est_pas_scopee_au_magasin`. **Pas un grep** : le garde `vues_sans_portee_magasin` est structurellement aveugle à un modèle non scopé, donc seule une assertion positive tient la décision | |
 | G5 | **Aucune route ne modifie une ordonnance** | `! grep -rnE '\bUpdateModelMixin\b\|\bDestroyModelMixin\b' domaine/ordonnances/` **et** `uv run pytest -q tests/test_ordonnances.py -k aucune_route_ne_modifie` (qui attend **405**, pas 403) | |
 | G6 | Le composant OpenAPI `Client` désigne toujours **l'affaire**, et la fiche s'appelle `FicheClient` | `grep -q '    FicheClient:' web/src/api/schema.yml` **et** `grep -q 'ClientDeLaffaire' web/src/api/requetes.ts` | |
@@ -223,6 +223,35 @@ Les entrées complètes sont dans `04-clients-ordonnances/deferred-items.md`. R�
 
 **Verdict de phase :** en attente
 </content>
+
+
+### Et pas deux suites backend à la fois non plus
+
+**Même famille, découverte à l'exécution de la vague 1 — par l'exécutant du plan `04-01` et,
+séparément, par l'orchestrateur, qui a d'abord cru à une régression.**
+
+pytest-django **détruit les bases de test** à la fin d'une session, y compris
+`test_optique_control`, que le nettoyeur du `conftest` ne touche jamais. Deux sessions
+pytest simultanées partagent ces noms : celle qui finit d'abord fait échouer l'autre, dans
+des fichiers qui n'ont rien demandé. Les messages ne désignent jamais la cause —
+
+```
+FATAL: database "test_optique_control" does not exist
+OperationalError: terminating connection due to administrator command
+```
+
+— et le résultat n'est pas reproductible : une passe a rendu 17 échecs et 11 erreurs, puis
+**31 passed trois fois de suite, sans le moindre changement de code**. L'orchestrateur a vu
+53 erreurs, ouvert un diagnostic, et constaté au bout de plusieurs minutes que la suite
+était verte dès qu'il la relançait seul.
+
+**Règle :** dans une vague parallèle, **une seule** suite backend à la fois. Un plan frère
+qui n'a pas besoin de pytest ne le lance pas ; et l'orchestrateur ne lance pas la suite tant
+qu'un exécutant tourne.
+
+**Le worktree partagé a donc trois ressources partagées, pas une :** l'index git — que la
+section « Parallel execution » de CLAUDE.md couvre —, la sortie de build, et les bases de
+test. Seule la première était écrite quelque part avant cette phase.
 
 ---
 
