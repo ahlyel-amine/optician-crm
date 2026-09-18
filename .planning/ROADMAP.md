@@ -143,7 +143,7 @@ Plans:
 **UI hint**: yes
 
 Plans:
-- [ ] 04-01-PLAN.md (vague 1) — Le socle : application `clients`, extensions `pg_trgm`/`fuzzystrmatch` par migration, normalisation NFKD, seuil `SET LOCAL`, modèle `Client`
+- [x] 04-01-PLAN.md (vague 1) — Le socle : application `clients`, extensions `pg_trgm`/`fuzzystrmatch` par migration, normalisation NFKD, seuil `SET LOCAL`, modèle `Client`
 - [x] 04-02-PLAN.md (vague 1) — Primitives d'interface : `formaterTelephone`, `ChampDate`, `ChampNombre`, blocs shadcn, mesure du nom accessible
 - [ ] 04-03-PLAN.md (vague 2) — L'API fiche client et la recherche tolérante aux translittérations (CLIENT-01, CLIENT-10)
 - [ ] 04-04-PLAN.md (vague 3) — Le domaine ordonnance : bornes en un seul endroit, transposition, contraintes croisées (CLIENT-03/04/05/07)

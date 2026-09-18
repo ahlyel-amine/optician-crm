@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Completed 03.1-04-PLAN.md — phase 03.1 close, porte franchie, une reserve ecrite
-last_updated: "2026-09-18T14:14:30.619Z"
+last_updated: "2026-09-18T14:17:24.902Z"
 last_activity: 2026-09-17
 progress:
   total_phases: 13
   completed_phases: 3
   total_plans: 34
-  completed_plans: 26
-  percent: 76
+  completed_plans: 27
+  percent: 79
 ---
 
 # Project State
@@ -83,6 +83,7 @@ Progress: [██████████] 100% (14/14 plans de la phase 3 écri
 | Phase 03.1 P03 | 13min | 3 tasks | 6 files |
 | Phase 03.1 P04 | ~100min (dont l'attente du proprietaire) | 3 tasks | 4 files |
 | Phase 04 P02 | 22 | 3 tasks | 14 files |
+| Phase 04 P01 | 95min | 3 tasks | 15 files |
 
 ## Quick Tasks Completed
 
@@ -207,6 +208,10 @@ Recent decisions affecting current work:
 - [Phase 03.1-04]: Un verdict humain rendu **d'un seul tenant** se reporte tel quel sur chaque étape, en écrivant qu'aucune n'a reçu de commentaire propre — plutôt qu'en le répartissant en six phrases que personne n'a prononcées
 - [Phase 03.1-04]: Les portes mécaniques se rejouent **après** une passe humaine et pas seulement avant : la passe tourne sur une pile vivante et modifie les données de développement
 - [Phase 03.1-04]: Un intervalle `git log` utilisé comme garde se **nomme** (`e2d46d8~1..HEAD`). `main..HEAD` est devenu vide quand la référence `main` a bougé sur `HEAD`, ce qui rendait la garde G5 verte sans rien tenir
+- [Phase 04]: Le defaut mesure de pg_trgm.word_similarity_threshold est 0.6 (et non 0.3, qui est celui de similarity_threshold) : sans seuil_de_mot, l'operateur <% ne rend meme pas Mohamed
+- [Phase 04]: Un reglage de session passe par SELECT set_config(nom, valeur, true) dans un transaction.atomic(), jamais par un SET nu — fuite T-02-02 reproduite a la main a travers PgBouncer
+- [Phase 04]: unaccent n'est installee nulle part : STABLE donc inindexable (42P17), remplacee par une normalisation NFKD cote Python
+- [Phase 04]: Client n'herite pas de MagasinScopedModel — une personne appartient a l'affaire, pas a un point de vente (D-4a)
 
 ### Pending Todos
 
