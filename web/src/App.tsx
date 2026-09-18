@@ -12,6 +12,7 @@ import { NavSecondaire } from "@/layout/NavSecondaire";
 import { NAV, sousEntreesVisibles, type EntreeNav } from "@/layout/nav";
 import { Connexion } from "@/pages/Connexion";
 import { MotDePasse } from "@/pages/MotDePasse";
+import { ListeClients } from "@/pages/clients/ListeClients";
 import { DetailCompte } from "@/pages/comptes/DetailCompte";
 import { ListeComptes } from "@/pages/comptes/ListeComptes";
 
@@ -144,8 +145,39 @@ function ContenuDuShell() {
  * deja par ailleurs.
  */
 const SOUS_ROUTES: Record<string, (entree: EntreeNav) => React.ReactNode> = {
+  "/clients": () => <Clients />,
   "/parametres": (entree) => <Parametres entree={entree} />,
 };
+
+/**
+ * Les clients (plan 04-07). L'entree de navigation menait a un titre d'attente
+ * jusqu'ici ; elle mene desormais a une liste reelle.
+ *
+ * **La garde porte le SOUS-ARBRE, pas la seule route d'accueil.** Une garde
+ * posee sur l'index laisserait `/clients/42` repondre 404 a qui n'a pas le
+ * droit, au lieu du 403 qui NOMME ce qui manque — et la fiche du plan 04-08
+ * devrait alors reecrire sa propre garde. Ici elle n'aura qu'a ajouter une
+ * `Route` a l'interieur.
+ *
+ * Le droit EST nomme sur la page 403, contrairement a `/parametres` : un droit
+ * unique possede bien cette adresse, donc dire « il vous manque Consulter les
+ * clients » envoie demander la bonne chose.
+ */
+function Clients() {
+  return (
+    <RequireDroit code="client.voir">
+      <Routes>
+        <Route index element={<ListeClients />} />
+        {/*
+          Une adresse de clients qui n'existe pas est un 404, pas un titre
+          d'attente. La fiche (`:id`) arrive au plan 04-08 et prend sa place
+          ici, sous la meme garde.
+        */}
+        <Route path="*" element={<PageIntrouvable />} />
+      </Routes>
+    </RequireDroit>
+  );
+}
 
 /**
  * Les parametres, et leur navigation de second niveau (03-UI-SPEC.md 5.3).

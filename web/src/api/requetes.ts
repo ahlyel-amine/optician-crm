@@ -66,6 +66,22 @@ export type CatalogueOffrable = components["schemas"]["CatalogueOffrable"];
 export type LigneDeDroit = components["schemas"]["LigneDeDroit"];
 export type ResultatOctroi = components["schemas"]["ResultatOctroi"];
 
+// Les ecrans clients (plans 04-07 a 04-09). Des ALIAS, jamais des
+// redeclarations : le composant s'appelle `FicheClient` et non `Client` cote
+// serveur parce que `Client` designait deja l'AFFAIRE — la collision est
+// resolue au plan 04-03, avec sa raison ecrite au-dessus du serialiseur.
+export type FicheClient = components["schemas"]["FicheClient"];
+
+/**
+ * Par quelle couche un resultat de recherche a ete trouve.
+ *
+ * **A dire en mots, jamais en chiffres.** Le `score` qui l'accompagne est la
+ * pour que l'interface ORDONNE et EXPLIQUE ; « 0,333 » ne veut rien dire pour
+ * un opticien, et l'afficher inviterait a comparer deux rangs qu'aucun seuil
+ * ne separe (mesure du plan 04-03).
+ */
+export type RaisonDeCorrespondance = components["schemas"]["RaisonEnum"];
+
 /** Les cinq routes d'authentification, nommees pour que personne ne les retape. */
 export const ROUTE_CSRF = "/api/auth/csrf/" as const;
 export const ROUTE_CONNEXION = "/api/auth/connexion/" as const;

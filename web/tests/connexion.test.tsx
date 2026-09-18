@@ -497,15 +497,16 @@ describe("/connexion", () => {
     });
 
     // Une route protegee visitee sans session : la garde memorise le chemin.
-    // `/clients` plutot que `/parametres/comptes` depuis le plan 03-14, qui a
-    // construit ce dernier : ce test parle du chemin memorise, pas de l'ecran
-    // qui l'occupe, donc il vise une route dont le module attend encore.
-    rendreApplication("/clients");
+    // Ce test parle du chemin MEMORISE, pas de l'ecran qui l'occupe, donc il
+    // vise une route dont le module attend encore et qui rend `destination`.
+    // C'etait `/parametres/comptes` avant le plan 03-14, `/clients` avant le
+    // plan 04-07, et c'est `/stock` jusqu'a la phase 5.
+    rendreApplication("/stock");
     await screen.findByLabelText("Adresse e-mail");
     await saisirEtSoumettre("karim.benali@optiqueanfa.ma", "bon");
 
     await screen.findByTestId("destination");
-    expect(screen.getByTestId("destination").textContent).toBe("/clients");
+    expect(screen.getByTestId("destination").textContent).toBe("/stock");
   });
 });
 

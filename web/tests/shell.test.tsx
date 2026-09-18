@@ -419,8 +419,11 @@ describe("le selecteur de magasin", () => {
     // Une route dont le module n'est pas construit, donc qui rend son titre
     // d'attente et son `destination` : ce test ne parle que de la portee, il
     // n'a pas a dependre d'un ecran qui charge des donnees. Il visait
-    // `/parametres/comptes` jusqu'a ce que le plan 03-14 construise cet ecran.
-    const { requetes } = rendreShell(amorcageDe({ proprietaire: true }), "/clients");
+    // `/parametres/comptes` jusqu'a ce que le plan 03-14 construise cet ecran,
+    // puis `/clients` jusqu'a ce que le plan 04-07 construise celui-la. La
+    // cible se deplace a chaque phase, par construction : c'est le signe que
+    // le produit se remplit, et le seul entretien est de la deplacer.
+    const { requetes } = rendreShell(amorcageDe({ proprietaire: true }), "/stock");
     await screen.findByRole("navigation", { name: "Navigation principale" });
 
     const clePortante = ["/api/caisse/journal/", { magasin: "ANFA" }];

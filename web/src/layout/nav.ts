@@ -123,12 +123,16 @@ export const NAV: readonly EntreeNav[] = [
     disponible: true,
     portee: "multi",
   },
+  // Passee a `disponible: true` au plan 04-07 : la route rend desormais une
+  // liste reelle et non un titre d'attente. UNE DONNEE a change, pas du JSX —
+  // c'est exactement ce que ce tableau existe pour permettre, et
+  // `entreesVisibles` fait le reste.
   {
     code: "client.voir",
     libelle: "Clients",
     route: "/clients",
     icone: Users,
-    disponible: false,
+    disponible: true,
     portee: "multi",
   },
   {
