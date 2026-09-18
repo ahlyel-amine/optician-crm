@@ -21,6 +21,14 @@ services:
     # the pool still carrying it (threat T-02-02). Matching the two means zero session SQL
     # at connect; log_statement=all is how we prove it.
     #
+    # Amended in phase 4: `django.contrib.postgres` is now installed, and its
+    # `PostgresConfig.ready()` wires `register_type_handlers` to `connection_created`. The
+    # log therefore shows **two extra `SELECT … FROM pg_type` lines per alias** (hstore,
+    # citext) that were not there before. They are `lru_cache`d per alias, so they are two
+    # per alias per process rather than per request, and they are *queries* rather than
+    # session `SET`s — they carry nothing onto a pooled server connection. The claim this
+    # line exists to prove is unchanged: **zero session SQL at connect.**
+    #
     # No LC_COLLATE / locale plumbing here: the stock image generates only en_US.utf8, so
     # client databases are created with the ICU provider instead, which carries its own
     # locale data. See TENANT_DB_* in config/settings/base.py.

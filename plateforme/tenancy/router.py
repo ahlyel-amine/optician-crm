@@ -56,6 +56,13 @@ CONTROL_PLANE_APPS = frozenset(
         "tenancy",
         "comptes",
         "projection",
+        # `django.contrib.postgres`, dont Django dérive le label `postgres`. Elle ne
+        # possède aucun modèle — elle est installée pour ses lookups ORM, voir
+        # `config/settings/base.py` — mais le check n'exempte que les `AppConfig.name`
+        # commençant par `"django."`, et son *label* n'en est pas un. Non classée, elle
+        # ferait échouer `manage.py check` avec `tenancy.E001`, exactement comme
+        # `projection` et `drf_spectacular` au-dessus.
+        "postgres",
     }
 )
 
@@ -63,7 +70,18 @@ CONTROL_PLANE_APPS = frozenset(
 #: and the `tenancy.E001` system check makes forgetting impossible rather than merely
 #: unlikely — add the label here in the **same commit** that adds the app to
 #: `INSTALLED_APPS`, or `manage.py check` fails on the next run (Pitfall 12).
-BUSINESS_APPS = frozenset({"magasins", "stock", "caisse"})
+BUSINESS_APPS = frozenset(
+    {
+        "magasins",
+        "stock",
+        "caisse",
+        # La fiche client et, plus tard, ses ordonnances. **Pas** `control_plane.Client`,
+        # qui est l'affaire de l'opticien et reste sur `default` (CLAUDE.md #11) : ce qui
+        # est isolé ici, ce sont les données de santé et de commerce, pas la ligne de
+        # connexion.
+        "clients",
+    }
+)
 
 TENANT_ALIAS_PREFIX = "tenant_"
 

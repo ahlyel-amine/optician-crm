@@ -9,9 +9,12 @@ Three details, each of which the digest is wrong without:
 1. **The row *hashes* are ordered, not the rows.** `pg_restore` does not preserve physical
    row order, so a digest that depended on it would report every restore as a failure —
    and a verification step that always fails stops being run.
-2. **`SET TIME ZONE 'UTC'` first.** `timestamptz` renders per session timezone and every
-   ledger row carries a `created_at`, so without pinning it the digest computed by an
-   operator in Casablanca differs from the one computed by a worker in UTC.
+2. **UTC is pinned first.** `timestamptz` renders per session timezone and every ledger
+   row carries a `created_at`, so without pinning it the digest computed by an operator
+   in Casablanca differs from the one computed by a worker in UTC. The pin is
+   `SELECT set_config('TimeZone', 'UTC', true)` inside a transaction — i.e. `SET LOCAL` —
+   and never a bare `SET`, which was measured riding a pooled server connection into the
+   next client's session (threat T-02-02).
 3. **Sequences are included.** A restored database with reset sequences is not identical
    even when every row matches, and in this product that is not academic: Phase 6's
    facture numbering depends on counters, and a reset sequence re-issues keys that already
@@ -34,7 +37,7 @@ from __future__ import annotations
 
 import hashlib
 
-from django.db import connections
+from django.db import connections, transaction
 from psycopg import sql
 
 #: The key the sequence positions are filed under in the per-table breakdown. Not a real
@@ -64,39 +67,53 @@ def tenant_checksum_detail(alias: str) -> dict[str, str]:
     is not an answer anybody can act on at 3am. This says which table.
     """
     detail: dict[str, str] = {}
-    with connections[alias].cursor() as cur:
-        # Reproducibility, see the module docstring. Restored afterwards rather than left
-        # on the session: leaking session state onto a connection that goes back to a pool
-        # is the transaction-pooling hazard the whole project is careful about
-        # (threat T-02-02).
-        cur.execute("SHOW TimeZone")
-        previous_tz = cur.fetchone()[0]
-        cur.execute("SET TIME ZONE 'UTC'")
-        try:
-            for table in _base_tables(cur):
-                # The table name is composed as an identifier, never interpolated. It
-                # comes from information_schema rather than from input, and it is composed
-                # properly anyway — this is the same rule as the provisioner's.
-                cur.execute(
-                    sql.SQL(
-                        "SELECT md5(coalesce(string_agg(row_md5, '' ORDER BY row_md5), ''))"
-                        " FROM (SELECT md5(t::text) AS row_md5 FROM {} t) s"
-                    ).format(sql.Identifier(table))
-                )
-                detail[table] = cur.fetchone()[0]
+    # One transaction around the whole digest, for two independent reasons.
+    #
+    # 1. **The timezone pin has to be `SET LOCAL`, and `SET LOCAL` needs a transaction.**
+    #    A bare `SET TIME ZONE` — what this function used to issue — was *measured*
+    #    riding a PgBouncer server connection onto a freshly opened client connection
+    #    (threat T-02-02, `04-RESEARCH.md` §2.4). The explicit restore below was a real
+    #    defence but not a sufficient one: under transaction pooling each autocommit
+    #    statement may land on a *different* server connection, so the `SET`, the digest
+    #    queries and the restore were not guaranteed to reach the same backend at all.
+    #    `SELECT set_config(name, value, true)` is `SET LOCAL` and, unlike `SET LOCAL`,
+    #    it takes a bound parameter instead of an interpolated one.
+    # 2. A digest of every table is only meaningful from one snapshot.
+    #
+    # The explicit restore is kept even though the setting is now transaction-local:
+    # inside a test, `atomic()` opens a savepoint rather than a transaction, and a
+    # `SET LOCAL` made in a subtransaction survives its release.
+    with transaction.atomic(using=alias):
+        with connections[alias].cursor() as cur:
+            # Reproducibility, see the module docstring.
+            cur.execute("SHOW TimeZone")
+            previous_tz = cur.fetchone()[0]
+            cur.execute("SELECT set_config('TimeZone', 'UTC', true)")
+            try:
+                for table in _base_tables(cur):
+                    # The table name is composed as an identifier, never interpolated. It
+                    # comes from information_schema rather than from input, and it is
+                    # composed properly anyway — the provisioner's rule.
+                    cur.execute(
+                        sql.SQL(
+                            "SELECT md5(coalesce(string_agg(row_md5, '' ORDER BY row_md5), ''))"
+                            " FROM (SELECT md5(t::text) AS row_md5 FROM {} t) s"
+                        ).format(sql.Identifier(table))
+                    )
+                    detail[table] = cur.fetchone()[0]
 
-            cur.execute(
-                "SELECT schemaname, sequencename, last_value "
-                "FROM pg_sequences ORDER BY 1, 2"
-            )
-            rendered = "|".join(
-                f"{schema}.{name}={value}" for schema, name, value in cur.fetchall()
-            )
-            detail[SEQUENCES_KEY] = hashlib.md5(
-                rendered.encode("utf-8"), usedforsecurity=False
-            ).hexdigest()
-        finally:
-            cur.execute(sql.SQL("SET TIME ZONE {}").format(sql.Literal(previous_tz)))
+                cur.execute(
+                    "SELECT schemaname, sequencename, last_value "
+                    "FROM pg_sequences ORDER BY 1, 2"
+                )
+                rendered = "|".join(
+                    f"{schema}.{name}={value}" for schema, name, value in cur.fetchall()
+                )
+                detail[SEQUENCES_KEY] = hashlib.md5(
+                    rendered.encode("utf-8"), usedforsecurity=False
+                ).hexdigest()
+            finally:
+                cur.execute("SELECT set_config('TimeZone', %s, true)", [previous_tz])
     return detail
 
 

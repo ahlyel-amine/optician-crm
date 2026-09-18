@@ -169,6 +169,42 @@ def _seuil_observe(alias: str) -> str:
             return cur.fetchone()[0]
 
 
+def _liberer_le_pool(*, dbname: str, user: str, password: str) -> None:
+    """Demander à PgBouncer de lâcher ses connexions serveur vers `dbname`.
+
+    Sans cela, le pooler garde la connexion serveur jusqu'à `server_idle_timeout` (60 s)
+    et le `DROP DATABASE` de fin de session de pytest-django échoue avec « is being
+    accessed by other users ». Ce serait un avertissement aujourd'hui et un échec de
+    teardown le jour où quelqu'un en fait une erreur — pour une raison qui n'aurait rien
+    à voir avec le test qui l'a causée.
+
+    `KILL` met aussi la base en pause côté pooler, d'où le `RESUME` qui suit.
+    """
+    import psycopg
+    from django.conf import settings
+
+    with psycopg.connect(
+        host=settings.PGBOUNCER_HOST,
+        port=settings.PGBOUNCER_PORT,
+        user=user,
+        password=password,
+        dbname="pgbouncer",
+        connect_timeout=5,
+        autocommit=True,
+    ) as admin:
+        with admin.cursor() as cur:
+            # La console d'administration ne parle que le protocole simple, et `KILL`
+            # n'accepte pas de paramètre lié. Le nom vient de `settings`, jamais d'une
+            # saisie, et il est encadré de guillemets doubles comme un identifiant.
+            nom = '"' + dbname.replace('"', '""') + '"'
+            cur.execute(f"KILL {nom}")
+            try:
+                cur.execute(f"RESUME {nom}")
+            except psycopg.Error:
+                # Déjà reprise : `KILL` sur une base sans pool ne la met pas en pause.
+                pass
+
+
 @pytest.mark.slow
 def test_client10_le_seuil_de_mot_ne_fuit_pas_vers_une_connexion_fraiche(
     tenant_a, allow_runtime_tenant_aliases
@@ -232,6 +268,11 @@ def test_client10_le_seuil_de_mot_ne_fuit_pas_vers_une_connexion_fraiche(
         apres = _seuil_observe(alias)
     finally:
         evict_alias(alias)
+        _liberer_le_pool(
+            dbname=reglages["NAME"],
+            user=reglages["USER"],
+            password=reglages["PASSWORD"] or "",
+        )
 
     assert dedans == SEUIL_MOT, (
         f"dans le gestionnaire de contexte, le seuil vaut {dedans!r} et non {SEUIL_MOT!r} "

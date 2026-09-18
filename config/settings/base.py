@@ -223,6 +223,21 @@ INSTALLED_APPS = [
     # Owns no models, but `checks.py` exempts only `django.*`, so it is classified in
     # CONTROL_PLANE_APPS like every other third-party app here.
     "drf_spectacular",
+    # Installée pour ses **lookups ORM**, pas pour ses modèles — elle n'en a aucun.
+    # `CreateExtension`, `GinIndex` et `OpClass` s'importent sans elle ; mais
+    # `CharField.register_lookup(TrigramWordSimilar)` se fait dans `PostgresConfig.ready()`,
+    # et `.filter(nom_recherche__trigram_word_similar=…)` est le **seul** formulaire ORM
+    # qui compile vers l'opérateur `%>` et utilise donc l'index GIN `gin_trgm_ops`.
+    # L'annotation `TrigramWordSimilarity`, elle, est importable sans l'application mais
+    # produit `word_similarity(a, b) >= x`, c'est-à-dire un balayage séquentiel.
+    #
+    # Effet de bord consigné plutôt que craint : `ready()` branche
+    # `register_type_handlers` sur `connection_created`, qui émet deux
+    # `SELECT … FROM pg_type` pour `hstore` et `citext`. C'est enveloppé d'un `lru_cache`
+    # **clé par alias**, donc deux requêtes par alias par processus, pas par requête — et
+    # ce sont des requêtes, pas des `SET` de session : elles ne polluent pas une connexion
+    # mutualisée (T-02-02).
+    "django.contrib.postgres",
     "django_celery_beat",
     # Tenancy infrastructure. Owns no models; its ready() registers the tenancy.E001
     # system check and touches no database.
@@ -242,6 +257,9 @@ INSTALLED_APPS = [
     "domaine.magasins",
     "domaine.stock",
     "domaine.caisse",
+    # La fiche client — la personne qui achète chez l'opticien. À ne pas confondre avec
+    # `control_plane.Client`, qui est l'affaire de l'opticien et vit sur `default`.
+    "domaine.clients",
     # Plan 02-03 adds a system check that fails startup if an installed app is
     # classified as neither control-plane nor business, because an unclassified app
     # defaults to the control-plane database — a cross-client leak.

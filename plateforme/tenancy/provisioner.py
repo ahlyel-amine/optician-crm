@@ -153,8 +153,12 @@ class SqlProvisioner(DatabaseProvisioner):
         The collation is the project's one collation decision, and it is taken here, once,
         at creation time, because retrofitting per-column collations across a live fleet
         is expensive (`02-RESEARCH.md` assumption A7). It matters for a French/Moroccan
-        product: Phase 4's `test_client10_search_finds_mohamed_mohammed_and_mhamed`
-        depends on it. The provider is **ICU** rather than an OS locale — the stock
+        product: it is what makes `ORDER BY nom` sort a client list the way a French
+        speaker expects, and what makes `lower()` behave on accented uppercase. It is
+        **not** what makes Phase 4's transliteration-tolerant search work — measured:
+        trigram matching and `metaphone()` do not consult the collation at all, and the
+        search relies on a normalised column plus `pg_trgm`/`fuzzystrmatch`
+        (`04-RESEARCH.md` §5.3). The provider is **ICU** rather than an OS locale — the stock
         `postgres` image generates only `en_US.utf8`, so `LC_COLLATE 'fr_FR.UTF-8'` fails
         with "invalid locale name", while ICU ships its own locale data and needs no
         custom image.
