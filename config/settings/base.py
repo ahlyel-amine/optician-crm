@@ -260,6 +260,10 @@ INSTALLED_APPS = [
     # La fiche client — la personne qui achète chez l'opticien. À ne pas confondre avec
     # `control_plane.Client`, qui est l'affaire de l'opticien et vit sur `default`.
     "domaine.clients",
+    # Les ordonnances. Donnée de santé au sens de la loi 09-08, donc dans la base du
+    # client comme tout le reste du métier — l'isolation porte précisément là-dessus
+    # (CLAUDE.md #11).
+    "domaine.ordonnances",
     # Plan 02-03 adds a system check that fails startup if an installed app is
     # classified as neither control-plane nor business, because an unclassified app
     # defaults to the control-plane database — a cross-client leak.

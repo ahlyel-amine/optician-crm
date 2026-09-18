@@ -370,8 +370,16 @@ def test_client07_un_cylindre_de_zero_est_stocke_null_et_l_axe_avec(db_all, deux
     assert ordonnance.cylindre_od is None, "un cylindre de zéro se range NULL"
     assert ordonnance.axe_od is None, "l'axe d'un cylindre nul part avec lui"
 
+    # **Avec l'axe posé**, et c'est ce qui rend l'assertion utile : un cylindre de zéro
+    # sans axe est déjà refusé par la contrainte croisée, donc la version sans axe
+    # laisserait `ordonnance_cylindre_od_non_nul_ou_absent` entièrement non éprouvée —
+    # verte sans jamais avoir été consultée. Mesuré : c'est bien elle qui refuse ici.
     _refus(
-        [_ordonnance_valide(fiche, magasin, version=2, cylindre_od=Decimal("0.00"))]
+        [
+            _ordonnance_valide(
+                fiche, magasin, version=2, cylindre_od=Decimal("0.00"), axe_od=90
+            )
+        ]
     )
     assert Ordonnance.objects.count() == 1
 

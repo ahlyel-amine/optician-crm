@@ -254,6 +254,13 @@ def _modules_du_domaine_ordonnances() -> dict[str, str]:
 
     `serializers.py` n'existe qu'au plan 04-05 : la garde le prendra sans qu'une ligne
     change ici, ce qui est le seul moyen qu'elle soit encore vraie dans deux plans.
+
+    **`optique.py` est délibérément hors de la liste**, et la distinction vaut d'être
+    écrite : il porte le quart de tour et la période de l'axe, qui décrivent la
+    **géométrie** d'un méridien. Ce ne sont pas des bornes de saisie — elles ne changent
+    pas quand le propriétaire change d'avis sur ce qu'un opticien peut taper — et les
+    faire passer par `BORNES` mélangerait une constante mathématique avec un jugement
+    clinique révisable.
     """
     paquet = RACINE / "domaine" / "ordonnances"
     surveilles = ("models.py", "serializers.py", "vues.py", "services.py")

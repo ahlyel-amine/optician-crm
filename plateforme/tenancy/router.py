@@ -80,6 +80,10 @@ BUSINESS_APPS = frozenset(
         # est isolé ici, ce sont les données de santé et de commerce, pas la ligne de
         # connexion.
         "clients",
+        # Les prescriptions. Elles ne sont **pas** scopées au magasin — c'est la
+        # décision clinique D-4a, argumentée à côté du modèle — mais elles sont bel et
+        # bien scopées au client, comme toute donnée métier.
+        "ordonnances",
     }
 )
 
