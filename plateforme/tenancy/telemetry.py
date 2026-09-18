@@ -30,6 +30,17 @@ SENSITIVE_KEY = re.compile(
     r"ecart_pupillaire|\bep\b|\bpd\b|acuite|"
     r"nom|prenom|raison_sociale|telephone|tel|gsm|mobile|email|mail|adresse|"
     r"cin|date_naissance|naissance|"
+    # CLIENT-09, plan 04-06. Ces six-là ne couvrent pas une valeur clinique : elles
+    # couvrent un **nom de fichier**, et un nom de fichier téléversé porte couramment le
+    # nom du patient — `ordonnance_benali_ahmed.jpg` est la forme normale, pas le cas
+    # tordu. Une trace d'exception traversant un sérialiseur de téléversement emporte
+    # les variables locales de chaque cadre de pile, c'est-à-dire la valeur, et c'est
+    # exactement le chemin par lequel elle atteindrait Sentry.
+    #
+    # Six alternances plutôt qu'un caviardage général : un caviardage qui emporte tout
+    # se fait désactiver, et alors plus rien n'est caviardé. Le contrôle positif du test
+    # paramétré tient cette limite.
+    r"photo|image|fichier|scan|piece_jointe|upload|"
     r"password|passwd|secret|token|authorization|api_key|db_password)",
     re.IGNORECASE,
 )

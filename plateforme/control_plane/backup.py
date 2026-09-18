@@ -94,6 +94,15 @@ def backup_client(client_id: int) -> BackupRun:
 
     The `BackupRun` row is created **first**, in `running`, so a crash mid-dump leaves a
     row that never finished rather than leaving nothing — and nobody notices an absence.
+
+    **What this artifact does NOT cover, written down rather than discovered later.**
+    This produces one `pg_dump` and nothing else, so anything a client owns *outside*
+    its database is outside TENANT-09's promise. As of Phase 4 that is the ordonnance
+    photograph store (`domaine/ordonnances/stockage.py`): restoring this dump alone
+    gives back every row, including the stored path of each photo, and **none of the
+    image files**. Recorded as **D-4-1** in
+    `.planning/phases/04-clients-ordonnances/deferred-items.md`, with the reason the
+    artifact was not extended in Phase 4 and who picks it up.
     """
     client = Client.objects.using("default").get(pk=client_id)
     stamp = _timestamp()
