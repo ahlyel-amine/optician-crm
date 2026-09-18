@@ -116,6 +116,10 @@ def test_perm06_le_contrat_porte_les_routes_montees_et_aucune_route_de_test(tmp_
         "/api/auth/mot-de-passe/",
         "/api/comptes/",
         "/api/comptes/catalogue/",
+        # Phase 4, plan 04-03. La liste **et** le détail : le détail est la route qu'une
+        # `APIView` nue ferait disparaître du contrat sans rien casser d'autre.
+        "/api/clients/",
+        "/api/clients/{id}/",
     }
     manquants = attendus - chemins
     assert not manquants, (

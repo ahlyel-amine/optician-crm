@@ -110,6 +110,37 @@ CHAMPS_PUBLICS: frozenset[str] = frozenset(
         "magasins.Magasin.id",
         "magasins.Magasin.code",
         "magasins.Magasin.nom",
+        # ------------------------------------------------------------------------------
+        # La fiche client (plan 04-03). « Public » veut dire : quiconque détient
+        # `client.voir` voit ces champs. La PORTÉE de la vue décide qui atteint la
+        # ressource ; le registre décide seulement ce qu'elle rend une fois atteinte.
+        #
+        # `notes` est public **et c'est une décision** : l'aide de l'écran l'annonce
+        # (« Visible par toute personne qui peut voir ce client »), donc l'opticien sait
+        # ce qu'il y écrit. `date_naissance` l'est aussi — c'est une donnée personnelle,
+        # mais elle sert la règle des moins de 16 ans et les rappels, à quiconque voit
+        # déjà le nom et le téléphone de la même personne.
+        #
+        # **`derniere_ordonnance` et `resume_ordonnance` n'entrent PAS ici.** Ce sont les
+        # deux premières entrées de `CHAMPS_PROTEGES`, et elles arrivent au plan 04-05
+        # avec l'ordonnance qui les alimente : une clé protégée déclarée sans son sujet
+        # de test rendrait
+        # `test_perm06_champ_protege_absent_de_lapi_de_lexport_et_du_document` rouge
+        # immédiatement.
+        #
+        # Les trois colonnes dérivées — `nom_recherche`, `cle_phonetique`,
+        # `telephone_normalise` — ne sont pas classées non plus, et n'ont pas à l'être :
+        # elles sont `editable=False` et absentes du sérialiseur. Non classé veut dire
+        # refusé, ce qui est le bon défaut pour une donnée dont la seule source de vérité
+        # est `Client.save()`.
+        "clients.Client.id",
+        "clients.Client.nom",
+        "clients.Client.telephone",
+        "clients.Client.date_naissance",
+        "clients.Client.adresse",
+        "clients.Client.notes",
+        "clients.Client.actif",
+        "clients.Client.created_at",
     }
 )
 

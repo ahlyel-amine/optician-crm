@@ -39,6 +39,11 @@ urlpatterns = [
     # prefix, because both are the accounts app — `include()` would take that module's
     # `urlpatterns`, so the second list is named and imported explicitly.
     path("api/comptes/", include(urlpatterns_gestion)),
+    # CLIENT-01 / CLIENT-10. La fiche client et la recherche tolerante aux
+    # translitterations. Le composant OpenAPI de cette ressource s'appelle `FicheClient`
+    # et non `Client` : `Client` designe deja l'**affaire** de l'opticien, servie par
+    # `/api/auth/moi/`. Voir l'entete de `domaine/clients/serializers.py`.
+    path("api/clients/", include("domaine.clients.urls")),
     # PERM-06 applique aux types. Le client TypeScript est genere depuis le document
     # **commite** (`web/src/api/schema.yml`), jamais depuis cette route : commite, un
     # changement de contrat apparait en diff, dans la revue, a cote du code qui l'a cause.

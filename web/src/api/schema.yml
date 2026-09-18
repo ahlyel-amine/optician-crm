@@ -127,6 +127,248 @@ paths:
               schema:
                 $ref: '#/components/schemas/Amorcage'
           description: ''
+  /api/clients/:
+    get:
+      operationId: clients_list
+      description: 'Liste de candidats classés. **Aucun appelant ne doit auto-sélectionner
+        sur un nom.** Aucun seuil ne sépare « Mhamed ↔ Mohammed » (0,333) de « Fatima
+        ↔ Fatiha » (0,571) : le classement est inversé, et un faux positif au comptoir
+        ouvre la fiche du voisin — avec ses ordonnances, c''est une divulgation de
+        donnée de santé, pas une gêne d''interface. `correspondance_exacte` ne se
+        pose que sur un numéro de téléphone complet, jamais sur un nom.'
+      summary: Chercher ou lister les clients
+      parameters:
+      - name: ordering
+        required: false
+        in: query
+        description: Quel champ utiliser pour classer les résultats.
+        schema:
+          type: string
+      - in: query
+        name: search
+        schema:
+          type: string
+        description: 'Le terme brut saisi au comptoir — nom ou téléphone, dans n''importe
+          quelle graphie et n''importe quelle écriture. Il est normalisé **par le
+          serveur** : ne rien retirer, ne rien plier et ne rien filtrer côté client.
+          Sous deux caractères, rien n''est cherché. Au plus 20 candidats sont rendus,
+          chacun portant `score` et `raison`.'
+      tags:
+      - clients
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FicheClient'
+          description: ''
+    post:
+      operationId: clients_create
+      description: |-
+        La ressource client. **Deux absences délibérées, écrites ici pour être trouvées.**
+
+        ## 1. Le mixin de portée magasin est absent, et ce n'est pas un oubli
+
+        Un client appartient à l'**affaire**, pas à un point de vente : il achète à Anfa
+        aujourd'hui et à Maârif dans six mois, et c'est la même personne (décision D-4a). Le
+        scoper produirait deux fiches pour un humain, donc deux historiques de prescription
+        pour un seul œil. **Le raisonnement complet, avec sa conséquence clinique, vit dans
+        la docstring de `clients.Client`** (`domaine/clients/models.py`), qui dit aussi
+        pourquoi la garde de `plateforme/projection/checks.py` est structurellement aveugle
+        ici — elle ne se déclenche que sur un modèle scopé, donc elle ne dira ni qu'il manque
+        une portée, ni qu'il n'en faut pas. La garde **positive** vit au plan 04-04, à côté
+        de `Ordonnance`.
+
+        **Pourquoi ce paragraphe ne nomme pas le mixin.** Le plan 04-03 fait de son absence
+        un critère grepable sur ce fichier ; l'y écrire rendrait le critère rouge sur le
+        fichier même qui le respecte. C'est la même arbitrage qu'au plan 04-01 avec
+        `unaccent`, et la même leçon : un critère qui attrape sa propre prose est un critère
+        mal écrit — il devrait chercher une **ligne d'import** ou une **base de classe**, pas
+        un mot. Noté pour `04-09`.
+
+        Conséquence à ne pas manquer : la portée des lignes de cette ressource est
+        l'**affaire entière**, et c'est `client.voir` qui en garde la porte. Il n'y a rien à
+        filtrer dans `get_queryset()` à ce titre.
+
+        ## 2. Pas de `DestroyModelMixin`, et `delete` absent de `http_method_names`
+
+        Une fiche client se **désactive** (`actif = False`). L'article 211 du CGI impose dix
+        ans de conservation, et la phase 6 posera un `PROTECT` depuis la facture. `put` est
+        absent pour la raison de `VueComptes` : un remplacement complet n'a aucun usage ici
+        et offrirait une seconde porte d'écriture à tenir en cohérence avec la première.
+
+        ## 3. Aucun nouveau paramètre de requête, et c'est écrit pour que l'absence se lise
+
+        `search` figure **déjà** dans `PARAMETRES_RESERVES`
+        (`plateforme/projection/filtres.py`), donc `?search=` n'y ajoute rien et le fichier
+        n'est pas touché par ce plan. Tout autre nom — `?q=`, `?telephone=` — devrait y
+        entrer **dans le même commit**, sans quoi il produirait le refus unique.
+        `test_client01_tout_parametre_hors_liste_blanche_est_refuse` vérifie les trois noms
+        que l'on écrit sans y penser.
+      summary: Créer une fiche client
+      tags:
+      - clients
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FicheClient'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/FicheClient'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/FicheClient'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FicheClient'
+          description: ''
+  /api/clients/{id}/:
+    get:
+      operationId: clients_retrieve
+      description: |-
+        La ressource client. **Deux absences délibérées, écrites ici pour être trouvées.**
+
+        ## 1. Le mixin de portée magasin est absent, et ce n'est pas un oubli
+
+        Un client appartient à l'**affaire**, pas à un point de vente : il achète à Anfa
+        aujourd'hui et à Maârif dans six mois, et c'est la même personne (décision D-4a). Le
+        scoper produirait deux fiches pour un humain, donc deux historiques de prescription
+        pour un seul œil. **Le raisonnement complet, avec sa conséquence clinique, vit dans
+        la docstring de `clients.Client`** (`domaine/clients/models.py`), qui dit aussi
+        pourquoi la garde de `plateforme/projection/checks.py` est structurellement aveugle
+        ici — elle ne se déclenche que sur un modèle scopé, donc elle ne dira ni qu'il manque
+        une portée, ni qu'il n'en faut pas. La garde **positive** vit au plan 04-04, à côté
+        de `Ordonnance`.
+
+        **Pourquoi ce paragraphe ne nomme pas le mixin.** Le plan 04-03 fait de son absence
+        un critère grepable sur ce fichier ; l'y écrire rendrait le critère rouge sur le
+        fichier même qui le respecte. C'est la même arbitrage qu'au plan 04-01 avec
+        `unaccent`, et la même leçon : un critère qui attrape sa propre prose est un critère
+        mal écrit — il devrait chercher une **ligne d'import** ou une **base de classe**, pas
+        un mot. Noté pour `04-09`.
+
+        Conséquence à ne pas manquer : la portée des lignes de cette ressource est
+        l'**affaire entière**, et c'est `client.voir` qui en garde la porte. Il n'y a rien à
+        filtrer dans `get_queryset()` à ce titre.
+
+        ## 2. Pas de `DestroyModelMixin`, et `delete` absent de `http_method_names`
+
+        Une fiche client se **désactive** (`actif = False`). L'article 211 du CGI impose dix
+        ans de conservation, et la phase 6 posera un `PROTECT` depuis la facture. `put` est
+        absent pour la raison de `VueComptes` : un remplacement complet n'a aucun usage ici
+        et offrirait une seconde porte d'écriture à tenir en cohérence avec la première.
+
+        ## 3. Aucun nouveau paramètre de requête, et c'est écrit pour que l'absence se lise
+
+        `search` figure **déjà** dans `PARAMETRES_RESERVES`
+        (`plateforme/projection/filtres.py`), donc `?search=` n'y ajoute rien et le fichier
+        n'est pas touché par ce plan. Tout autre nom — `?q=`, `?telephone=` — devrait y
+        entrer **dans le même commit**, sans quoi il produirait le refus unique.
+        `test_client01_tout_parametre_hors_liste_blanche_est_refuse` vérifie les trois noms
+        que l'on écrit sans y penser.
+      summary: La fiche d'un client
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Un(une) valeur entière unique identifiant ce(cette) client.
+        required: true
+      tags:
+      - clients
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FicheClient'
+          description: ''
+    patch:
+      operationId: clients_partial_update
+      description: |-
+        La ressource client. **Deux absences délibérées, écrites ici pour être trouvées.**
+
+        ## 1. Le mixin de portée magasin est absent, et ce n'est pas un oubli
+
+        Un client appartient à l'**affaire**, pas à un point de vente : il achète à Anfa
+        aujourd'hui et à Maârif dans six mois, et c'est la même personne (décision D-4a). Le
+        scoper produirait deux fiches pour un humain, donc deux historiques de prescription
+        pour un seul œil. **Le raisonnement complet, avec sa conséquence clinique, vit dans
+        la docstring de `clients.Client`** (`domaine/clients/models.py`), qui dit aussi
+        pourquoi la garde de `plateforme/projection/checks.py` est structurellement aveugle
+        ici — elle ne se déclenche que sur un modèle scopé, donc elle ne dira ni qu'il manque
+        une portée, ni qu'il n'en faut pas. La garde **positive** vit au plan 04-04, à côté
+        de `Ordonnance`.
+
+        **Pourquoi ce paragraphe ne nomme pas le mixin.** Le plan 04-03 fait de son absence
+        un critère grepable sur ce fichier ; l'y écrire rendrait le critère rouge sur le
+        fichier même qui le respecte. C'est la même arbitrage qu'au plan 04-01 avec
+        `unaccent`, et la même leçon : un critère qui attrape sa propre prose est un critère
+        mal écrit — il devrait chercher une **ligne d'import** ou une **base de classe**, pas
+        un mot. Noté pour `04-09`.
+
+        Conséquence à ne pas manquer : la portée des lignes de cette ressource est
+        l'**affaire entière**, et c'est `client.voir` qui en garde la porte. Il n'y a rien à
+        filtrer dans `get_queryset()` à ce titre.
+
+        ## 2. Pas de `DestroyModelMixin`, et `delete` absent de `http_method_names`
+
+        Une fiche client se **désactive** (`actif = False`). L'article 211 du CGI impose dix
+        ans de conservation, et la phase 6 posera un `PROTECT` depuis la facture. `put` est
+        absent pour la raison de `VueComptes` : un remplacement complet n'a aucun usage ici
+        et offrirait une seconde porte d'écriture à tenir en cohérence avec la première.
+
+        ## 3. Aucun nouveau paramètre de requête, et c'est écrit pour que l'absence se lise
+
+        `search` figure **déjà** dans `PARAMETRES_RESERVES`
+        (`plateforme/projection/filtres.py`), donc `?search=` n'y ajoute rien et le fichier
+        n'est pas touché par ce plan. Tout autre nom — `?q=`, `?telephone=` — devrait y
+        entrer **dans le même commit**, sans quoi il produirait le refus unique.
+        `test_client01_tout_parametre_hors_liste_blanche_est_refuse` vérifie les trois noms
+        que l'on écrit sans y penser.
+      summary: Corriger une fiche client
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Un(une) valeur entière unique identifiant ce(cette) client.
+        required: true
+      tags:
+      - clients
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedFicheClient'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedFicheClient'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedFicheClient'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FicheClient'
+          description: ''
   /api/comptes/:
     get:
       operationId: comptes_list
@@ -1068,6 +1310,69 @@ components:
       - libelle
       - nature
       - par
+    FicheClient:
+      type: object
+      description: |-
+        La personne qui achète : ce qui se saisit, et ce qui s'affiche.
+
+        **Les trois colonnes dérivées sont absentes de `fields`, et c'est une décision.**
+        `nom_recherche`, `cle_phonetique` et `telephone_normalise` sont `editable=False` et
+        recalculées par `Client.save()` : elles ne sont ni saisies ni servies. Un champ dérivé
+        qu'un POST pourrait écrire serait une **seconde source de vérité**, et la divergence
+        serait muette — fiche correcte à l'écran, introuvable à la recherche (T-04-05).
+
+        `score` et `raison` ne sont pas des colonnes : ce sont les annotations que
+        `chercher_clients` pose sur les résultats d'une recherche. Elles sont `null` hors
+        recherche, et c'est honnête — « cette fiche n'est pas un résultat de recherche » est
+        une information, pas une absence de droit. Le registre de projection ne les connaît
+        donc pas, et `test_perm06_tout_champ_de_modele_expose_est_classe` les ignore : il ne
+        classe que les champs qui sont des colonnes.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        nom:
+          type: string
+          maxLength: 160
+        telephone:
+          type: string
+          maxLength: 30
+        date_naissance:
+          type: string
+          format: date
+          nullable: true
+        adresse:
+          type: string
+        notes:
+          type: string
+        actif:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        score:
+          type: number
+          format: double
+          nullable: true
+          readOnly: true
+          description: 'Le rang du résultat dans la recherche courante, entre 0 et
+            2. Null hors recherche. **À ne jamais afficher tel quel** : « 0,333 »
+            ne dit rien à un opticien — c''est `raison` qui se montre, en mots.'
+        raison:
+          description: 'Par quelle couche ce résultat a été trouvé : exact, telephone,
+            orthographe, phonetique ou equivalence. Null hors recherche.'
+          nullable: true
+          readOnly: true
+          oneOf:
+          - $ref: '#/components/schemas/RaisonEnum'
+          - $ref: '#/components/schemas/NullEnum'
+      required:
+      - created_at
+      - id
+      - nom
+      - raison
+      - score
     LigneDeDroit:
       type: object
       description: |-
@@ -1111,6 +1416,66 @@ components:
       - code
       - id
       - nom
+    NullEnum:
+      enum:
+      - null
+    PatchedFicheClient:
+      type: object
+      description: |-
+        La personne qui achète : ce qui se saisit, et ce qui s'affiche.
+
+        **Les trois colonnes dérivées sont absentes de `fields`, et c'est une décision.**
+        `nom_recherche`, `cle_phonetique` et `telephone_normalise` sont `editable=False` et
+        recalculées par `Client.save()` : elles ne sont ni saisies ni servies. Un champ dérivé
+        qu'un POST pourrait écrire serait une **seconde source de vérité**, et la divergence
+        serait muette — fiche correcte à l'écran, introuvable à la recherche (T-04-05).
+
+        `score` et `raison` ne sont pas des colonnes : ce sont les annotations que
+        `chercher_clients` pose sur les résultats d'une recherche. Elles sont `null` hors
+        recherche, et c'est honnête — « cette fiche n'est pas un résultat de recherche » est
+        une information, pas une absence de droit. Le registre de projection ne les connaît
+        donc pas, et `test_perm06_tout_champ_de_modele_expose_est_classe` les ignore : il ne
+        classe que les champs qui sont des colonnes.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        nom:
+          type: string
+          maxLength: 160
+        telephone:
+          type: string
+          maxLength: 30
+        date_naissance:
+          type: string
+          format: date
+          nullable: true
+        adresse:
+          type: string
+        notes:
+          type: string
+        actif:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        score:
+          type: number
+          format: double
+          nullable: true
+          readOnly: true
+          description: 'Le rang du résultat dans la recherche courante, entre 0 et
+            2. Null hors recherche. **À ne jamais afficher tel quel** : « 0,333 »
+            ne dit rien à un opticien — c''est `raison` qui se montre, en mots.'
+        raison:
+          description: 'Par quelle couche ce résultat a été trouvé : exact, telephone,
+            orthographe, phonetique ou equivalence. Null hors recherche.'
+          nullable: true
+          readOnly: true
+          oneOf:
+          - $ref: '#/components/schemas/RaisonEnum'
+          - $ref: '#/components/schemas/NullEnum'
     PatchedModificationIdentite:
       type: object
       description: |-
@@ -1127,6 +1492,14 @@ components:
         email:
           type: string
           format: email
+    RaisonEnum:
+      enum:
+      - exact
+      - telephone
+      - orthographe
+      - phonetique
+      - equivalence
+      type: string
     ResultatOctroi:
       type: object
       description: |-
