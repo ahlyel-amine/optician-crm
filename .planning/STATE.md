@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Termine 04-04-PLAN.md (domaine ordonnance, bornes servies) — 04-07 en parallele
-last_updated: "2026-09-18T17:37:02.537Z"
+stopped_at: Termine 04-06-PLAN.md (photo de l'ordonnance)
+last_updated: "2026-09-18T20:20:38.430Z"
 last_activity: 2026-09-17
 progress:
   total_phases: 13
   completed_phases: 3
   total_plans: 34
-  completed_plans: 31
-  percent: 91
+  completed_plans: 32
+  percent: 94
 ---
 
 # Project State
@@ -87,6 +87,7 @@ Progress: [██████████] 100% (14/14 plans de la phase 3 écri
 | Phase 04 P03 | 115 | 3 tasks | 16 files |
 | Phase 04 P04 | 40 | 3 tasks | 14 files |
 | Phase 04 P07 | 19min | 3 tasks | 15 files |
+| Phase 04 P06 | 75min | 3 tasks | 21 files |
 
 ## Quick Tasks Completed
 
@@ -222,6 +223,8 @@ Recent decisions affecting current work:
 - [Phase 04]: 04-04 : aucune table de commande speciale — STOCK-08 (phase 5) possede ce cycle de vie ; la phase 4 livre snapshot_pour_fournisseur, CLIENT-08 non cochee
 - [Phase 04]: 04-04 : le +/-20 de PITFALLS.md ecrase le +/-30 de la zone grise 1 — et aucun des deux n'a de source normative, ce qui est ecrit dans bornes.py
 - [Phase 04]: 04-07 : Recherche.tsx a du changer — cmdk surlignait le premier resultat et liait Entree a lui, donc aucun fournisseur ne pouvait empecher l'auto-navigation sur un nom. Entree n'active plus qu'un choix delibere ou la correspondance exacte du serveur
+- [Phase 04]: La photo d'ordonnance vit hors base, sous un prefixe redderive de current_alias() a chaque acces ; aucun REVOKE ne soutient cette frontiere, le controle compensatoire est un test d'isolation a trois moitiés (04-06)
+- [Phase 04]: TENANT-09 ne couvre pas le magasin de fichiers : consigne (D-4-1) plutot qu'etendu, parce que le back-end de production est une sortie de la phase 1 et que l'artefact serait a refaire (04-06)
 
 ### Pending Todos
 
@@ -238,8 +241,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-18T16:01:42.676Z
-Stopped at: Termine 04-04-PLAN.md (domaine ordonnance, bornes servies) — 04-07 en parallele
+Last session: 2026-09-18T20:20:18.266Z
+Stopped at: Termine 04-06-PLAN.md (photo de l'ordonnance)
 Resume file: None
 
 Serveurs de developpement laisses TOURNANTS : Vite sur 5173 (navigation filtree, l'etat livre) et sur 5174 (`VITE_NAV_COMPLET=1`, la densite a huit entrees), Django sur 127.0.0.1:8010 — le proprietaire peut reprendre la traversee, celle du shell (03-13) comme celle de l'ecran des droits (03-14).
