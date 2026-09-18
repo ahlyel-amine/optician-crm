@@ -326,9 +326,16 @@ class Ordonnance(models.Model):
     # ou cette forme est correcte.** `FileField.__init__` fait `self.storage =
     # self.storage()` une fois, a la construction du champ : cela fige *quel back-end*,
     # ce qui est un choix de deploiement, et cela ne peut pas figer *quel locataire*, qui
-    # est un choix par requete. Le prefixe du locataire est donc redderive dans chaque
-    # methode de `StockageOrdonnances`. Ne pas « corriger » ceci vers une instance :
-    # l'appelable est aussi ce qui garde la migration independante du reglage.
+    # est un choix par requete. Le prefixe du locataire est donc rederive dans chaque
+    # methode de `StockageOrdonnances`, et l'appelable est aussi ce qui garde la
+    # migration independante du reglage — elle nomme la fonction, pas l'instance.
+    #
+    # **Ne JAMAIS faire entrer le locataire dans cet appelable.**
+    # `storage=lambda: StockageDuLocataire(current_alias())` est la forme qui vient
+    # naturellement a l'esprit et elle lierait le locataire lie a l'import, c'est-a-dire
+    # aucun en pratique et un seul au pire. La garde n'est pas ce commentaire :
+    # `test_client09_le_champ_ne_fige_aucun_locataire_a_la_construction` verifie que le
+    # prefixe change avec le locataire lie et n'existe pas sans lui.
     #
     # `editable=False` : aucun formulaire et aucun serialiseur n'ecrit ni ne rend cette
     # colonne. Le nom stocke est un detail interne, et un `ModelSerializer` qui le

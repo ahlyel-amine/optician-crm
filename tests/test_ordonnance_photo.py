@@ -469,3 +469,42 @@ def test_client09_un_televersement_est_borne_en_taille_et_en_type(db_all, deux_m
         assert not Ordonnance.objects.get(pk=ordonnance.pk).photo, (
             f"« {etiquette} » a été refusé et pourtant quelque chose est attaché."
         )
+
+
+# ======================================================================================
+# 6 — le champ ne fige aucun locataire à l'import (T-04-39)
+# ======================================================================================
+def test_client09_le_champ_ne_fige_aucun_locataire_a_la_construction(db_all):
+    """La menace que la forme du champ pourrait réintroduire, testée sur la **propriété**.
+
+    `FileField.__init__` fait `self.storage = self.storage()` **une fois**, à la
+    construction du champ, donc à l'import du module. Un appelable qui y résoudrait le
+    locataire — `lambda: StockageDuLocataire(current_alias())` — lierait donc
+    silencieusement celui qui se trouvait lié à cet instant : aucun en pratique, **un
+    seul** au pire, et alors toutes les photos de tous les opticiens dans une seule
+    arborescence.
+
+    **Ce test ne regarde pas la forme du champ, il regarde ce que le champ fait.** Une
+    assertion du type « `storage` n'est pas un appelable » interdirait une forme sans
+    garantir la propriété — et l'appelable qui ne choisit que le *back-end* est
+    parfaitement sûr, tandis qu'une instance dont le préfixe serait calculé dans
+    `__init__` ne le serait pas. Ce qui compte est qu'un préfixe **change** avec le
+    locataire lié et **n'existe pas** sans lui.
+    """
+    from domaine.ordonnances.models import Ordonnance
+    from plateforme.tenancy.context import NoTenantBound, tenant_context
+
+    stockage = Ordonnance._meta.get_field("photo").storage
+
+    with tenant_context("tenant_a"):
+        chez_a = stockage._prefixe()
+    with tenant_context("tenant_b"):
+        chez_b = stockage._prefixe()
+
+    assert chez_a != chez_b, (
+        f"Le stockage du champ rend le même préfixe {chez_a} pour deux locataires "
+        "différents. Un locataire a été figé à la construction du champ, et toutes les "
+        "photos de tous les opticiens partagent une arborescence."
+    )
+    with pytest.raises(NoTenantBound):
+        stockage._prefixe()
