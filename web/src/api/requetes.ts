@@ -71,6 +71,12 @@ export type ResultatOctroi = components["schemas"]["ResultatOctroi"];
 // serveur parce que `Client` designait deja l'AFFAIRE — la collision est
 // resolue au plan 04-03, avec sa raison ecrite au-dessus du serialiseur.
 export type FicheClient = components["schemas"]["FicheClient"];
+/**
+ * Ce qu'un comptoir ENVOIE. **`version` n'y est pas, et c'est la garantie** :
+ * le numero est emis par le serveur, sous verrou, dans la transaction
+ * d'insertion. Le nommer dans un corps ne l'obtient pas.
+ */
+export type OrdonnanceASaisir = components["schemas"]["OrdonnanceASaisir"];
 
 /**
  * Par quelle couche un resultat de recherche a ete trouve.

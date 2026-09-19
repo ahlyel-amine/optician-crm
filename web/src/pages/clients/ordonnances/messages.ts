@@ -122,6 +122,11 @@ export const annonceReprise = (date: string): string =>
 // --------------------------------------------------------------------------
 
 export const TITRE_RELECTURE = "Relecture";
+/** Le separateur du panneau : `Ordonnance médicale · Dr. Bennani · 14/03/2025 · Anfa`. */
+export const SEPARATEUR_RELECTURE = " · ";
+/** `monoculaire — OD 31,5 mm · OG 30,5 mm` : la forme SAISIE, puis ce qui a ete saisi. */
+export const detailEp = (forme: string, valeurs: string): string =>
+  valeurs === "" ? forme : `${forme} — ${valeurs}`;
 export const ETIQUETTE_EP = "EP";
 export const ETIQUETTE_SAISI_POSITIF = "Saisi en cylindre positif :";
 

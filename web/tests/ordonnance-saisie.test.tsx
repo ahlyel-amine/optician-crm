@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router-dom";
+import { toast } from "sonner";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "@/App";
@@ -688,6 +689,11 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
+  // Le magasin de `sonner` est MODULE-GLOBAL : un toast d'un test precedent
+  // reapparait sous le `Toaster` du suivant, et l'assertion « rien ne dit
+  // enregistrée » devient alors verte ou rouge selon l'ordre d'execution.
+  // Mesure, pas supposition : le test passait seul et echouait en suite.
+  toast.dismiss();
 });
 
 /* =========================================================================
@@ -1284,7 +1290,8 @@ describe("l'enregistrement (CLIENT-05, 20.10)", () => {
 
   it("client05_l_echec_est_EN_LIGNE_role_alert_et_le_focus_s_y_deplace", async () => {
     monter({
-      "POST /api/clients/1/ordonnances/": () => sansCorps(500),
+      "POST /api/clients/1/ordonnances/": () =>
+        reponse({ detail: "Service indisponible." }, 500),
     });
     await remplirUneSaisieNormale();
     fireEvent.click(enregistrer());
@@ -1299,12 +1306,15 @@ describe("l'enregistrement (CLIENT-05, 20.10)", () => {
   it("client05_aucun_etat_optimiste_rien_ne_dit_enregistree_avant_le_serveur", async () => {
     // CLAUDE.md #1. Le produit est en ligne uniquement ; un etat enregistre qui
     // pourrait etre un mensonge est exactement ce que la banniere previent.
-    let repondre: (() => void) | null = null;
+    // La reponse est SUSPENDUE : c'est le seul moment ou l'on peut observer ce
+    // que l'ecran affirme avant que le serveur ait parle.
+    let liberer = () => {};
+    const suspendue = new Promise<void>((resoudre) => {
+      liberer = resoudre;
+    });
     monter({
       "POST /api/clients/1/ordonnances/": async () => {
-        await new Promise<void>((resoudre) => {
-          repondre = resoudre;
-        });
+        await suspendue;
         return reponse(versionStockee({ id: 12, version: 2 }), 201);
       },
     });
@@ -1316,9 +1326,12 @@ describe("l'enregistrement (CLIENT-05, 20.10)", () => {
     });
     // Le LIBELLE ne change pas : le bouton ne se redimensionne pas.
     expect(enregistrer().textContent).toContain("Enregistrer l'ordonnance");
-    expect(screen.queryByText(/enregistrée/)).toBeNull();
+    // La formule est ANCREE : `/enregistrée/` seul matchait « Les valeurs sont
+    // enregistrées en cylindre négatif. », la ligne de convention de l'ecran.
+    // Le piege du grep, pour la onzieme fois, et cette fois dans un test.
+    expect(screen.queryByText(/^Ordonnance enregistrée/)).toBeNull();
     expect(cheminCourant()).toBe(ROUTE_SAISIE);
-    repondre?.();
+    liberer();
   });
 });
 
