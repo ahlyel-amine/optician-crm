@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Termine 04-08-PLAN.md (saisie d'une ordonnance) — l'ecran n'est atteignable en cliquant qu'au plan 04-09
-last_updated: "2026-09-19T13:46:20.713Z"
+stopped_at: "Phase 04 close — 9/9 plans, portes vertes, G13 rouge (la palette a change de 81 lignes), passe humaine non jouee : 23 verifications manuelles ouvertes"
+last_updated: "2026-09-19T15:20:38.636Z"
 last_activity: 2026-09-17
 progress:
   total_phases: 13
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 34
-  completed_plans: 33
-  percent: 97
+  completed_plans: 34
+  percent: 100
 ---
 
 # Project State
@@ -25,22 +25,93 @@ See: .planning/PROJECT.md (updated 2026-09-09)
 
 ## Current Position
 
-Phase: 03.1 of 12 (Assignation des droits par magasin — insérée après la phase 3) — **CLOSE**
-Plan: **4 of 4 complete (03.1-01 à 03.1-04).** La phase est fermée par sa porte, et non par épuisement de ses plans : le propriétaire a rouvert dans un navigateur l'écran qu'il avait lui-même fait réécrire et a répondu **« all good »** sur les six étapes, sans signaler un seul défaut. Le sélecteur de magasin remplace entièrement l'ouverture ligne par ligne ; **il ouvre sur `Tous les magasins de ce compte`, ratifié l'écran devant lui, et CLAUDE.md #13 n'est pas amendé** ; cocher un magasin ouvre une confirmation qui chiffre ce qui s'étendra et ce qui ne s'étendra pas. Aucune migration : la forme `(gérant, magasin, permission)` n'a pas bougé. **Une seule réserve écrite** — l'étape 5 est partiellement couverte (voir Blockers). Suites : backend **187 passed / 30 deselected**, web **133 passed**, build 0, schéma `--fail-on-warn` 0 et diff muet, relevés **avant et après** la passe.
+Phase: 04 of 12 (Clients & Ordonnances) — **CLOSE, avec une dette explicite**
+Plan: **9 of 9 complete (04-01 à 04-09).**
+
+Un opticien peut désormais, dans un navigateur : trouver un client par nom ou téléphone
+(insensible aux accents, tolérant aux variantes de translittération arabe, sans
+auto-sélection), le créer sous une garde de doublon, saisir une ordonnance structurée
+OD/OG avec ses bornes servies par le serveur et son panneau de relecture, enregistrer une
+nouvelle version sans jamais écraser la précédente, relire tout l'historique **tel qu'il a
+été saisi et sans revalidation**, imprimer une feuille portant `Cylindre négatif.`, et
+attacher une photo de l'ordonnance papier stockée par locataire et lue derrière
+`ordonnance.voir`.
+
+**La phase est close par épuisement de ses plans, PAS par sa porte humaine.** Le
+propriétaire a répondu **`continue`** au point de contrôle : la passe au navigateur en cinq
+étapes **n'a pas eu lieu**, aucune étape n'a de verdict, et `continue` veut dire
+« poursuivre sans elle », pas « approuvé ». Les cinq portent donc **NON EFFECTUÉE** dans
+`04-VALIDATION.md` §3, et le **solde de vérification manuelle ouvert passe de 18 à 23**.
+Ce sont exactement les revendications qu'aucun test ne ferme : jsdom ne calcule aucune
+largeur, `matchMedia` rend toujours `false`, aucune `@media print` n'est évaluée, et aucun
+lecteur d'écran ne tourne dans la suite — que les tests concèdent eux-mêmes par leur
+suffixe `..._CLAIM_DE_CLASSE`.
+
+**Trois gardes ont rapporté, aucune n'est corrigée** (le protocole l'interdit pendant une
+passe) :
+- **G13 est ROUGE et la trouvaille est vraie** — la phase 3 promettait que la palette
+  accepte un fournisseur « sans changer d'une ligne » ; `web/src/layout/Recherche.tsx` a
+  bougé de **+81/−2** en `5ba8eff`. L'abstraction était **incomplète, pas fausse** : la
+  moitié « d'où viennent les résultats » était externalisée, la moitié « que fait `Entrée` »
+  ne l'était pas, `cmdk` possédant la sélection. **Les deux moitiés le sont maintenant, et
+  les phases 5 et 6 en héritent ensemble.**
+- **G5** passe en suite et échoue avec `-k` : sa garde de vacuité se déclenche parce que
+  `-k` n'importe pas l'URLConf. Commande corrigée : le **fichier**, pas `-k` (25 passed).
+- **G10** est le piège du mot nu, **quatorzième occurrence** : le motif attrape trois lignes
+  de prose de la phase 3 qui expliquent qu'il n'y a pas de `localStorage`. Commande
+  corrigée : `grep -rnE '(localStorage|sessionStorage)\s*\.'` → **0**.
+
+**La trouvaille du plan 04-09 qui vaut d'être retenue :** le téléversement envoyait le champ
+`photo`, le sérialiseur attend `fichier`. **Treize tests étaient verts** — un double de
+`fetch` ne sait pas ce que le serveur exige, et celui-ci n'acceptait qu'une des deux formes
+d'appel, de sorte que l'échec n'était même pas enregistré. Trouvé en téléversant une vraie
+image contre le vrai serveur (400), corrigé en `e174ed7`, re-vérifié (201, puis `GET` rend
+1941 octets d'`image/png`), et un quatorzième test fige le nom du champ.
+
+Exigences : **CLIENT-06 et CLIENT-09 cochées** ; CLIENT-01/03/04/05/07/10 l'étaient déjà.
+**CLIENT-02 (historique d'achats — phase 6) et CLIENT-08 (bon de commande fournisseur —
+phase 8) restent non cochées ET non déplacées** dans `REQUIREMENTS.md`, comme PERM-02/03 en
+phase 3.
+
+Portes relevées **avant et après**, identiques, 2026-09-19 15:13→15:15 UTC : backend
+**276 passed / 33 deselected**, `-m slow` **33 passed**, web **249 passed** (10 fichiers),
+build **0**, `spectacular --fail-on-warn` **0** et `diff -q` muet, `makemigrations --check`
+**0**, `migrate_all --check` **2 ok / 0 behind** (run #20). Zéro fichier `.py` touché par le
+plan 04-09.
+
+Reports confirmés ouverts : **D-4-1** (la photo est hors de `backup_client`), **D-4-2** (la
+rétention à dix ans a le même trou), **D-4-3** (aucun document portable accepté), **D-4-4**
+(le nom de fichier non affiché), **D-4-5** (le serveur refuse encore l'écart pupillaire que
+l'écran ne fait plus qu'avertir — `04-08` n'a appliqué l'amendement Q4 que côté client), et
+**D-1** héritée (le sélecteur de magasin du shell sans nom accessible).
+
+Suivant : **phase 5 — Stock & Catalogue.** Elle hérite d'une palette dont les deux moitiés
+sont externalisées (si elle modifie encore `Recherche.tsx`, l'abstraction est *fausse* et
+non *incomplète*, et il faudra le dire), de **23 vérifications manuelles ouvertes**, des
+trois commandes de garde corrigées, et de l'argument pour adopter le double de `fetch`
+partagé de la tâche `260917-lhq` avant d'écrire sa première requête.
 
 ---
 
-**La phase 3, pour mémoire (14 of 14, complète côté CODE, pas côté vérification)** — (03-01 à 03-14) — la phase 3 est complète côté CODE, pas côté vérification.** L'écran `Comptes et droits` existe : les 21 droits en sept sections venus du catalogue serveur (la SPA ne code aucun libellé), la surcharge par magasin qui n'apparaît qu'à la demande avec son tri-état `aria-checked="mixed"`, aucun preset ni palier nulle part, les deux dialogues destructifs qui énoncent **ce qui survit**, et l'historique de `JournalDroit`. Une entreprise mono-magasin ne rencontre aucun contrôle.
+**Pour mémoire, la phase 03.1 (4 of 4, fermée par sa porte)** — le sélecteur de magasin
+remplace l'ouverture ligne par ligne, il ouvre sur `Tous les magasins de ce compte`
+(ratifié devant le propriétaire), CLAUDE.md #13 n'est pas amendé, et la forme
+`(gérant, magasin, permission)` n'a pas bougé. Réponse **« all good »** sur les six étapes,
+une seule réserve écrite (voir Blockers).
 
-**Le point de contrôle a relevé un blocage, pas un écart de copie : l'écran entier était inatteignable par l'interface.** `Paramètres` menait au titre d'attente et rien dans le produit ne liait vers `/parametres/comptes` — 32 tests frontend étaient verts parce qu'ils montaient tous l'écran à sa propre route. La navigation de second niveau de `03-UI-SPEC.md` 5.3 est construite, l'accueil des paramètres redirige vers sa première entrée visible, et un test part de la racine et **clique**. Trois décisions du propriétaire appliquées : l'intersection de la réponse d'une bascule (qui amende le contrat du plan 03-09), l'abandon de la mise en évidence de 2 secondes, et une seconde affaire mono-magasin en développement.
+**Pour mémoire, la phase 3 (14 of 14)** — l'écran `Comptes et droits` : 21 droits en sept
+sections venus du catalogue serveur, la surcharge par magasin en tri-état
+`aria-checked="mixed"`, aucun preset, les deux dialogues destructifs qui énoncent **ce qui
+survit**, et l'historique de `JournalDroit`. Son point de contrôle avait relevé que l'écran
+entier était **inatteignable par l'interface** alors que 32 tests étaient verts, chacun
+montant l'écran à sa propre route — le précédent direct du défaut `photo`/`fichier`
+ci-dessus.
 
-Suites : backend **184 passed / 30 deselected**, web **119 passed**, build 0, `spectacular --fail-on-warn` 0 avec diff de schéma vide, `migrate_all --check` 2 ok / 0 behind.
-
-Suivant : la **vérification de phase 3**, dont la passe manuelle au navigateur — **18 vérifications restent dues** (7 du point de contrôle 03-12, 1 du quick `260917-04r`, 8 du 03-13, 2 du 03-14). **La phase 03.1 n'en ajoute aucune** : ses six étapes portent sur les surfaces qu'elle vient de réécrire et remplacent les items correspondants du 03-14, qui étaient déjà passés sur un écran n'existant plus sous cette forme. Le chiffre de 24 écrit ici auparavant était périmé ; l'arithmétique est corrigée et datée dans `03.1-VALIDATION.md` §6.
 Status: Executing
-Last activity: 2026-09-17
+Last activity: 2026-09-19
 
-Progress: [██████████] 100% (14/14 plans de la phase 3 écrits ; la vérification de phase reste à faire)
+Progress: [██████████] 100% (9/9 plans de la phase 4 ; la porte humaine de la phase 4 reste due — 23 vérifications manuelles ouvertes)
+
 
 ## Performance Metrics
 
@@ -89,6 +160,7 @@ Progress: [██████████] 100% (14/14 plans de la phase 3 écri
 | Phase 04 P07 | 19min | 3 tasks | 15 files |
 | Phase 04 P06 | 75min | 3 tasks | 21 files |
 | Phase 04 P08 | 75 | 2 tasks | 9 files |
+| Phase 04 P09 | 1h | 3 tasks | 13 files |
 
 ## Quick Tasks Completed
 
@@ -228,6 +300,9 @@ Recent decisions affecting current work:
 - [Phase 04]: TENANT-09 ne couvre pas le magasin de fichiers : consigne (D-4-1) plutot qu'etendu, parce que le back-end de production est une sortie de la phase 1 et que l'artefact serait a refaire (04-06)
 - [Phase 04]: 04-08 : le panneau de relecture, et non un dialogue, est ce qui attrape un axe de 90 saisi pour 9 — il change la FORME, pas seulement la place
 - [Phase 04]: 04-08 : le critere 3 de la feuille de route (« refused at entry » pour un monoculaire la ou un binoculaire est attendu) n'est plus litteralement satisfait — avertissement depuis Q4, reversible en une ligne
+- [Phase 04]: Le champ du televersement de la photo est `fichier`, pas `photo` — treize tests verts ne l'avaient pas vu ; un double de `fetch` ne sait pas ce que le serveur exige
+- [Phase 04]: La passe humaine en cinq etapes n'a PAS ete jouee — le proprietaire a repondu `continue`, ce qui autorise a poursuivre et n'approuve rien ; le solde manuel passe de 18 a 23
+- [Phase 04]: CLIENT-06 et CLIENT-09 cochees ; CLIENT-02 (phase 6) et CLIENT-08 (phase 8) non cochees et NON deplacees dans REQUIREMENTS.md
 
 ### Pending Todos
 
@@ -244,8 +319,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-19T13:46:20.710Z
-Stopped at: Termine 04-08-PLAN.md (saisie d'une ordonnance) — l'ecran n'est atteignable en cliquant qu'au plan 04-09
+Last session: 2026-09-19T15:20:38.634Z
+Stopped at: Phase 04 close — 9/9 plans, portes vertes, G13 rouge (la palette a change de 81 lignes), passe humaine non jouee : 23 verifications manuelles ouvertes
 Resume file: None
 
 Serveurs de developpement laisses TOURNANTS : Vite sur 5173 (navigation filtree, l'etat livre) et sur 5174 (`VITE_NAV_COMPLET=1`, la densite a huit entrees), Django sur 127.0.0.1:8010 — le proprietaire peut reprendre la traversee, celle du shell (03-13) comme celle de l'ecran des droits (03-14).

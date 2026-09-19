@@ -151,7 +151,7 @@ Plans:
 - [x] 04-06-PLAN.md (vague 5) — La photo : stockage par locataire, attache unique, lecture authentifiée, télémétrie (CLIENT-09)
 - [x] 04-07-PLAN.md (vague 3) — Écrans clients : liste, palette, création avec garde de doublon
 - [x] 04-08-PLAN.md (vague 5) — Saisie d'ordonnance : grille OD/OG, avertissements non bloquants, panneau de relecture
-- [ ] 04-09-PLAN.md (vague 6) — Fiche, historique, impression, photo, et la passe humaine en cinq étapes
+- [x] 04-09-PLAN.md (vague 6) — Fiche, historique, impression, photo, et la passe humaine en cinq étapes
 
 ### Phase 5: Stock & Catalogue
 **Goal**: Each magasin's stock is a derived balance over an append-only ledger, searchable the way a counter actually searches, with a client's special order tracked to pickup
