@@ -55,11 +55,11 @@ Calendar-driven work. Starts day one and runs in parallel with build — no amou
 
 - [x] **CLIENT-01**: A user can create a client record with contact details, and find it again by name or phone
 - [ ] **CLIENT-02**: A user can see a client's full purchase history
-- [ ] **CLIENT-03**: A user can record a structured ordonnance with OD and OG values for sphère, cylindre, axe, addition and écart pupillaire
-- [ ] **CLIENT-04**: The ordonnance records the prescripteur and the date de prescription
-- [ ] **CLIENT-05**: The ordonnance records its source — ordonnance médicale or réfraction opticien
+- [x] **CLIENT-03**: A user can record a structured ordonnance with OD and OG values for sphère, cylindre, axe, addition and écart pupillaire
+- [x] **CLIENT-04**: The ordonnance records the prescripteur and the date de prescription
+- [x] **CLIENT-05**: The ordonnance records its source — ordonnance médicale or réfraction opticien
 - [ ] **CLIENT-06**: A new ordonnance for a client is stored as a new version; earlier ordonnances remain readable and are never overwritten
-- [ ] **CLIENT-07**: Ordonnance values are validated on entry (axe within 0–180, cylinder sign convention consistent, monocular and binocular EP distinguished)
+- [x] **CLIENT-07**: Ordonnance values are validated on entry (axe within 0–180, cylinder sign convention consistent, monocular and binocular EP distinguished)
 - [ ] **CLIENT-08**: A commande spéciale carries its ordonnance values through to the fournisseur order
 - [ ] **CLIENT-09**: A user can attach a photo of the paper ordonnance to the structured record, as evidence for an AMO claim
 - [x] **CLIENT-10**: Client and article search is accent-insensitive and tolerant of Arabic transliteration variants, so "Mohamed", "Mohammed" and "Mhamed" find the same person
