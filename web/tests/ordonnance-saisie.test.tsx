@@ -1,9 +1,14 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { MemoryRouter, useLocation } from "react-router-dom";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import App from "@/App";
+import { reinitialiserLeClient } from "@/api/client";
 import { AVERTISSEMENT_SANS_TELEPHONE } from "@/pages/clients/messages";
 import { LigneDeCorrection } from "@/pages/clients/ordonnances/LigneDeCorrection";
 import { canonicaliserAxe, transposer } from "@/pages/clients/ordonnances/optique";
+import { attendUnNomAccessible } from "./nomAccessible";
 import {
   AVERTISSEMENTS,
   ORDONNANCE_VIDE,
@@ -463,5 +468,560 @@ describe("LigneDeCorrection (19.3)", () => {
   it("client03_sans_cylindre_la_parenthese_n_est_pas_rendue", () => {
     render(<LigneDeCorrection oeil="OD" sphere="+2,00" cylindre="" axe="" addition="" />);
     expect(screen.getByTestId("correction-OD").textContent).not.toContain("(");
+  });
+});
+
+/* =========================================================================
+ * 20 — L'ECRAN. Tout ce qui suit monte l'application entiere.
+ *
+ * Les blocs ci-dessus eprouvent des modules PURS ; ceux qui suivent eprouvent
+ * le rendu, et ils heritent des trois pieges de `tests/clients.test.tsx` :
+ * jsdom ne calcule aucun CSS, `mutate()` rend la main avant `fetch`, et
+ * construit n'est pas atteignable.
+ * ======================================================================= */
+
+const ANFA = { id: 1, code: "ANFA", nom: "Anfa" };
+const CALIFORNIE = { id: 2, code: "CALI", nom: "Californie" };
+
+const CATALOGUE = {
+  sections: [
+    {
+      titre: "Clients",
+      droits: [
+        {
+          code: "client.voir",
+          libelle: "Consulter les clients",
+          explication: "Voir les fiches clients et leurs coordonnées.",
+        },
+        {
+          code: "ordonnance.voir",
+          libelle: "Consulter les ordonnances",
+          explication: "Voir les corrections et leur historique.",
+        },
+        {
+          code: "ordonnance.saisir",
+          libelle: "Saisir une ordonnance",
+          explication: "Enregistrer une nouvelle version de la correction.",
+        },
+      ],
+    },
+  ],
+  prerequis: {},
+};
+
+/**
+ * L'amorcage, **avec ses bornes cliniques**.
+ *
+ * C'est la moitie du contrat de 16.2 que seul un test de bout en bout peut
+ * montrer : l'ecran ne porte aucun chiffre, donc il n'affiche rien tant que
+ * l'amorcage ne lui en sert pas.
+ */
+function amorcageDe(
+  permissions: string[],
+  magasins: { id: number; code: string; nom: string }[] = [ANFA],
+) {
+  return {
+    utilisateur: {
+      id: 7,
+      email: "karim@optiqueanfa.ma",
+      nom_complet: "Karim Benali",
+      est_proprietaire: false,
+      doit_changer_mot_de_passe: false,
+    },
+    client: { code: "anfa", raison_sociale: "Optique Anfa" },
+    permissions,
+    magasins,
+    catalogue: CATALOGUE,
+    bornes_ordonnance: BORNES,
+  };
+}
+
+const AU_COMPTOIR = amorcageDe([
+  "client.voir",
+  "ordonnance.voir",
+  "ordonnance.saisir",
+]);
+
+/** Une fiche telle que `/api/clients/{id}/` la sert. */
+function fiche(surcharge: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: 1,
+    nom: "Mohammed Alaoui",
+    telephone: "0612345678",
+    date_naissance: "1984-03-14",
+    adresse: "",
+    notes: "",
+    actif: true,
+    created_at: "2026-02-12T09:14:00Z",
+    score: null,
+    raison: null,
+    ...surcharge,
+  };
+}
+
+/** Une version STOCKEE, dans la forme du serveur : point decimal, axe entier. */
+function versionStockee(surcharge: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: 11,
+    client: 1,
+    magasin: 1,
+    version: 1,
+    supersede: null,
+    type_revision: "",
+    motif_revision: "",
+    source: "ordonnance_medicale",
+    prescripteur: "Dr. Bennani",
+    date_prescription: "2025-03-14",
+    sphere_od: "2.00",
+    sphere_og: "1.75",
+    cylindre_od: "-1.00",
+    cylindre_og: "-0.75",
+    axe_od: 90,
+    axe_og: 175,
+    addition_od: "2.25",
+    addition_og: "2.25",
+    ep_saisi: "monoculaire",
+    ep_binoculaire: null,
+    ep_mono_od: "31.5",
+    ep_mono_og: "30.5",
+    ...surcharge,
+  };
+}
+
+function reponse(corps: unknown, statut = 200): Response {
+  return new Response(JSON.stringify(corps), {
+    status: statut,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+function sansCorps(statut: number): Response {
+  return new Response(null, { status: statut });
+}
+
+type Table = Record<string, (requete: Request) => Response | Promise<Response>>;
+
+let appels: { methode: string; chemin: string; corps: unknown }[] = [];
+
+function poserLesReponses(table: Table): void {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (requete: Request) => {
+      const chemin = new URL(requete.url, "http://localhost").pathname;
+      const texte = ["POST", "PATCH"].includes(requete.method)
+        ? await requete.clone().text()
+        : "";
+      appels.push({
+        methode: requete.method,
+        chemin,
+        corps: texte === "" ? undefined : JSON.parse(texte),
+      });
+      const reponseDeTest = table[`${requete.method} ${chemin}`] ?? table[chemin];
+      if (!reponseDeTest) {
+        throw new Error(`Aucune reponse de test posee pour ${requete.method} ${chemin}`);
+      }
+      return reponseDeTest(requete);
+    }),
+  );
+}
+
+function Mouchard() {
+  const emplacement = useLocation();
+  return <span data-testid="chemin-courant">{emplacement.pathname}</span>;
+}
+
+const ROUTE_SAISIE = "/clients/1/ordonnances/nouvelle";
+
+function monter(
+  table: Table,
+  chemin: string = ROUTE_SAISIE,
+  amorcage: unknown = AU_COMPTOIR,
+) {
+  poserLesReponses({
+    "/api/auth/csrf/": () => sansCorps(204),
+    "/api/auth/moi/": () => reponse(amorcage),
+    "/api/clients/1/": () => reponse(fiche()),
+    "/api/clients/1/ordonnances/": () => reponse([]),
+    ...table,
+  });
+  const requetes = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  return render(
+    <MemoryRouter initialEntries={[chemin]}>
+      <QueryClientProvider client={requetes}>
+        <App />
+        <Mouchard />
+      </QueryClientProvider>
+    </MemoryRouter>,
+  );
+}
+
+const cheminCourant = () => screen.getByTestId("chemin-courant").textContent ?? "";
+
+/** Le formulaire, et JAMAIS `document` : la portee est ce qui rend l'enumeration honnete. */
+async function formulaire(): Promise<HTMLElement> {
+  return await screen.findByTestId("formulaire-ordonnance");
+}
+
+/** Taper, puis QUITTER le champ — les deux moities sont distinctes, et 16.4 en depend. */
+function taper(champ: HTMLElement, valeur: string): void {
+  fireEvent.change(champ, { target: { value: valeur } });
+}
+
+function quitter(champ: HTMLElement): void {
+  fireEvent.blur(champ);
+}
+
+async function champ(nom: string): Promise<HTMLElement> {
+  return await screen.findByLabelText(nom);
+}
+
+beforeEach(() => {
+  appels = [];
+  localStorage.clear();
+  reinitialiserLeClient();
+  document.cookie = "csrftoken=jeton-de-test; path=/";
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+});
+
+/* =========================================================================
+ * 20.1 — la route, et ce qu'un test d'atteignabilite peut honnetement dire
+ * ======================================================================= */
+
+describe("l'acces a la saisie (CLIENT-05, 20.1)", () => {
+  it("client05_la_saisie_est_montee_dans_le_ROUTEUR_de_l_application_sous_le_shell", async () => {
+    // Pas un montage de composant : c'est `App` entier, sa table de routes, sa
+    // garde et son shell. Un ecran qui ne rend que hors de l'application est
+    // un ecran que personne n'ouvrira jamais.
+    monter({});
+
+    expect(
+      await screen.findByRole("heading", { name: "Nouvelle ordonnance", level: 1 }),
+    ).toBeTruthy();
+    // Le shell, donc la navigation : la route vit DANS l'application.
+    expect(
+      screen.getByRole("navigation", { name: "Navigation principale" }),
+    ).toBeTruthy();
+    // Le nom du client, en sous-titre : l'ecran sait de qui il parle.
+    expect(await screen.findByText("Mohammed Alaoui")).toBeTruthy();
+  });
+
+  it("client05_sans_ordonnance_saisir_la_route_rend_la_403_qui_NOMME_le_droit", async () => {
+    monter({}, ROUTE_SAISIE, amorcageDe(["client.voir"]));
+
+    expect(
+      await screen.findByRole("heading", { name: "Vous n'avez pas accès à cette page." }),
+    ).toBeTruthy();
+    expect(
+      await screen.findByText(
+        "Il vous manque le droit « Saisir une ordonnance ». Demandez-le au propriétaire.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText("ordonnance.saisir")).toBeNull();
+  });
+
+  it("client01_la_liste_mene_au_client_et_le_DERNIER_maillon_arrive_au_plan_04_09", async () => {
+    // HONNETETE, et elle est ecrite plutot qu'impliquee. La chaine humaine
+    // complete est « `/` → Clients → la ligne → `Saisir une ordonnance` ». Le
+    // dernier maillon est le bouton de la carte de 19.3, qui vit sur la FICHE,
+    // construite au plan 04-09 — et 18.2 interdit explicitement une colonne
+    // d'actions sur la liste, donc ce plan n'a aucun endroit legitime ou le
+    // poser. Ce test prouve les maillons qui existent aujourd'hui, et le
+    // SUMMARY dit lequel manque.
+    monter({ "/api/clients/": () => reponse([fiche()]) }, "/");
+
+    const barre = await screen.findByRole("navigation", {
+      name: "Navigation principale",
+    });
+    fireEvent.click(within(barre).getByRole("link", { name: "Clients" }));
+    fireEvent.click(await screen.findByText("Mohammed Alaoui"));
+
+    await waitFor(() => {
+      expect(cheminCourant()).toBe("/clients/1");
+    });
+  });
+
+  it("client05_aucun_numero_de_version_n_est_PREDIT_avant_l_enregistrement", async () => {
+    // La meme habitude que le numero de facture emis par le client, que
+    // CLAUDE.md #3 interdit. Le serveur emet la version, sous verrou.
+    monter({ "/api/clients/1/ordonnances/": () => reponse([versionStockee()]) });
+    const form = await formulaire();
+
+    expect(form.textContent).not.toContain("Ce sera la version");
+    expect(form.textContent).not.toContain("version 2");
+  });
+});
+
+/* =========================================================================
+ * 20.2 et 25.3 — la grille EST le tableau du papier
+ * ======================================================================= */
+
+describe("la grille OD/OG (CLIENT-03, 20.2, 25.3)", () => {
+  const ORDRE = [
+    "Sphère de l'œil droit",
+    "Cylindre de l'œil droit",
+    "Axe de l'œil droit",
+    "Addition de l'œil droit",
+    "Sphère de l'œil gauche",
+    "Cylindre de l'œil gauche",
+    "Axe de l'œil gauche",
+    "Addition de l'œil gauche",
+  ];
+
+  it("client03_la_tabulation_parcourt_la_grille_EN_LIGNES_et_non_en_colonnes", async () => {
+    // L'ordre du DOM EST l'ordre de tabulation, faute de `tabindex` positif.
+    // Une grille parcourue en colonnes ferait lire le papier de travers.
+    monter({});
+    const grille = await screen.findByTestId("grille-od-og");
+    const entrees = [...grille.querySelectorAll("input")];
+
+    expect(entrees.map((entree) => nomDuChamp(entree))).toEqual(ORDRE);
+  });
+
+  it("client03_chaque_entree_porte_un_VRAI_label_et_non_un_aria_label", async () => {
+    // 25.3 : un `<label>` agrandit aussi la cible, ce qu'un `aria-label` ne
+    // fait pas. La mesure est donc double — le nom existe, ET il vient d'un
+    // element `label` reel.
+    monter({});
+    const grille = await screen.findByTestId("grille-od-og");
+
+    for (const entree of grille.querySelectorAll("input")) {
+      attendUnNomAccessible(entree);
+      expect(entree.getAttribute("aria-label")).toBeNull();
+      expect(grille.querySelector(`label[for="${entree.id}"]`)).toBeTruthy();
+    }
+  });
+
+  it("client03_la_grille_n_est_PAS_une_table_et_ne_porte_aucun_tabindex_positif", async () => {
+    // Une table de champs fait annoncer des coordonnees au lieu du sens.
+    monter({});
+    const form = await formulaire();
+
+    expect(form.querySelector("table")).toBeNull();
+    for (const noeud of form.querySelectorAll("[tabindex]")) {
+      expect(Number(noeud.getAttribute("tabindex"))).toBeLessThanOrEqual(0);
+    }
+  });
+
+  it("client03_les_entetes_et_le_degre_sont_aria_hidden_pour_ne_pas_etre_lus_deux_fois", async () => {
+    monter({});
+    const grille = await screen.findByTestId("grille-od-og");
+
+    const entete = within(grille).getByText("Sphère");
+    expect(entete.closest("[aria-hidden='true']")).toBeTruthy();
+    const degre = within(grille).getAllByText("°")[0];
+    expect(degre.closest("[aria-hidden='true']")).toBeTruthy();
+    // Le `°` est HORS de l'entree : le label masque dit deja « Axe ».
+    expect(degre.querySelector("input")).toBeNull();
+  });
+});
+
+/** Le nom accessible d'une entree, par son `<label>`. */
+function nomDuChamp(entree: Element): string {
+  const etiquette = entree.ownerDocument.querySelector(`label[for="${entree.id}"]`);
+  return etiquette?.textContent?.trim() ?? "";
+}
+
+/* =========================================================================
+ * 20.3 — la bascule de notation transpose SUR PLACE et l'annonce
+ * ======================================================================= */
+
+describe("la bascule de notation (CLIENT-08, 20.3)", () => {
+  it("client08_basculer_transpose_les_valeurs_DEJA_TAPEES_sur_place_et_l_annonce", async () => {
+    monter({});
+    const sphere = await champ("Sphère de l'œil droit");
+    const cylindre = await champ("Cylindre de l'œil droit");
+    const axe = await champ("Axe de l'œil droit");
+
+    taper(sphere, "+2,00");
+    quitter(sphere);
+    taper(cylindre, `${MOINS}1,00`);
+    quitter(cylindre);
+    taper(axe, "90");
+    quitter(axe);
+
+    fireEvent.click(screen.getByRole("radio", { name: "Cylindre positif" }));
+
+    // SUR PLACE : ce sont les memes champs qui portent la valeur transposee.
+    await waitFor(() => {
+      expect((sphere as HTMLInputElement).value).toBe("+1,00");
+    });
+    expect((cylindre as HTMLInputElement).value).toBe("+1,00");
+    expect((axe as HTMLInputElement).value).toBe(String(BORNES.axe.max));
+
+    // ET L'ANNONCE, poliment.
+    expect(
+      screen.getByText(
+        `Transposé en cylindre positif : OD +1,00 (+1,00 à ${String(BORNES.axe.max)}°).`,
+      ),
+    ).toBeTruthy();
+  });
+
+  it("client08_la_convention_de_stockage_est_ecrite_A_L_ECRAN", async () => {
+    // `04-CONTEXT.md` le demande : une erreur de convention doit se voir a la
+    // premiere saisie, pas a la premiere paire de verres fausse.
+    monter({});
+    const form = await formulaire();
+
+    expect(
+      within(form).getAllByText("Les valeurs sont enregistrées en cylindre négatif.")
+        .length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("client08_le_defaut_est_le_cylindre_NEGATIF_toujours", async () => {
+    monter({});
+    expect(
+      ((await screen.findByRole("radio", { name: "Cylindre négatif" })) as HTMLInputElement)
+        .checked,
+    ).toBe(true);
+  });
+});
+
+/* =========================================================================
+ * 20.5 — l'ecart pupillaire
+ * ======================================================================= */
+
+describe("l'ecart pupillaire (CLIENT-07, 20.5)", () => {
+  it("client07_la_somme_est_un_AFFICHAGE_et_aucun_monoculaire_n_est_CALCULE", async () => {
+    monter({});
+    fireEvent.click(await screen.findByRole("radio", { name: "les deux" }));
+
+    const od = await champ("Écart pupillaire de l'œil droit");
+    const og = await champ("Écart pupillaire de l'œil gauche");
+    const bino = await champ("Écart pupillaire binoculaire");
+    taper(od, "31,5");
+    quitter(od);
+    taper(og, "30,5");
+    quitter(og);
+
+    expect(await screen.findByText("somme : 62,0 mm")).toBeTruthy();
+    // La somme n'est PAS un champ : elle n'a ni label ni valeur soumise.
+    expect(screen.queryByLabelText("somme")).toBeNull();
+    // Et le binoculaire reste ce que l'opticien en a fait : vide.
+    expect((bino as HTMLInputElement).value).toBe("");
+  });
+
+  it("client07_la_regle_de_l_ecart_pupillaire_est_VISIBLE_et_non_cachee_dans_un_commentaire", async () => {
+    monter({});
+    expect(
+      await screen.findByText(
+        "On enregistre ce qui a été saisi ; la somme binoculaire s'affiche comme contrôle " +
+          "quand les deux monoculaires existent ; on ne calcule jamais un monoculaire.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("client07_la_forme_choisie_decide_des_champs_rendus", async () => {
+    monter({});
+    fireEvent.click(await screen.findByRole("radio", { name: "binoculaire" }));
+
+    expect(await screen.findByLabelText("Écart pupillaire binoculaire")).toBeTruthy();
+    expect(screen.queryByLabelText("Écart pupillaire de l'œil droit")).toBeNull();
+  });
+});
+
+/* =========================================================================
+ * 20.8 et 20.9 — source, prescripteur, magasin
+ * ======================================================================= */
+
+describe("la source, le prescripteur et le magasin (CLIENT-04, CLIENT-05, 20.8, 20.9)", () => {
+  it("client05_la_source_n_a_AUCUN_defaut", async () => {
+    // Une source pre-selectionnee est une affirmation clinique que personne
+    // n'a faite.
+    monter({});
+    for (const nom of ["Ordonnance médicale", "Réfraction opticien"]) {
+      expect(((await screen.findByRole("radio", { name: nom })) as HTMLInputElement).checked)
+        .toBe(false);
+    }
+  });
+
+  it("client04_le_prescripteur_n_est_PAS_RENDU_en_refraction_opticien", async () => {
+    monter({});
+    fireEvent.click(await screen.findByRole("radio", { name: "Ordonnance médicale" }));
+    expect(await screen.findByLabelText("Prescripteur")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("radio", { name: "Réfraction opticien" }));
+    await waitFor(() => {
+      expect(screen.queryByLabelText("Prescripteur")).toBeNull();
+    });
+    expect(
+      screen.getByText("La réfraction a été faite au magasin. Aucun prescripteur à indiquer."),
+    ).toBeTruthy();
+  });
+
+  it("client03_un_SEUL_magasin_ne_rend_aucun_controle", async () => {
+    // Le precedent `03` 7.3B : pas de decision, pas de controle.
+    monter({});
+    const form = await formulaire();
+
+    expect(within(form).getByText("Anfa")).toBeTruthy();
+    expect(within(form).queryByRole("radio", { name: "Anfa" })).toBeNull();
+    expect(within(form).queryByRole("combobox")).toBeNull();
+  });
+
+  it("client03_sous_TOUS_LES_MAGASINS_rien_n_est_preselectionne", async () => {
+    // La portee par defaut d'un proprietaire a deux magasins est « Tous ».
+    // 5.4 ne s'applique PAS ici : le contenu est transversal et correct, seule
+    // une valeur enregistree manque — donc un champ, pas une invite pleine page.
+    monter(
+      {},
+      ROUTE_SAISIE,
+      {
+        ...amorcageDe(
+          ["client.voir", "ordonnance.voir", "ordonnance.saisir"],
+          [ANFA, CALIFORNIE],
+        ),
+        utilisateur: {
+          id: 7,
+          email: "karim@optiqueanfa.ma",
+          nom_complet: "Karim Benali",
+          est_proprietaire: true,
+          doit_changer_mot_de_passe: false,
+        },
+      },
+    );
+    const form = await formulaire();
+
+    for (const nom of ["Anfa", "Californie"]) {
+      expect((within(form).getByRole("radio", { name: nom }) as HTMLInputElement).checked)
+        .toBe(false);
+    }
+    expect(
+      within(form).getByText(
+        "Sert à la traçabilité. L'ordonnance reste visible depuis tous les magasins.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("client03_au_dela_de_quatre_magasins_le_combobox_porte_un_NOM_accessible", async () => {
+    // LA LECON D-1, ENUMEREE plutot que verifiee ponctuellement. La portee est
+    // le FORMULAIRE : le selecteur de magasin du shell est le `combobox` sans
+    // nom de `03.1/deferred-items.md`, un defaut herite que cette phase ne
+    // corrige pas et sur lequel elle refuse de faire echouer son propre test.
+    const cinq = [
+      ANFA,
+      CALIFORNIE,
+      { id: 3, code: "MAAR", nom: "Maârif" },
+      { id: 4, code: "GAUT", nom: "Gauthier" },
+      { id: 5, code: "OASI", nom: "Oasis" },
+    ];
+    monter(
+      {},
+      ROUTE_SAISIE,
+      amorcageDe(["client.voir", "ordonnance.voir", "ordonnance.saisir"], cinq),
+    );
+    const form = await formulaire();
+
+    const comboboxes = within(form).getAllByRole("combobox");
+    expect(comboboxes.length).toBeGreaterThan(0);
+    for (const combobox of comboboxes) {
+      attendUnNomAccessible(combobox, "Magasin qui enregistre");
+    }
   });
 });
