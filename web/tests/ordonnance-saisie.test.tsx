@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "@/App";
 import { reinitialiserLeClient } from "@/api/client";
+import { signalerLienRetabli, signalerPanneDeLien } from "@/etats/reseau";
 import { AVERTISSEMENT_SANS_TELEPHONE } from "@/pages/clients/messages";
 import { LigneDeCorrection } from "@/pages/clients/ordonnances/LigneDeCorrection";
 import { canonicaliserAxe, transposer } from "@/pages/clients/ordonnances/optique";
@@ -1023,5 +1024,435 @@ describe("la source, le prescripteur et le magasin (CLIENT-04, CLIENT-05, 20.8, 
     for (const combobox of comboboxes) {
       attendUnNomAccessible(combobox, "Magasin qui enregistre");
     }
+  });
+});
+
+/* =========================================================================
+ * 20.6 — le panneau de relecture, LE jugement central de cet ecran
+ * ======================================================================= */
+
+/** Remplit une saisie ordinaire, entierement. Aucune de ses valeurs n'est bizarre. */
+async function remplirUneSaisieNormale(
+  surcharge: Partial<Record<string, string>> = {},
+): Promise<void> {
+  const valeurs: Record<string, string> = {
+    "Sphère de l'œil droit": "+2,00",
+    "Cylindre de l'œil droit": `${MOINS}1,00`,
+    "Axe de l'œil droit": "90",
+    "Addition de l'œil droit": "+2,25",
+    "Sphère de l'œil gauche": "+1,75",
+    "Cylindre de l'œil gauche": `${MOINS}0,75`,
+    "Axe de l'œil gauche": "175",
+    "Addition de l'œil gauche": "+2,25",
+    "Écart pupillaire binoculaire": "62,0",
+    ...surcharge,
+  };
+
+  for (const [nom, valeur] of Object.entries(valeurs)) {
+    const entree = await champ(nom);
+    taper(entree, valeur);
+    quitter(entree);
+  }
+
+  fireEvent.click(screen.getByRole("radio", { name: "Ordonnance médicale" }));
+  const prescripteur = await champ("Prescripteur");
+  taper(prescripteur, "Dr. Bennani");
+  quitter(prescripteur);
+  const date = await champ("Date de prescription");
+  taper(date, "14/03/2025");
+  quitter(date);
+}
+
+const enregistrer = () =>
+  screen.getByRole("button", { name: "Enregistrer l'ordonnance" });
+
+describe("le panneau de relecture (CLIENT-07, 20.6)", () => {
+  it("client07_le_panneau_relit_dans_la_NOTATION_du_papier_pas_dans_la_forme_de_la_grille", async () => {
+    // LE JUGEMENT CENTRAL DU PLAN. Un dialogue qui restituerait les memes
+    // chiffres dans la meme disposition demanderait au lecteur de comparer une
+    // chose a elle-meme. Ce que ce test mesure est la DIFFERENCE DE FORME : la
+    // grille porte quatre entrees separees, le panneau porte une phrase
+    // continue — et c'est elle qui attrape 90 tape pour 9.
+    monter({});
+    const sphere = await champ("Sphère de l'œil droit");
+    taper(sphere, "+2,00");
+    quitter(sphere);
+    const cylindre = await champ("Cylindre de l'œil droit");
+    taper(cylindre, `${MOINS}1,00`);
+    quitter(cylindre);
+    const axe = await champ("Axe de l'œil droit");
+    taper(axe, "90");
+    quitter(axe);
+
+    const panneau = await screen.findByTestId("panneau-relecture");
+    await waitFor(() => {
+      expect(
+        within(panneau).getByTestId("correction-OD").textContent,
+      ).toContain(`+2,00 (${MOINS}1,00 à 90°)`);
+    });
+    // La grille, elle, n'a pas de phrase : elle a des entrees.
+    const grille = screen.getByTestId("grille-od-og");
+    expect(within(grille).queryByTestId("correction-OD")).toBeNull();
+  });
+
+  it("client07_un_formulaire_VIDE_rend_le_panneau_sans_valeurs_plutot_que_de_disparaitre", async () => {
+    // Un panneau qui apparait a mi-frappe deplace la mise en page sous les
+    // doigts de quelqu'un qui tape en lisant du papier.
+    monter({});
+    const panneau = await screen.findByTestId("panneau-relecture");
+
+    expect(within(panneau).getByText("Relecture")).toBeTruthy();
+    expect(within(panneau).getByTestId("correction-OD")).toBeTruthy();
+  });
+
+  it("client07_le_compteur_est_role_status_et_ZERO_avertissement_ne_rend_AUCUNE_ligne", async () => {
+    monter({});
+    const panneau = await screen.findByTestId("panneau-relecture");
+
+    // Zero ne rend rien — surtout pas « 0 point à vérifier », qui serait du
+    // bruit permanent.
+    expect(within(panneau).queryByText(/point[s]? à vérifier/)).toBeNull();
+
+    const sphere = await champ("Sphère de l'œil droit");
+    taper(sphere, "+12,00");
+    quitter(sphere);
+
+    const compteur = await within(panneau).findByText("1 point à vérifier.");
+    expect(compteur.getAttribute("role")).toBe("status");
+  });
+
+  it("client08_sous_la_notation_positive_le_panneau_montre_CE_QUI_EST_TAPE_et_ce_qui_sera_stocke", async () => {
+    monter({});
+    const sphere = await champ("Sphère de l'œil droit");
+    taper(sphere, "+2,00");
+    quitter(sphere);
+    const cylindre = await champ("Cylindre de l'œil droit");
+    taper(cylindre, `${MOINS}1,00`);
+    quitter(cylindre);
+    const axe = await champ("Axe de l'œil droit");
+    taper(axe, "90");
+    quitter(axe);
+
+    fireEvent.click(screen.getByRole("radio", { name: "Cylindre positif" }));
+
+    const panneau = await screen.findByTestId("panneau-relecture");
+    expect(await within(panneau).findByText("Saisi en cylindre positif :")).toBeTruthy();
+    // Deux blocs : ce qui a ete tape, et ce qui partira — toujours du negatif.
+    expect(within(panneau).getAllByTestId("correction-OD")).toHaveLength(2);
+  });
+});
+
+/* =========================================================================
+ * 16.4 et 25.1 — QUATRE proprietes de l'avertissement, quatre assertions
+ * ======================================================================= */
+
+describe("l'avertissement qui n'est pas un refus (16.4, 25.1, T-04-56)", () => {
+  /** Un ecran portant un champ AVERTI et un champ REFUSE, cote a cote. */
+  async function unAvertissementEtUnRefus() {
+    monter({});
+    const od = await champ("Sphère de l'œil droit");
+    taper(od, "+12,00");
+    quitter(od);
+    const og = await champ("Sphère de l'œil gauche");
+    // Sans signe : un refus, le seul de l'ecran.
+    taper(og, "2,00");
+    quitter(og);
+    return { od, og };
+  }
+
+  it("client07_un_champ_AVERTI_ne_porte_PAS_aria_invalid_la_ou_un_champ_REFUSE_le_porte", async () => {
+    // LA PROPRIETE QUI DEFAIT TOUTE LA CONCEPTION SI ELLE EST PERDUE.
+    // `aria-invalid="true"` affirme que la valeur est FAUSSE ; un avertissement
+    // n'affirme que son etrangete. Le poser rendrait un avertissement
+    // indiscernable d'une erreur precisement pour l'utilisateur qui ne voit pas
+    // la difference de couleur — et le controle positif sur le champ refuse est
+    // ce qui empeche ce test de passer sur un ecran qui ne poserait JAMAIS
+    // l'attribut.
+    const { od, og } = await unAvertissementEtUnRefus();
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/^À vérifier — /).length).toBeGreaterThan(0);
+    });
+    expect(od.getAttribute("aria-invalid")).toBeNull();
+    expect(og.getAttribute("aria-invalid")).toBe("true");
+  });
+
+  it("client07_la_note_est_role_status_et_JAMAIS_role_alert", async () => {
+    // Un avertissement apparait au fil de la saisie ; une interruption
+    // assertive par frappe est hostile.
+    await unAvertissementEtUnRefus();
+    const note = await screen.findByText(/^À vérifier — une sphère de/);
+
+    expect(note.getAttribute("role")).toBe("status");
+    expect(note.getAttribute("role")).not.toBe("alert");
+  });
+
+  it("client07_l_id_de_la_note_est_dans_aria_describedby_du_champ", async () => {
+    // Revenir au champ doit relire la remarque.
+    const { od } = await unAvertissementEtUnRefus();
+    const note = await screen.findByText(/^À vérifier — une sphère de/);
+
+    expect(od.getAttribute("aria-describedby") ?? "").toContain(note.id);
+    expect(note.id).not.toBe("");
+  });
+
+  it("client07_aucune_note_n_apparait_AVANT_le_blur", async () => {
+    // Taper `9` en route vers `90` ne doit rien annoncer. C'est la moitie de
+    // 16.4 qu'on oublie, et celle qui apprend a ignorer les remarques.
+    monter({});
+    const od = await champ("Sphère de l'œil droit");
+    taper(od, "+1");
+    taper(od, "+12,00");
+    await Promise.resolve();
+
+    expect(screen.queryByText(/^À vérifier — /)).toBeNull();
+
+    quitter(od);
+    expect(await screen.findByText(/^À vérifier — une sphère de/)).toBeTruthy();
+  });
+
+  it("client07_la_note_ne_porte_AUCUN_jeton_destructif_dans_sa_liste_de_classes", async () => {
+    // LA LIMITE, DITE PLUTOT QU'IMPLIQUEE : jsdom ne calcule aucun CSS, donc ce
+    // test ne prouve PAS que l'avertissement se lit plus discretement qu'une
+    // erreur. Il prouve l'absence du jeton qui le rendrait rouge. La lecture
+    // est la verification manuelle n° 2 de `04-VALIDATION.md`, EN NIVEAUX DE GRIS.
+    await unAvertissementEtUnRefus();
+    const note = await screen.findByText(/^À vérifier — une sphère de/);
+
+    expect(note.className).not.toContain("destructive");
+  });
+});
+
+/* =========================================================================
+ * 20.10 et 16.5 — l'enregistrement, et l'unique clic que coute un avertissement
+ * ======================================================================= */
+
+describe("l'enregistrement (CLIENT-05, 20.10)", () => {
+  const CREEE = {
+    "POST /api/clients/1/ordonnances/": () =>
+      reponse({ ...versionStockee({ id: 12, version: 2 }) }, 201),
+  };
+
+  it("client05_une_saisie_SANS_avertissement_part_sans_aucune_confirmation", async () => {
+    monter(CREEE);
+    await remplirUneSaisieNormale();
+    fireEvent.click(enregistrer());
+
+    await waitFor(() => {
+      expect(appels.some((appel) => appel.methode === "POST")).toBe(true);
+    });
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+
+  it("client06_ce_qui_part_est_TOUJOURS_du_cylindre_negatif_meme_tape_en_positif", async () => {
+    // La convention de stockage, prouvee sur la charge utile et non sur
+    // l'ecran : une seconde representation rangee serait une seconde source de
+    // verite, et les deux divergeraient.
+    monter(CREEE);
+    await remplirUneSaisieNormale();
+    fireEvent.click(screen.getByRole("radio", { name: "Cylindre positif" }));
+    fireEvent.click(enregistrer());
+
+    await waitFor(() => {
+      expect(appels.some((appel) => appel.methode === "POST")).toBe(true);
+    });
+    const envoye = appels.find((appel) => appel.methode === "POST")
+      ?.corps as Record<string, unknown>;
+    expect(envoye.cylindre_od).toBe("-1.00");
+    expect(envoye.sphere_od).toBe("2.00");
+    expect(envoye.axe_od).toBe(90);
+    // Et rien qui ressemble a une notation rangee : une seule colonne.
+    expect(Object.keys(envoye)).not.toContain("notation");
+  });
+
+  it("client05_le_succes_route_vers_l_historique_et_le_toast_n_offre_AUCUNE_action", async () => {
+    // `03` 7.10 reserve `Annuler` a l'annulation, et il n'y a RIEN a annuler :
+    // la ligne est immuable, une correction est une nouvelle version. Un toast
+    // proposant `Annuler` promettrait une suppression qui ne doit pas exister.
+    monter(CREEE);
+    await remplirUneSaisieNormale();
+    fireEvent.click(enregistrer());
+
+    await waitFor(() => {
+      expect(cheminCourant()).toBe("/clients/1/ordonnances");
+    });
+    const toast = await screen.findByText("Ordonnance enregistrée — version 2.");
+    expect(
+      within(toast.closest("li") ?? toast).queryByRole("button", { name: "Annuler" }),
+    ).toBeNull();
+  });
+
+  it("client05_l_echec_est_EN_LIGNE_role_alert_et_le_focus_s_y_deplace", async () => {
+    monter({
+      "POST /api/clients/1/ordonnances/": () => sansCorps(500),
+    });
+    await remplirUneSaisieNormale();
+    fireEvent.click(enregistrer());
+
+    const alerte = await screen.findByRole("alert");
+    expect(alerte.textContent).not.toBe("");
+    await waitFor(() => {
+      expect(document.activeElement).toBe(alerte);
+    });
+  });
+
+  it("client05_aucun_etat_optimiste_rien_ne_dit_enregistree_avant_le_serveur", async () => {
+    // CLAUDE.md #1. Le produit est en ligne uniquement ; un etat enregistre qui
+    // pourrait etre un mensonge est exactement ce que la banniere previent.
+    let repondre: (() => void) | null = null;
+    monter({
+      "POST /api/clients/1/ordonnances/": async () => {
+        await new Promise<void>((resoudre) => {
+          repondre = resoudre;
+        });
+        return reponse(versionStockee({ id: 12, version: 2 }), 201);
+      },
+    });
+    await remplirUneSaisieNormale();
+    fireEvent.click(enregistrer());
+
+    await waitFor(() => {
+      expect(enregistrer().hasAttribute("disabled")).toBe(true);
+    });
+    // Le LIBELLE ne change pas : le bouton ne se redimensionne pas.
+    expect(enregistrer().textContent).toContain("Enregistrer l'ordonnance");
+    expect(screen.queryByText(/enregistrée/)).toBeNull();
+    expect(cheminCourant()).toBe(ROUTE_SAISIE);
+    repondre?.();
+  });
+});
+
+describe("la confirmation quand des avertissements subsistent (16.5)", () => {
+  it("client07_soumettre_AVEC_des_avertissements_ouvre_une_confirmation_qui_enonce_CE_QUI_SURVIT", async () => {
+    // Un avertissement qu'on franchit sans aucun frottement n'est pas un
+    // controle ; une confirmation qui n'apparait que lorsque quelque chose est
+    // reellement bizarre est rare par construction.
+    monter({
+      "POST /api/clients/1/ordonnances/": () =>
+        reponse(versionStockee({ id: 12, version: 2 }), 201),
+    });
+    await remplirUneSaisieNormale({ "Sphère de l'œil droit": "+12,00" });
+    fireEvent.click(enregistrer());
+
+    const dialogue = await screen.findByRole("alertdialog");
+    expect(within(dialogue).getByText(/Enregistrer malgré/)).toBeTruthy();
+    expect(
+      within(dialogue).getByText(
+        "Vous pourrez corriger par une nouvelle version : celle-ci restera lisible telle " +
+          "qu'elle a été saisie.",
+      ),
+    ).toBeTruthy();
+    // NON DESTRUCTIVE : aucune saisie de confirmation, aucun jeton destructif,
+    // et le secondaire est `Retour` — jamais `Annuler`, qui veut dire defaire.
+    expect(within(dialogue).getByRole("button", { name: "Retour" })).toBeTruthy();
+    expect(within(dialogue).queryByRole("button", { name: "Annuler" })).toBeNull();
+    expect(within(dialogue).queryByRole("textbox")).toBeNull();
+    expect(dialogue.className).not.toContain("destructive");
+    // Rien n'est parti tant que la confirmation n'a pas ete franchie.
+    await Promise.resolve();
+    expect(appels.some((appel) => appel.methode === "POST")).toBe(false);
+  });
+
+  it("client07_aucune_case_j_ai_verifie_et_aucun_champ_n_enregistre_l_avertissement", async () => {
+    // Du theatre de consentement et un champ que personne ne lit.
+    // L'historique des versions EST l'enregistrement.
+    monter({
+      "POST /api/clients/1/ordonnances/": () =>
+        reponse(versionStockee({ id: 12, version: 2 }), 201),
+    });
+    await remplirUneSaisieNormale({ "Sphère de l'œil droit": "+12,00" });
+    fireEvent.click(enregistrer());
+
+    const dialogue = await screen.findByRole("alertdialog");
+    expect(within(dialogue).queryByRole("checkbox")).toBeNull();
+
+    fireEvent.click(
+      within(dialogue).getByRole("button", { name: "Enregistrer l'ordonnance" }),
+    );
+    await waitFor(() => {
+      expect(appels.some((appel) => appel.methode === "POST")).toBe(true);
+    });
+    const envoye = appels.find((appel) => appel.methode === "POST")
+      ?.corps as Record<string, unknown>;
+    for (const cle of Object.keys(envoye)) {
+      expect(cle).not.toContain("averti");
+    }
+  });
+});
+
+/* =========================================================================
+ * 20.7 — reprendre la precedente, VISIBLEMENT
+ * ======================================================================= */
+
+describe("reprendre la precedente (CLIENT-06, 20.7)", () => {
+  it("client06_aucun_PRE_REMPLISSAGE_automatique_meme_avec_une_version_precedente", async () => {
+    // Une prescription qui apparait dans les champs sans avoir ete tapee est
+    // une prescription que personne n'a lue.
+    monter({ "/api/clients/1/ordonnances/": () => reponse([versionStockee()]) });
+    const sphere = await champ("Sphère de l'œil droit");
+
+    expect((sphere as HTMLInputElement).value).toBe("");
+  });
+
+  it("client06_le_bouton_remplit_VISIBLEMENT_annonce_et_rend_le_focus_a_la_premiere_sphere", async () => {
+    monter({ "/api/clients/1/ordonnances/": () => reponse([versionStockee()]) });
+    fireEvent.click(await screen.findByRole("radio", { name: "Renouvellement" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Reprendre la précédente" }),
+    );
+
+    const sphere = await champ("Sphère de l'œil droit");
+    await waitFor(() => {
+      expect((sphere as HTMLInputElement).value).toBe("+2,00");
+    });
+    expect(
+      screen.getByText("Valeurs du 14/03/2025 reprises. Vérifiez-les sur l'ordonnance."),
+    ).toBeTruthy();
+    expect(document.activeElement).toBe(sphere);
+  });
+});
+
+/* =========================================================================
+ * 20.10 — quitter, et le lien coupe
+ * ======================================================================= */
+
+describe("quitter et le lien coupe (20.10)", () => {
+  it("client05_fermer_avec_une_saisie_demande_confirmation_et_nomme_ce_qui_est_perdu", async () => {
+    monter({});
+    const sphere = await champ("Sphère de l'œil droit");
+    taper(sphere, "+2,00");
+    quitter(sphere);
+
+    fireEvent.click(screen.getByRole("button", { name: "Fermer" }));
+    const dialogue = await screen.findByRole("alertdialog");
+
+    expect(within(dialogue).getByText("Quitter sans enregistrer ?")).toBeTruthy();
+    expect(
+      within(dialogue).getByText(
+        "Les valeurs saisies seront perdues. L'ordonnance n'a pas été enregistrée.",
+      ),
+    ).toBeTruthy();
+    // `Retour` revient, `Quitter` quitte. `Annuler` ne veut pas dire cela ici.
+    expect(within(dialogue).getByRole("button", { name: "Retour" })).toBeTruthy();
+    expect(within(dialogue).getByRole("button", { name: "Quitter" })).toBeTruthy();
+    expect(within(dialogue).queryByRole("button", { name: "Annuler" })).toBeNull();
+  });
+
+  it("client05_le_lien_coupe_DESACTIVE_l_enregistrement_et_le_dit", async () => {
+    monter({});
+    await screen.findByTestId("formulaire-ordonnance");
+
+    signalerPanneDeLien();
+    await waitFor(() => {
+      expect(enregistrer().hasAttribute("disabled")).toBe(true);
+    });
+    expect(
+      screen.getByText("Enregistrement impossible tant que la connexion est coupée."),
+    ).toBeTruthy();
+
+    signalerLienRetabli();
+    await waitFor(() => {
+      expect(enregistrer().hasAttribute("disabled")).toBe(false);
+    });
   });
 });
