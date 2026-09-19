@@ -457,3 +457,212 @@ describe("une version stockee, rendue telle qu'elle a ete saisie (CLIENT-06)", (
     expect(screen.queryByText("Achats")).toBeNull();
   });
 });
+
+/* =========================================================================
+ * 22 — LA PHOTO. Elle s'attache UNE FOIS, et le controle le dit.
+ * ======================================================================= */
+
+/** Un fichier dont on impose la taille : `File` de jsdom ne la fabrique pas. */
+function fichierDe(nom: string, type: string, octets: number): File {
+  const fichier = new File(["x"], nom, { type });
+  Object.defineProperty(fichier, "size", { value: octets });
+  return fichier;
+}
+
+const UN_MO = 1024 * 1024;
+
+/** Le nom qui porte celui du patient. Il ne doit JAMAIS atteindre le DOM d'erreur. */
+const NOM_QUI_PARLE = "ordonnance_benali_ahmed.jpg";
+
+async function choisirLaPhoto(fichier: File): Promise<HTMLElement> {
+  const entree = await screen.findByLabelText("Photo de l'ordonnance");
+  fireEvent.change(entree, { target: { files: [fichier] } });
+  return entree;
+}
+
+describe("la photo de l'ordonnance (CLIENT-09)", () => {
+  it("client09_l_attache_est_une_VRAIE_entree_fichier_avec_un_label_visible", async () => {
+    // Le glisser-deposer est une amelioration ; LE SELECTEUR DE FICHIER EST LE
+    // CONTRAT, et il est atteignable au clavier parce que c'est une vraie
+    // entree. Aucun `capture` : photographier au comptoir est le travail de
+    // l'application Expo de la phase 11.
+    monter({ "/api/clients/1/ordonnances/": () => reponse([]) }, "/clients/1/ordonnances/nouvelle");
+
+    const entree = (await screen.findByLabelText("Photo de l'ordonnance")) as HTMLInputElement;
+    expect(entree.tagName).toBe("INPUT");
+    expect(entree.type).toBe("file");
+    expect(entree.getAttribute("capture")).toBeNull();
+
+    const acceptes = entree.getAttribute("accept") ?? "";
+    expect(acceptes).toContain("image/jpeg");
+    expect(acceptes).toContain("image/heic");
+    // Aucun document portable en phase 4 : il demanderait une visionneuse, et
+    // le chemin documentaire est la phase 9 (consigne en D-4-3).
+    expect(acceptes).not.toContain("pdf");
+  });
+
+  it("client09_une_image_trop_lourde_est_refusee_en_MEGAOCTETS_et_le_message_n_echoue_PAS_le_nom", async () => {
+    // **LA MOITIE CLIENTE DE T-04-66.** Un nom de fichier televerse porte
+    // couramment le nom du patient, et une chaine d'erreur est la seule chaine
+    // du produit qui atteint Sentry de facon fiable. Le serveur a sa moitie
+    // (plan 04-06, les six cles de `SENSITIVE_KEY`) ; celle-ci est la notre, et
+    // ce test la pose LITTERALEMENT en cherchant le nom du patient dans le DOM.
+    monter({ "/api/clients/1/ordonnances/": () => reponse([]) }, "/clients/1/ordonnances/nouvelle");
+
+    await choisirLaPhoto(fichierDe(NOM_QUI_PARLE, "image/jpeg", 14 * UN_MO));
+
+    // En MEGAOCTETS, jamais en octets.
+    expect(await screen.findByText("Cette image fait 14 Mo. La limite est de 10 Mo.")).toBeTruthy();
+    expect(screen.queryByText(/benali/i)).toBeNull();
+    expect(document.body.textContent).not.toContain("benali");
+    // Et rien n'est parti au serveur : le controle est AVANT le televersement.
+    expect(appels.some((appel) => appel.chemin.includes("/photo/"))).toBe(false);
+  });
+
+  it("client09_un_mauvais_type_est_refuse_SANS_type_MIME_a_l_ecran", async () => {
+    monter({ "/api/clients/1/ordonnances/": () => reponse([]) }, "/clients/1/ordonnances/nouvelle");
+
+    await choisirLaPhoto(fichierDe("scan.txt", "text/plain", 2 * UN_MO));
+
+    expect(
+      await screen.findByText(
+        "Ce fichier n'est pas une image. Formats acceptés : JPG, PNG, WEBP, HEIC.",
+      ),
+    ).toBeTruthy();
+    // Un type MIME a l'ecran ne dit rien a un opticien au comptoir.
+    expect(document.body.textContent).not.toContain("text/plain");
+  });
+
+  it("client09_une_photo_posee_ne_se_remplace_PAS_et_le_controle_le_dit", async () => {
+    // La ligne est immuable (CLIENT-06). Une version enregistree SANS photo
+    // peut en recevoir une plus tard — le papier arrive souvent le lendemain —
+    // et c'est la seule mutation permise. Jamais de remplacement, jamais de
+    // suppression.
+    const avecPhoto = monter(
+      {
+        "/api/clients/1/ordonnances/": () =>
+          reponse([
+            versionStockee({
+              a_une_photo: true,
+              photo_type: "image/jpeg",
+              photo_octets: 2 * UN_MO,
+              photo_attachee_le: "2026-02-12T10:02:00Z",
+              photo_par: "karim@optiqueanfa.ma",
+            }),
+          ]),
+      },
+      "/clients/1/ordonnances",
+    );
+
+    const carte = await screen.findByTestId("version-3");
+    expect(
+      within(carte).getByText(
+        "Une photo ne se remplace pas. Pour corriger, enregistrez une nouvelle version.",
+      ),
+    ).toBeTruthy();
+    expect(within(carte).queryByLabelText("Photo de l'ordonnance")).toBeNull();
+    avecPhoto.unmount();
+
+    // CONTROLE POSITIF : sans photo, le controle EST rendu. Sans cette moitie,
+    // un ecran qui n'afficherait jamais l'attache passerait la premiere.
+    monter(
+      { "/api/clients/1/ordonnances/": () => reponse([versionStockee()]) },
+      "/clients/1/ordonnances",
+    );
+    const sansPhoto = await screen.findByTestId("version-3");
+    expect(within(sansPhoto).getByLabelText("Photo de l'ordonnance")).toBeTruthy();
+    expect(within(sansPhoto).queryByText(/ne se remplace pas/)).toBeNull();
+  });
+
+  it("client09_les_octets_viennent_d_une_route_API_et_l_echec_rend_le_message_GLOBAL", async () => {
+    // T-04-65 : jamais un chemin de media, jamais une adresse pre-signee. La
+    // vue du plan 04-06 a deja resolu `ordonnance.voir`, et `storage.url()`
+    // LEVE par conception. Un echec rend le message global de
+    // `src/etats/messages.ts`, REUTILISE VERBATIM — pas une icone d'image
+    // cassee, qui inviterait a chercher l'adresse directe.
+    monter(
+      {
+        "/api/clients/1/ordonnances/": () =>
+          reponse([
+            versionStockee({
+              a_une_photo: true,
+              photo_attachee_le: "2026-02-12T10:02:00Z",
+            }),
+          ]),
+      },
+      "/clients/1/ordonnances",
+    );
+
+    const carte = await screen.findByTestId("version-3");
+    const vignette = within(carte).getByTestId("vignette-photo") as HTMLImageElement;
+    expect(vignette.getAttribute("src")).toBe("/api/ordonnances/31/photo/");
+    expect(vignette.getAttribute("src")).not.toContain("media");
+    // L'image ne porte aucune information exploitable par un lecteur d'ecran.
+    expect(vignette.getAttribute("alt")).toBe("");
+
+    fireEvent.error(vignette);
+    expect(
+      await within(carte).findByText(
+        "Impossible de charger la photo. Vérifiez votre connexion.",
+      ),
+    ).toBeTruthy();
+  });
+});
+
+/* =========================================================================
+ * 21.5 — LA FEUILLE IMPRIMEE : un bloc documentaire, aucune geometrie
+ * ======================================================================= */
+
+describe("la feuille imprimee (CLIENT-06)", () => {
+  it("client06_la_feuille_porte_la_convention_et_AUCUNE_photo", async () => {
+    // **CE QUE CE TEST NE PROUVE PAS, et c'est ecrit plutot que sous-entendu :**
+    // jsdom n'applique aucune feuille `@media print`. Il prouve que le bloc
+    // existe, qu'il porte la convention et qu'il ne contient aucune image ; il
+    // ne prouve pas qu'une feuille sortie d'une imprimante est LISIBLE. C'est
+    // la verification manuelle n° 4.
+    const imprimer = vi.fn();
+    vi.stubGlobal("print", imprimer);
+
+    monter(
+      {
+        "/api/clients/1/ordonnances/": () =>
+          reponse([versionStockee({ a_une_photo: true })]),
+      },
+      "/clients/1/ordonnances",
+    );
+
+    const carte = await screen.findByTestId("version-3");
+    const feuille = within(carte).getByTestId("feuille-ordonnance");
+
+    // L'en-tete : le client, l'affaire, le magasin, la version et sa date.
+    expect(feuille.textContent).toContain("Mohammed Alaoui");
+    expect(feuille.textContent).toContain("Optique Anfa");
+    expect(feuille.textContent).toContain("Anfa");
+    expect(feuille.textContent).toContain("Version 3");
+    // La correction, par LE MEME composant qu'a l'ecran.
+    expect(within(feuille).getByTestId("correction-OD").textContent).toContain("+2,00");
+    // Le pied : une correction imprimee sans convention enoncee est la mauvaise
+    // paire de verres en attente d'etre commandee.
+    expect(feuille.textContent).toContain("Cylindre négatif.");
+    // AUCUNE PHOTO sur le ticket du comptoir, meme quand la version en porte une.
+    expect(feuille.querySelectorAll("img").length).toBe(0);
+
+    fireEvent.click(within(carte).getByRole("button", { name: "Imprimer" }));
+    expect(imprimer).toHaveBeenCalled();
+  });
+
+  it("client06_print_css_rend_la_feuille_visible_et_n_ajoute_AUCUNE_geometrie_de_page", async () => {
+    // La geometrie de page a ete livree en phase 3, et c'etait tout l'interet
+    // de la livrer alors. La phase 4 n'ajoute qu'un bloc documentaire.
+    const { readFileSync } = await import("node:fs");
+    const feuille = readFileSync(
+      new URL("../src/print.css", import.meta.url),
+      "utf8",
+    );
+
+    expect(feuille).toContain("feuille-ordonnance");
+    // Une seule declaration `@page` dans tout le fichier, celle de la phase 3.
+    expect(feuille.match(/@page/g)?.length).toBe(1);
+    expect(feuille).not.toContain("size: A5");
+  });
+});
