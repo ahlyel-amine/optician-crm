@@ -6,6 +6,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "@/App";
 import { reinitialiserLeClient } from "@/api/client";
+// La feuille d'impression est LUE SUR LE DISQUE, pas decrite : jsdom
+// n'applique aucune feuille `@media print`, donc la seule chose honnete a
+// verifier ici est le TEXTE de la regle. **Pas `?raw`** : vitest neutralise les
+// imports CSS et rendait une chaine VIDE, donc un test qui passait en ne
+// regardant rien.
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 /* ---------------------------------------------------------------------------
  * Le dossier client en LECTURE : la fiche, l'historique des versions, la
@@ -96,7 +103,7 @@ function amorcageDe(permissions: string[], bornes: unknown = BORNES) {
     utilisateur: {
       id: 7,
       email: "karim@optiqueanfa.ma",
-      nom_complet: "Karim Benali",
+      nom_complet: "Karim Tazi",
       est_proprietaire: false,
       doit_changer_mot_de_passe: false,
     },
@@ -191,7 +198,7 @@ function versionStockee(surcharge: Record<string, unknown> = {}): Record<string,
     ep_mono_od: "31.5",
     ep_mono_og: "30.5",
     created_at: "2026-02-12T09:14:00Z",
-    created_par: "Karim Benali",
+    created_par: "Karim Tazi",
     a_une_photo: false,
     photo_type: "",
     photo_octets: null,
@@ -416,8 +423,14 @@ describe("une version stockee, rendue telle qu'elle a ete saisie (CLIENT-06)", (
     );
 
     const carte = await screen.findByTestId("version-3");
-    // La VALEUR est rendue.
-    expect(within(carte).getByTestId("correction-OD").textContent).toContain("+12,00");
+    // La VALEUR est rendue — a l'ecran ET sur la feuille imprimee, qui passent
+    // par le MEME composant. Les deux sont assertees : une divergence entre
+    // l'ecran et le papier est exactement ce que la source unique interdit.
+    const lignes = within(carte).getAllByTestId("correction-OD");
+    expect(lignes.length).toBeGreaterThan(0);
+    for (const ligne of lignes) {
+      expect(ligne.textContent).toContain("+12,00");
+    }
     // Et rien d'autre : ni note, ni `aria-invalid`, ni jeton destructif.
     expect(within(carte).queryByText(/À vérifier/)).toBeNull();
     expect(carte.querySelector("[aria-invalid='true']")).toBeNull();
@@ -471,7 +484,16 @@ function fichierDe(nom: string, type: string, octets: number): File {
 
 const UN_MO = 1024 * 1024;
 
-/** Le nom qui porte celui du patient. Il ne doit JAMAIS atteindre le DOM d'erreur. */
+/**
+ * Le nom qui porte celui du patient. Il ne doit JAMAIS atteindre le DOM.
+ *
+ * **LE PIEGE DU GREP, ENCORE.** Le compte connecte de ce fichier s'appelait
+ * `Karim Benali` et son nom est rendu par le shell sur chaque ecran : la
+ * recherche de « benali » dans le DOM echouait donc sur le NOM DU GERANT, pas
+ * sur une fuite. Le compte a ete renomme plutot que l'assertion affaiblie —
+ * restreindre la recherche au formulaire aurait rendu le test aveugle au cas
+ * qui compte, un nom de fichier apparaissant dans un toast ou un titre.
+ */
 const NOM_QUI_PARLE = "ordonnance_benali_ahmed.jpg";
 
 async function choisirLaPhoto(fichier: File): Promise<HTMLElement> {
@@ -651,18 +673,22 @@ describe("la feuille imprimee (CLIENT-06)", () => {
     expect(imprimer).toHaveBeenCalled();
   });
 
-  it("client06_print_css_rend_la_feuille_visible_et_n_ajoute_AUCUNE_geometrie_de_page", async () => {
+  it("client06_print_css_rend_la_feuille_visible_et_n_ajoute_AUCUNE_geometrie_de_page", () => {
+    const candidats = ["src/print.css", "web/src/print.css"].map((chemin) =>
+      resolve(process.cwd(), chemin),
+    );
+    const trouve = candidats.find((chemin) => existsSync(chemin));
+    // Le controle qui empeche ce test de passer pour la mauvaise raison : un
+    // fichier introuvable doit rougir, pas rendre une chaine vide.
+    expect(trouve).toBeDefined();
+    const FEUILLE_CSS = readFileSync(trouve as string, "utf8");
+    expect(FEUILLE_CSS.length).toBeGreaterThan(0);
+
     // La geometrie de page a ete livree en phase 3, et c'etait tout l'interet
     // de la livrer alors. La phase 4 n'ajoute qu'un bloc documentaire.
-    const { readFileSync } = await import("node:fs");
-    const feuille = readFileSync(
-      new URL("../src/print.css", import.meta.url),
-      "utf8",
-    );
-
-    expect(feuille).toContain("feuille-ordonnance");
+    expect(FEUILLE_CSS).toContain("feuille-ordonnance");
     // Une seule declaration `@page` dans tout le fichier, celle de la phase 3.
-    expect(feuille.match(/@page/g)?.length).toBe(1);
-    expect(feuille).not.toContain("size: A5");
+    expect(FEUILLE_CSS.match(/@page/g)?.length).toBe(1);
+    expect(FEUILLE_CSS).not.toContain("size: A5");
   });
 });

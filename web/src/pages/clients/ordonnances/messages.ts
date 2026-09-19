@@ -364,3 +364,70 @@ export const ACTION_IMPRIMER = "Imprimer";
  * enoncee est la mauvaise paire de verres en attente d'etre commandee.
  */
 export const PIED_IMPRESSION = "Cylindre négatif.";
+
+// --------------------------------------------------------------------------
+// La photo (22)
+// --------------------------------------------------------------------------
+
+/** Un VRAI label VISIBLE au-dessus d'une vraie entree fichier (22.1). */
+export const LABEL_PHOTO = "Photo de l'ordonnance";
+export const ACTION_AJOUTER_PHOTO = "Ajouter une photo";
+export const ACTION_VOIR_PHOTO = "Voir la photo";
+export const QUOI_CHARGER_LA_PHOTO = "la photo";
+
+export const AIDE_PHOTO =
+  "Conservez la photo du papier : elle sert de justificatif pour un remboursement AMO.";
+
+/**
+ * `Cette image fait 14 Mo. La limite est de 10 Mo.`
+ *
+ * **En megaoctets, jamais en octets, jamais un type MIME a l'ecran** : un
+ * opticien au comptoir compte en megaoctets comme son telephone les compte.
+ */
+export const imageTropLourde = (mo: number, limite: number): string =>
+  `Cette image fait ${String(mo)} Mo. La limite est de ${String(limite)} Mo.`;
+
+/** Les formats se disent en EXTENSIONS, qui sont ce que l'utilisateur voit. */
+export const MAUVAIS_TYPE =
+  "Ce fichier n'est pas une image. Formats acceptés : JPG, PNG, WEBP, HEIC.";
+
+/**
+ * **Aucune de ces deux phrases n'echoue le nom du fichier, et c'est une regle
+ * de securite, pas de style.**
+ *
+ * Un nom de fichier televerse porte couramment le nom du patient
+ * (`ordonnance_<nom>_<prenom>.jpg`), et une chaine d'erreur est la seule chaine
+ * du produit qui atteint la telemetrie de facon fiable. Le serveur a sa moitie
+ * (plan 04-06, les six cles caviardees) ; celle-ci est la moitie cliente, et un
+ * test la pose litteralement en cherchant le nom du patient dans le DOM.
+ */
+export const ECHEC_TELEVERSEMENT =
+  "Cette photo n'a pas été envoyée. Réessayez.";
+
+/**
+ * Le controle dit LUI-MEME que l'attache est definitive (22.3).
+ *
+ * Une version enregistree SANS photo peut en recevoir une plus tard — le papier
+ * arrive souvent le lendemain — et c'est la seule mutation permise sur une
+ * ligne immuable. Jamais de remplacement, jamais de suppression.
+ */
+export const PHOTO_NE_SE_REMPLACE_PAS =
+  "Une photo ne se remplace pas. Pour corriger, enregistrez une nouvelle version.";
+
+/** Le dialogue est TITRE : l'image, elle, ne porte rien d'exploitable. */
+export const titreDeLaPhoto = (version: number): string =>
+  `${LABEL_PHOTO} — version ${String(version)}`;
+
+/**
+ * `Photo attachée le 12/02/2026 à 10:02` — CE QUI REMPLACE LE NOM DU FICHIER.
+ *
+ * **`04-UI-SPEC.md` 22.2 decrivait le nom du fichier a cote de la vignette. Il
+ * ne peut pas etre affiche : il n'est conserve NULLE PART** — ni sur le disque,
+ * ou le stockage fabrique un identifiant aleatoire, ni en colonne, ni dans une
+ * erreur — precisement parce qu'il porte couramment le nom du patient. La
+ * decision est D-4-4 de `deferred-items.md`, et 22.2 a ete amendee en place.
+ * Ce qui reste comme controle de mauvaise piece jointe est la VIGNETTE, qui est
+ * de toute facon meilleure, plus la date d'attache.
+ */
+export const photoAttacheeLe = (quand: string): string =>
+  `Photo attachée le ${quand}`;

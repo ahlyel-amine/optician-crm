@@ -25,6 +25,7 @@ import { MESSAGE_SERVICE_INDISPONIBLE } from "@/etats/messages";
 import { useLienDisponible } from "@/etats/reseau";
 
 import { BlocEcartPupillaire } from "./BlocEcartPupillaire";
+import { ChoixDePhoto, televerserLaPhoto } from "./PhotoOrdonnance";
 import { GrilleOdOg, type RemarquesDuChamp } from "./GrilleOdOg";
 import { PanneauRelecture } from "./PanneauRelecture";
 import { canonicaliserAxe, rendreMilliemes, enMilliemes, transposer } from "./optique";
@@ -444,6 +445,15 @@ function CorpsDeLaSaisie({
 
   const [confirmation, setConfirmation] = useState(false);
   const [sortie, setSortie] = useState(false);
+  /**
+   * La photo choisie AVANT l'enregistrement, envoyee APRES.
+   *
+   * L'ordre est impose par le serveur et il est le bon : la route de la photo
+   * porte l'identifiant de l'ordonnance, qui n'existe qu'une fois la version
+   * emise. Le fichier attend donc en memoire, et rien n'est televerse si
+   * l'enregistrement echoue — il n'y a pas d'octets orphelins a nettoyer.
+   */
+  const [photo, setPhoto] = useState<File | null>(null);
   const [echec, setEchec] = useState<string | null>(null);
   const refDeLechec = useRef<HTMLParagraphElement | null>(null);
 
@@ -501,7 +511,16 @@ function CorpsDeLaSaisie({
           // `creee` est typee non nulle par le contrat, et une reponse 2xx sans
           // corps la rendrait pourtant indefinie. On ne lui fait pas confiance
           // sur parole : la version vient du serveur ou le toast ne l'affirme pas.
-          const version = lireEntier((creee ?? {}) as Record<string, unknown>, "version") ?? 0;
+          const rendue = (creee ?? {}) as Record<string, unknown>;
+          const version = lireEntier(rendue, "version") ?? 0;
+          const idCreee = lireEntier(rendue, "id");
+          // LA PHOTO SUIT L'ORDONNANCE, jamais l'inverse. Son echec ne remet
+          // pas en cause l'enregistrement : la version EST enregistree, et la
+          // photo peut etre attachee plus tard depuis l'historique — c'est
+          // exactement la transition que 22.3 autorise.
+          if (photo !== null && idCreee !== null) {
+            void televerserLaPhoto(idCreee, photo).catch(() => {});
+          }
           naviguer(`/clients/${String(identifiantDuClient)}/ordonnances`);
           // Le toast n'offre AUCUNE action : `Annuler` est reserve a
           // l'annulation, et il n'y a rien a annuler — la ligne est immuable.
@@ -611,6 +630,13 @@ function CorpsDeLaSaisie({
               }}
             />
           )}
+
+          {/*
+            LE DERNIER BLOC AVANT LES BOUTONS (22.1). Une vraie entree fichier,
+            un label visible, et le fichier retenu en memoire jusqu'a ce que le
+            serveur ait emis la version.
+          */}
+          <ChoixDePhoto fichier={photo} surChoix={setPhoto} />
 
           {echec === null ? null : (
             <p

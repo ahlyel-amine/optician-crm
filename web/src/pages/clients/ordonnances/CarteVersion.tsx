@@ -1,10 +1,14 @@
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { cn } from "cn";
+import { useAuth } from "@/auth/AuthProvider";
 import { formaterDateCourte, formaterDateHeure } from "@/format";
 
 import { LigneDeCorrection } from "./LigneDeCorrection";
+import { PhotoDeLaVersion } from "./PhotoOrdonnance";
 import { afficherTelQuel } from "./optique";
 import {
+  ACTION_IMPRIMER,
   BADGE_CORRECTION,
   BADGE_EN_COURS,
   BADGE_REMPLACEE,
@@ -13,6 +17,7 @@ import {
   EP_LES_DEUX,
   EP_MONOCULAIRE,
   ETIQUETTE_EP,
+  PIED_IMPRESSION,
   SEPARATEUR_RELECTURE,
   SOURCE_MEDICALE,
   SOURCE_OPTICIEN,
@@ -204,15 +209,18 @@ export type ProprietesCarteVersion = {
   enCours: boolean;
   /** Le nom du magasin de provenance, resolu par l'appelant depuis l'amorcage. */
   nomDuMagasin: string;
-  /** Ce que l'appelant place sous la correction : la photo, l'impression. */
-  children?: React.ReactNode;
+  /** Le nom du client — l'en-tete de la feuille imprimee, jamais l'ecran. */
+  nomDuClient?: string;
+  /** Rejoue la liste quand une photo vient d'etre attachee. */
+  surAttache?: () => void;
 };
 
 export function CarteVersion({
   version,
   enCours,
   nomDuMagasin,
-  children,
+  nomDuClient = "",
+  surAttache = () => {},
 }: ProprietesCarteVersion) {
   const numero = nombre(version, "version") ?? 0;
   const remplacee = nombre(version, "supersede");
@@ -245,6 +253,13 @@ export function CarteVersion({
       data-testid={`version-${String(numero)}`}
       className="rounded-lg border border-border p-6"
     >
+      {/*
+        TOUT CE QUI EST A L'ECRAN vit sous ce marqueur, et `print.css` le
+        retire a l'impression. Sans lui, imprimer rendrait la carte ET la
+        feuille — donc la correction deux fois, ce qui est exactement
+        l'ambiguite qu'une feuille de verres ne peut pas se permettre.
+      */}
+      <div data-ecran-ordonnance="">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-lg font-semibold tabular-nums">
           {titreDeVersion(numero, formaterDateCourte(creeeLe))}
@@ -312,7 +327,92 @@ export function CarteVersion({
         </p>
       )}
 
-      {children}
+      <PhotoDeLaVersion
+        idOrdonnance={nombre(version, "id") ?? 0}
+        version={numero}
+        aUnePhoto={version.a_une_photo === true}
+        attacheeLe={decimal(version, "photo_attachee_le")}
+        surAttache={surAttache}
+      />
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          // `window.print()` contre `web/src/print.css`, livre en phase 3.
+          // AUCUNE geometrie de page n'est ajoutee par la phase 4, et c'etait
+          // tout l'interet d'avoir livre ce fichier alors.
+          onClick={() => window.print()}
+        >
+          {ACTION_IMPRIMER}
+        </Button>
+      </div>
+
+      </div>
+
+      <FeuilleImprimee
+        version={version}
+        numero={numero}
+        nomDuClient={nomDuClient}
+        nomDuMagasin={nomDuMagasin}
+      />
     </article>
+  );
+}
+
+/**
+ * LA FEUILLE IMPRIMEE — 21.5. **Un bloc documentaire, aucune geometrie.**
+ *
+ * En-tete : le client, la raison sociale, le magasin, la version et sa date.
+ * Puis les lignes de `LigneDeCorrection`, LE MEME composant qu'a l'ecran. Puis
+ * le pied `Cylindre negatif.` — une correction imprimee sans convention
+ * enoncee est la mauvaise paire de verres en attente d'etre commandee.
+ *
+ * **Noir sur blanc, et AUCUNE image** : une photo de telephone en niveaux de
+ * gris coute de l'encre et ne prouve rien. La photo est une preuve tenue dans
+ * le dossier, pas sur le ticket du comptoir.
+ *
+ * Le bloc vit dans le DOM en permanence et c'est `print.css` qui decide de sa
+ * visibilite. Ce que jsdom peut donc juger est son CONTENU ; qu'une feuille
+ * sortie d'une imprimante soit LISIBLE est la verification manuelle n° 4, et
+ * les tests le disent plutot que de le laisser croire.
+ */
+function FeuilleImprimee({
+  version,
+  numero,
+  nomDuClient,
+  nomDuMagasin,
+}: {
+  version: Record<string, unknown>;
+  numero: number;
+  nomDuClient: string;
+  nomDuMagasin: string;
+}) {
+  const { affaire } = useAuth();
+  const creeeLe = texte(version, "created_at");
+
+  return (
+    /* `data-feuille-ordonnance` est le SEUL crochet de `print.css` ; le
+       `data-testid` ne sert qu'aux tests et n'est jamais style. */
+    <div data-feuille-ordonnance="" data-testid="feuille-ordonnance">
+      <p className="font-semibold">
+        <bdi>{nomDuClient}</bdi>
+      </p>
+      <p>{affaire?.raison_sociale ?? ""}</p>
+      <p>{nomDuMagasin}</p>
+      <p className="tabular-nums">
+        {titreDeVersion(numero, creeeLe === "" ? "" : formaterDateCourte(creeeLe))}
+      </p>
+
+      <BlocCorrection
+        className="mt-4"
+        od={oeilDeLaVersion(version, "od")}
+        og={oeilDeLaVersion(version, "og")}
+        ecart={ecartDeLaVersion(version)}
+      />
+
+      <p className="mt-4">{PIED_IMPRESSION}</p>
+    </div>
   );
 }

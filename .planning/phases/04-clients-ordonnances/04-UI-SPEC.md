@@ -898,9 +898,17 @@ Inside the entry form, last block before the buttons.
   never a `MEDIA_URL`, never a pre-signed URL (`04-RESEARCH.md` §4.4). So `<img src>` is an API path
   and a failure renders `messageChargementImpossible("la photo")` from `web/src/etats/messages.ts`,
   not a broken-image glyph.
-- The filename is displayed beside the thumbnail, truncated to 40 characters, in `<bdi>` — it is a
-  useful mis-attach check for the person who can already see the record. It never appears in a page
-  title, a toast or an error.
+- ~~The filename is displayed beside the thumbnail, truncated to 40 characters, in `<bdi>`~~
+  **[AMENDÉ 2026-09-19 — plan 04-09, D-4-4]** **Le nom du fichier n'est affiché nulle part, parce
+  qu'il n'est conservé nulle part.** Le plan 04-06 a délibérément refusé de le stocker : le nom
+  sur disque est un identifiant aléatoire, aucune colonne ne le porte, et les six clés sous
+  lesquelles il voyage sont caviardées avant la télémétrie — précisément parce qu'un nom de
+  fichier d'ordonnance porte couramment le nom du patient (`ordonnance_benali_ahmed.jpg`).
+  L'afficher supposerait de le ré-introduire en base pour un confort, contre une donnée de santé.
+  **Ce qui le remplace comme contrôle de mauvaise pièce jointe : la vignette** — qui montre le
+  papier lui-même, donc dit strictement plus — **plus `Photo attachée le 12/02/2026 à 10:02`**,
+  servi par `photo_attachee_le`. La règle qui survit de cette ligne est son dernier tiers, et elle
+  est absolue : aucun nom de fichier n'apparaît dans un titre de page, un toast ou une erreur.
 
 ### 22.3 A photo is attached once and never replaced
 

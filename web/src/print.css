@@ -106,3 +106,40 @@
     text-decoration: none;
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * PHASE 4 — UN BLOC DOCUMENTAIRE, ET PAS UNE LIGNE DE GEOMETRIE DE PAGE.
+ *
+ * L'ordonnance imprimee (04-UI-SPEC.md 21.5). Le format, les marges, le
+ * masquage du chrome et la repetition des en-tetes de tableau sont decides
+ * au-dessus, une fois, en phase 3 — c'etait tout l'interet de livrer ce fichier
+ * alors, et la phase 4 n'y touche pas. Ce qu'elle ajoute est une permutation :
+ * a l'ecran, la carte ; sur le papier, la feuille.
+ *
+ * **Aucune photo sur le papier.** Une photo de telephone en niveaux de gris
+ * coute de l'encre et ne prouve rien ; la photo est une preuve tenue dans le
+ * dossier, pas sur le ticket du comptoir. La feuille n'en contient aucune, et
+ * la vignette de l'ecran est retiree ci-dessous — les deux moitiés, parce
+ * qu'une seule laisserait la prochaine mise en page la reintroduire.
+ * ------------------------------------------------------------------------ */
+
+/* Hors impression, la feuille n'existe pas. La regle vit ici plutot qu'en
+ * classe utilitaire pour que les deux moities — cachee a l'ecran, rendue au
+ * papier — se lisent l'une sous l'autre et ne puissent pas diverger. */
+[data-feuille-ordonnance] {
+  display: none;
+}
+
+@media print {
+  [data-feuille-ordonnance] {
+    display: block;
+  }
+
+  /* La carte a l'ecran, la vignette et le dialogue ne s'impriment pas : sans
+   * cela, la correction sortirait DEUX FOIS sur la meme page, et une feuille
+   * de verres ne peut pas se permettre cette ambiguite. */
+  [data-ecran-ordonnance],
+  [data-photo-ordonnance] {
+    display: none;
+  }
+}

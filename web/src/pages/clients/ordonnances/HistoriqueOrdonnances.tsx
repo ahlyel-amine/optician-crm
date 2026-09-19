@@ -43,6 +43,12 @@ export function HistoriqueOrdonnances() {
   const versions = $api.useQuery("get", "/api/clients/{client_id}/ordonnances/", {
     params: { path: { client_id: identifiant } },
   });
+  // La fiche est DEJA en cache : le dossier l'a demandee pour son titre. Le
+  // nom ne sert qu'a l'en-tete de la feuille imprimee (21.5).
+  const client = $api.useQuery("get", "/api/clients/{id}/", {
+    params: { path: { id: identifiant } },
+  });
+  const nomDuClient = lireNom(client.data);
 
   const nomDuMagasin = (cle: unknown): string =>
     magasins.find((magasin) => magasin.id === cle)?.nom ?? "";
@@ -85,6 +91,8 @@ export function HistoriqueOrdonnances() {
               version={version}
               enCours={rang === 0}
               nomDuMagasin={nomDuMagasin(version.magasin)}
+              nomDuClient={nomDuClient}
+              surAttache={() => void versions.refetch()}
             />
           ))}
         </div>
@@ -129,6 +137,9 @@ export function VersionSeule() {
   const versions = $api.useQuery("get", "/api/clients/{client_id}/ordonnances/", {
     params: { path: { client_id: identifiant } },
   });
+  const client = $api.useQuery("get", "/api/clients/{id}/", {
+    params: { path: { id: identifiant } },
+  });
 
   if (versions.isError) {
     return (
@@ -158,6 +169,14 @@ export function VersionSeule() {
       nomDuMagasin={
         magasins.find((magasin) => magasin.id === cherchee.magasin)?.nom ?? ""
       }
+      nomDuClient={lireNom(client.data)}
+      surAttache={() => void versions.refetch()}
     />
   );
+}
+
+/** Le nom du client, lu defensivement : la fiche peut n'etre pas encore la. */
+function lireNom(fiche: unknown): string {
+  const nom = (fiche as { nom?: unknown } | undefined)?.nom;
+  return typeof nom === "string" ? nom : "";
 }
