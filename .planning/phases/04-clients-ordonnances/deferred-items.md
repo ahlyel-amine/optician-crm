@@ -96,3 +96,38 @@ pièce jointe qui soit : on voit l'image.
 **À qui cela revient.** Phase 9, si un contrôle textuel reste voulu. La forme la moins
 dangereuse serait une colonne portant le nom **caviardé** ou son seul suffixe, pas le nom
 brut.
+
+---
+
+## D-4-5 · Le serveur refuse toujours ce que l'écran ne fait plus qu'avertir
+
+**Trouvé pendant :** plan `04-08`, en appliquant l'amendement Q4 du discriminant 45 mm.
+
+Le propriétaire a décidé (Q4) que le discriminant monoculaire/binoculaire est un
+**avertissement** et non un refus. Le plan `04-08` l'applique côté écran : le champ
+d'écart pupillaire accepte désormais l'**union** des deux plages servies, et A8/A9
+nomment la correction sans bloquer.
+
+**Le serveur, lui, n'a pas bougé.** `domaine/ordonnances/bornes.py` sert
+`ep_binoculaire.min = "45.0"` et `ep_monoculaire.max = "44.5"`, et la `CheckConstraint`
+dérivée les applique. Un binoculaire de 31,5 franchit donc l'écran, part, et **revient en
+400**. C'est exactement le mode de défaillance que §28-Q1 nomme : « un client qui accepte
+ce que le serveur refuse est un appel au support sans cause visible » — ici avec un
+message de refus serveur, donc visible, mais après un aller-retour et sans la phrase qui
+nomme la correction.
+
+**Pourquoi ce n'est pas corrigé ici.** Le plan `04-08` ne touche aucun fichier Python,
+par contrat écrit dans sa section `<verification>`. Élargir la contrainte est une
+migration et une décision sur une valeur clinique ; elle appartient au même échange avec
+l'opticien que §28-Q4.
+
+**À qui cela revient.** Le jour où l'opticien répond :
+- s'il **confirme** le seuil → la réversion est d'une ligne côté écran (A8/A9 repassent
+  en `severite: "refus"`, la borne du champ redevient la plage propre à chaque forme) et
+  le serveur ne change pas ;
+- s'il **infirme** le seuil → `BORNES.ep_binoculaire.min` et `BORNES.ep_monoculaire.max`
+  s'élargissent à l'union, une migration suit, et l'écran ne change pas.
+
+Les deux issues sont d'un coût connu. Ce qu'il ne faut pas faire entre-temps, c'est
+recopier 45,0 dans le SPA pour « faire correspondre » les deux : ce serait un second
+endroit nommé, ce que D-4b interdit.

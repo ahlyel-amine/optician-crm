@@ -211,8 +211,8 @@ Every row is a warning. **None of them refuses. None of them disables the submit
 | A5 | A sphère moved more than 2,00 D from the previous version | `À vérifier — la sphère OD passe de +2,00 à +5,00 depuis le 14/03/2025.` | `[JUGEMENT]` |
 | A6 | The addition decreased from the previous version | `À vérifier — l'addition diminue par rapport au 14/03/2025.` | `[JUGEMENT — clinique, non sourcé]` |
 | A7 | `ep_saisi = les_deux` and `\|bino − (mono_od + mono_og)\| > 1,0` | `À vérifier — l'écart binoculaire ne correspond pas à la somme des monoculaires : 64,0 contre 31,5 + 30,5 = 62,0.` | `04-RESEARCH.md` §6.5 |
-| A8 | EP binoculaire outside 54,0–72,0 | `À vérifier — un écart binoculaire de 76,0 mm est inhabituel.` | `[JUGEMENT — sans source]` |
-| A9 | EP monoculaire outside 26,0–36,0 | `À vérifier — un écart monoculaire de 24,0 mm est inhabituel.` | `[JUGEMENT — sans source]` |
+| A8 | EP binoculaire **sous le plancher binoculaire servi** (45,0) | `À vérifier — un écart binoculaire de 31,5 mm est un écart monoculaire. Choisissez « monoculaire » ci-dessus.` | `[JUGEMENT — sans source]` · **[AMENDÉ 2026-09-18 — 04-CONTEXT.md Q4]** |
+| A9 | EP monoculaire **au-dessus du plafond monoculaire servi** (44,5) | `À vérifier — un écart monoculaire de 62,0 mm est un écart binoculaire. Choisissez « binoculaire » ci-dessus.` | `[JUGEMENT — sans source]` · **[AMENDÉ 2026-09-18 — 04-CONTEXT.md Q4]** |
 | A10 | Client is under 16 at `date_prescription` **and** `source = refraction_opticien` | `À vérifier — moins de 16 ans : la correction doit venir d'une ordonnance médicale.` | `PITFALLS.md` Pitfall 18 `[source secondaire]` |
 | A11 | Creating a client with no `telephone` | `À vérifier — sans téléphone, ce client ne recevra aucun rappel.` | `[JUGEMENT]` — ties to Phase 10 |
 
@@ -222,6 +222,34 @@ rows in the table and they cost nothing: the previous version is already loaded 
 Rows A3, A5, A6, A8 and A9 are marked as judgement so that deleting one costs one line and no
 argument. **Do not add a twelfth warning without deleting one** — the value of this table collapses
 the moment a normal entry produces two warnings every time.
+
+> **[AMENDÉ 2026-09-18 — 04-CONTEXT.md Q4]** Le discriminant monoculaire/binoculaire de 45 mm
+> **devient un avertissement et cesse d'être un refus.** Un refus fondé sur un nombre deviné (les
+> deux seuils sont marqués `[JUGEMENT — sans source]`) bloque une saisie légitime au comptoir : le
+> coût d'un faux refus est un opticien qui ne peut pas enregistrer une ordonnance réelle, celui d'un
+> faux avertissement est une phrase à lire. **Le mécanisme de détection ne change pas ; sa sévérité
+> seule change**, et elle **redevient un refus en une ligne** — la condition de A8/A9 rendue
+> `severite: "refus"` dans `web/src/pages/clients/ordonnances/verifier.ts` — le jour où un opticien
+> confirme le seuil (§28-Q4).
+>
+> **Onze lignes avant, onze après.** Promouvoir les deux discriminants les aurait *ajoutés* à A8 et
+> A9, donc portée la table à treize, contre la règle ci-dessus. La résolution retenue la respecte
+> plutôt que de la contourner : **les deux discriminants ABSORBENT A8 et A9.**
+>
+> Les messages sont ceux de §20.5, **mot pour mot**, avec deux changements mécaniques et aucun
+> changement de mot : le préfixe `À vérifier — ` du contrat d'avertissement de §16.4 — sans quoi ils
+> seraient les deux seules remarques de l'écran à ne pas porter la marque qui les distingue d'un
+> refus — et l'initiale mise en bas de casse parce qu'elle suit désormais un tiret.
+>
+> **La moitié `… est inhabituel.` de A8 et A9 disparaît, et c'est une suppression raisonnée.** Les
+> deux formes partagent un champ de saisie, dont la borne de refus est désormais l'**union** des
+> deux plages servies (`ep_monoculaire.min` … `ep_binoculaire.max`) — sinon le refus reviendrait par
+> la porte des bornes, ce que Q4 écarte. La région que l'ancienne phrase décrivait, au-delà de cette
+> union, est donc exactement la région **déjà refusée** : la garder produirait un avertissement qui
+> ne peut apparaître qu'accompagné d'un refus, c'est-à-dire du bruit — ce que la règle ci-dessus
+> interdit avant même d'interdire le douzième. Les bandes 54,0–72,0 et 26,0–36,0 qui la portaient
+> n'étaient ni sourcées ni servies ; les réintroduire demanderait de les **servir** depuis
+> `domaine/ordonnances/bornes.py`, jamais de les compiler dans le SPA (§16.2).
 
 ### 16.4 What a warning that is not a refusal looks like, and how it is announced
 
@@ -653,12 +681,20 @@ value is **stored, never inferred from which columns are null** (`04-RESEARCH.md
   > monoculaires existent ; on ne calcule jamais un monoculaire.**
   Splitting a binocular value in two assumes the symmetry that progressives are exactly sensitive to.
 - The displayed `somme : 62,0 mm` is a **display**, never a stored field and never submitted.
-- **Roadmap criterion 3 — "a monocular value entered where a binocular is expected" — is a refusal,
-  not a warning**, and the discriminator is 45 mm:
+- **[AMENDÉ 2026-09-18 — 04-CONTEXT.md Q4]** Roadmap criterion 3 — "a monocular value entered where
+  a binocular is expected" — **est un AVERTISSEMENT, plus un refus.** Le discriminant reste 45 mm et
+  les deux messages restent les mêmes, préfixés `À vérifier — ` :
   - binoculaire < 45,0 → `Un écart binoculaire de 31,5 mm est un écart monoculaire. Choisissez « monoculaire » ci-dessus.`
   - monoculaire > 44,5 → `Un écart monoculaire de 62,0 mm est un écart binoculaire. Choisissez « binoculaire » ci-dessus.`
   Each message names the fix, not the rule. The two thresholds are `[JUGEMENT]` (§28-Q4); the
-  mechanism is not.
+  mechanism is not — et c'est précisément pourquoi la sévérité a changé et pas le mécanisme.
+  **La clause « refused at entry » du critère 3 de la feuille de route n'est donc plus
+  littéralement satisfaite.** Elle est servie en substance : la valeur est détectée et nommée, avec
+  la correction à faire. Réversion : rendre `severite: "refus"` aux lignes A8/A9 de
+  `verifier.ts` — une ligne — le jour où un opticien confirme le seuil.
+  Le champ de saisie, lui, accepte désormais l'**union** des deux plages servies ; au-delà, c'est
+  un refus de borne ordinaire. Conséquence à connaître : le serveur, lui, refuse toujours un
+  binoculaire sous 45,0 par sa `CheckConstraint` — voir `deferred-items.md`.
 
 ### 20.6 Layer 2 — the relecture panel
 
@@ -928,8 +964,6 @@ reused unchanged.
 | Axe canonicalised | `Un axe de 0° et de 180° est le même axe. Enregistré comme 180°.` |
 | Cylinder without axis | `Le cylindre de l'œil droit demande un axe.` |
 | Axis without cylinder | `Un axe sans cylindre n'a pas de sens. Saisissez le cylindre, ou effacez l'axe.` |
-| Monocular in binocular | `Un écart binoculaire de 31,5 mm est un écart monoculaire. Choisissez « monoculaire » ci-dessus.` |
-| Binocular in monocular | `Un écart monoculaire de 62,0 mm est un écart binoculaire. Choisissez « binoculaire » ci-dessus.` |
 | Source unset | `Indiquez la source : ordonnance médicale ou réfraction opticien.` |
 | Prescripteur missing | `Qui a prescrit ? Indiquez le médecin.` |
 | Magasin unset | `Indiquez le magasin qui enregistre cette ordonnance.` |
@@ -937,6 +971,8 @@ reused unchanged.
 | Date in the future | `Une ordonnance ne peut pas être datée dans le futur.` · `Cette date de naissance est dans le futur.` |
 | File too large / wrong type | `Cette image fait 14 Mo. La limite est de 10 Mo.` · `Ce fichier n'est pas une image. Formats acceptés : JPG, PNG, WEBP, HEIC.` |
 | **Warnings** | the eleven rows of §16.3, each prefixed `À vérifier — ` |
+| Monocular in binocular *(A8)* | `À vérifier — un écart binoculaire de 31,5 mm est un écart monoculaire. Choisissez « monoculaire » ci-dessus.` **[AMENDÉ 2026-09-18 — Q4 : quitte le bloc Refusals]** |
+| Binocular in monocular *(A9)* | `À vérifier — un écart monoculaire de 62,0 mm est un écart binoculaire. Choisissez « binoculaire » ci-dessus.` **[AMENDÉ 2026-09-18 — Q4 : quitte le bloc Refusals]** |
 | **Confirmations** | |
 | Save with warnings | `Enregistrer malgré 2 points à vérifier ?` / the warnings, verbatim, as a list / `Vous pourrez corriger par une nouvelle version : celle-ci restera lisible telle qu'elle a été saisie.` / `[ Retour ]` `[ Enregistrer l'ordonnance ]` |
 | Leave unsaved | `Quitter sans enregistrer ?` / `Les valeurs saisies seront perdues. L'ordonnance n'a pas été enregistrée.` / `[ Retour ]` `[ Quitter ]` |
@@ -1043,7 +1079,7 @@ deliberately short list:
 | **CLIENT-04** | `Prescripteur` (conditional on source) and `Date de prescription` via `ChampDate` | §20.8, §15.4 | yes |
 | **CLIENT-05** | `Source` radio group with no default, and the badge that carries the word in the history | §20.8, §21.1 | yes |
 | **CLIENT-06** | Version cards newest-first, `Remplace la version N`, no edit and no delete control anywhere, **and a stored version is never re-validated on display** | §21.1, §21.2, §21.3 | yes |
-| **CLIENT-07** | Bounds served not hardcoded; refusals for sign, step, range, axe↔cylindre, and the 45 mm monocular/binocular discriminator; `ep_saisi` stored explicitly | §16.2, §20.4, §20.5 | yes |
+| **CLIENT-07** | Bounds served not hardcoded; refusals for sign, step, range, axe↔cylindre; `ep_saisi` stored explicitly. **[AMENDÉ 2026-09-18 — Q4]** Le discriminant 45 mm est un **avertissement** (A8/A9), plus un refus : la clause « refused at entry » du critère 3 de la feuille de route n'est plus littéralement satisfaite, le mécanisme est conservé, et la question part à un opticien | §16.2, §16.3, §20.4, §20.5 | yes, **avec la réserve ci-contre** |
 | **CLIENT-08** | Transposition is visible at entry and stored minus-cyl; the plus-cyl fournisseur block is Phase 8 | §20.3 | **no** — `04-CONTEXT.md` grey area 2 |
 | **CLIENT-09** | Attach control, size and type refusals, thumbnail, authenticated view route, attach-once rule | §22 | yes |
 | **CLIENT-10** | Raw query to the server, never filtered client-side; ranked candidates; **no auto-select on a name**; the reason shown in words, never as a score | §18.4 | yes |
