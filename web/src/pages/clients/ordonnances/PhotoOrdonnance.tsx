@@ -108,7 +108,12 @@ export async function televerserLaPhoto(
   fichier: File,
 ): Promise<void> {
   const corps = new FormData();
-  corps.append("photo", fichier);
+  // **`fichier`, le nom du champ du serialiseur du plan 04-06** — et non
+  // `photo`, qui est le nom de la COLONNE. Les deux different, et le serveur
+  // rend un 400 « Aucun fichier n'a été soumis. » sur le mauvais. Trouve en
+  // televersant reellement contre la pile, pas par la suite : un `fetch`
+  // double ne verifie pas ce que le serveur attend.
+  corps.append("fichier", fichier);
   const jeton = lireCookie("csrftoken");
   const reponse = await fetch(cheminDeLaPhoto(idOrdonnance), {
     method: "POST",

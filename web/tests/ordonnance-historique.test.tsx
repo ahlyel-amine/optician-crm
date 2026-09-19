@@ -241,17 +241,35 @@ let appels: { methode: string; chemin: string; corps: unknown }[] = [];
 function poserLesReponses(table: Table): void {
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (requete: Request) => {
+    /*
+      **LE DOUBLE ACCEPTE LES DEUX FORMES D'APPEL, comme le vrai `fetch`.**
+      Le client genere passe un `Request` ; le televersement de la photo passe
+      une URL et des options, parce que `FormData` ne transite pas par le
+      client typé. Un double qui n'accepterait que la premiere forme ferait
+      echouer la seconde SANS l'enregistrer — donc un test d'envoi vert par
+      absence d'appel, ce qui est pire que rouge.
+    */
+    vi.fn(async (entree: Request | string, options?: RequestInit) => {
+      // `new Request` de Node refuse une adresse RELATIVE : il faut l'absoudre
+      // contre une origine, ce que le navigateur fait tout seul.
+      const requete =
+        typeof entree === "string"
+          ? new Request(new URL(entree, "http://localhost"), options)
+          : entree;
       const chemin = new URL(requete.url, "http://localhost").pathname;
       const type = requete.headers.get("Content-Type") ?? "";
-      const lisible =
-        ["POST", "PATCH"].includes(requete.method) && type.includes("json");
-      const texte = lisible ? await requete.clone().text() : "";
-      appels.push({
-        methode: requete.method,
-        chemin,
-        corps: texte === "" ? undefined : JSON.parse(texte),
-      });
+      const estUnEnvoi = ["POST", "PATCH"].includes(requete.method);
+      let corps: unknown = undefined;
+      if (estUnEnvoi && type.includes("json")) {
+        const texte = await requete.clone().text();
+        corps = texte === "" ? undefined : JSON.parse(texte);
+      } else if (estUnEnvoi && type.includes("multipart")) {
+        // LES CLES DU FORMULAIRE, et pas les octets : c'est le NOM du champ
+        // que le serveur exige, et c'est lui qu'un double de `fetch` ne
+        // verifie pas tout seul.
+        corps = [...(await requete.clone().formData()).keys()];
+      }
+      appels.push({ methode: requete.method, chemin, corps });
       const reponseDeTest = table[`${requete.method} ${chemin}`] ?? table[chemin];
       if (!reponseDeTest) {
         throw new Error(`Aucune reponse de test posee pour ${requete.method} ${chemin}`);
@@ -594,6 +612,36 @@ describe("la photo de l'ordonnance (CLIENT-09)", () => {
     const sansPhoto = await screen.findByTestId("version-3");
     expect(within(sansPhoto).getByLabelText("Photo de l'ordonnance")).toBeTruthy();
     expect(within(sansPhoto).queryByText(/ne se remplace pas/)).toBeNull();
+  });
+
+  it("client09_l_attache_envoie_le_champ_QUE_LE_SERVEUR_ATTEND", async () => {
+    // **CE TEST EXISTE PARCE QUE LA SUITE NE L'AVAIT PAS ATTRAPE.** Le premier
+    // jet envoyait `photo`, qui est le nom de la COLONNE ; le serialiseur du
+    // plan 04-06 attend `fichier`, et la pile reelle rendait un 400 « Aucun
+    // fichier n'a été soumis. » — trouve en televersant contre le serveur
+    // pendant la preparation de la passe humaine, pas par ces tests.
+    //
+    // Un double de `fetch` ne peut pas savoir ce que le serveur exige ; ce
+    // qu'il peut faire, et c'est ce que fait cette assertion, c'est figer le
+    // NOM DU CHAMP pour que la prochaine reecriture ne le reperde pas.
+    monter(
+      {
+        "/api/clients/1/ordonnances/": () => reponse([versionStockee()]),
+        "POST /api/ordonnances/31/photo/": () => reponse({ a_une_photo: true }, 201),
+      },
+      "/clients/1/ordonnances",
+    );
+    await screen.findByTestId("version-3");
+    await choisirLaPhoto(fichierDe("ordonnance.jpg", "image/jpeg", 2 * UN_MO));
+
+    const envoi = await vi.waitFor(() => {
+      const trouve = appels.find(
+        (appel) => appel.methode === "POST" && appel.chemin === "/api/ordonnances/31/photo/",
+      );
+      expect(trouve).toBeDefined();
+      return trouve;
+    });
+    expect(envoi?.corps).toEqual(["fichier"]);
   });
 
   it("client09_les_octets_viennent_d_une_route_API_et_l_echec_rend_le_message_GLOBAL", async () => {
