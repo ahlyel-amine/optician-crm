@@ -14,6 +14,7 @@ import { Connexion } from "@/pages/Connexion";
 import { MotDePasse } from "@/pages/MotDePasse";
 import { ListeClients } from "@/pages/clients/ListeClients";
 import { useFournisseurDeRechercheDesClients } from "@/pages/clients/rechercheClients";
+import { SaisieOrdonnance } from "@/pages/clients/ordonnances/SaisieOrdonnance";
 import { DetailCompte } from "@/pages/comptes/DetailCompte";
 import { ListeComptes } from "@/pages/comptes/ListeComptes";
 
@@ -179,9 +180,35 @@ function Clients() {
       <Routes>
         <Route index element={<ListeClients />} />
         {/*
+          La saisie d'une ordonnance (plan 04-08). **Une route et non un
+          dialogue** (04-UI-SPEC.md 20.1) : un dialogue piegerait le focus,
+          plafonnerait la largeur et rendrait le panneau de relecture
+          impossible a placer.
+
+          Sa garde est `ordonnance.saisir`, IMBRIQUEE dans celle de
+          `client.voir` : les deux droits sont reellement necessaires — l'ecran
+          lit la fiche du client autant qu'il ecrit une ordonnance — et la 403
+          rendue nomme alors le droit le plus interieur qui manque, c'est-a-dire
+          celui qu'il faut demander.
+
+          La fiche (`:id`) et l'historique arrivent au plan 04-09 et prennent
+          leur place ici, sous la meme garde. C'est aussi ce plan-la qui pose le
+          DERNIER maillon de la chaine humaine vers cet ecran : le bouton
+          `Saisir une ordonnance` de la carte de 19.3. 18.2 interdit une colonne
+          d'actions sur la liste, donc il n'existe aujourd'hui aucun autre
+          endroit legitime ou le poser.
+        */}
+        <Route
+          path=":id/ordonnances/nouvelle"
+          element={
+            <RequireDroit code="ordonnance.saisir">
+              <SaisieOrdonnance />
+            </RequireDroit>
+          }
+        />
+        {/*
           Une adresse de clients qui n'existe pas est un 404, pas un titre
-          d'attente. La fiche (`:id`) arrive au plan 04-08 et prend sa place
-          ici, sous la meme garde.
+          d'attente.
         */}
         <Route path="*" element={<PageIntrouvable />} />
       </Routes>

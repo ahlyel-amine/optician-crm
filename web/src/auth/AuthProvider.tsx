@@ -63,6 +63,17 @@ export type ValeurContexteAuth = {
   permissions: string[];
   magasins: Magasin[];
   catalogue: Catalogue | null;
+  /**
+   * Les bornes cliniques SERVIES (`Amorcage["bornes_ordonnance"]`).
+   *
+   * Elles passent par le contexte plutot que par une requete propre a l'ecran
+   * de saisie, parce qu'elles arrivent deja dans l'amorcage : les redemander
+   * serait un aller-retour de plus pour une donnee deja en memoire. Ce que cela
+   * garantit, et c'est le point de 04-UI-SPEC.md 16.2, c'est qu'AUCUN chiffre
+   * clinique n'est compile dans la SPA — l'ecran n'en connait pas un seul tant
+   * que le serveur ne le lui a pas dit.
+   */
+  bornes: Amorcage["bornes_ordonnance"] | null;
   magasinSelectionne: SelectionMagasin;
   choisirMagasin: (code: SelectionMagasin) => void;
   /** Appele par `/connexion` : la reponse de connexion EST un amorcage. */
@@ -78,6 +89,7 @@ const VALEUR_INITIALE: ValeurContexteAuth = {
   permissions: [],
   magasins: [],
   catalogue: null,
+  bornes: null,
   magasinSelectionne: null,
   choisirMagasin: () => {},
   adopterLamorcage: () => {},
@@ -282,6 +294,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       permissions: amorcage?.permissions ?? [],
       magasins: amorcage?.magasins ?? [],
       catalogue: amorcage?.catalogue ?? null,
+      bornes: amorcage?.bornes_ordonnance ?? null,
       magasinSelectionne: selection,
       choisirMagasin,
       adopterLamorcage,

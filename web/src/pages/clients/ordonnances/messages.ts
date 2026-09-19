@@ -26,6 +26,7 @@ export const ACTION_QUITTER = "Quitter";
 // La grille et la notation
 // --------------------------------------------------------------------------
 
+/** `Nouvelle ordonnance` a un sous-titre : le nom du client, dans un `<bdi>`. */
 export const LEGENDE_NOTATION = "Notation :";
 export const NOTATION_NEGATIVE = "Cylindre négatif";
 export const NOTATION_POSITIVE = "Cylindre positif";
@@ -60,6 +61,13 @@ export const annonceTransposition = (notation: string, ligne: string): string =>
 // --------------------------------------------------------------------------
 
 export const LEGENDE_EP = "Écart pupillaire :";
+/**
+ * Le nom du champ, seul, pour composer les labels masques de 25.3 par
+ * `labelDeGrille` : `Écart pupillaire de l'œil droit`. Il ne porte pas les deux
+ * points de la legende, qui appartiennent au groupe et non au champ.
+ */
+export const CHAMP_EP = "Écart pupillaire";
+export const LABEL_EP_BINOCULAIRE = `${CHAMP_EP} binoculaire`;
 export const EP_BINOCULAIRE = "binoculaire";
 export const EP_MONOCULAIRE = "monoculaire";
 export const EP_LES_DEUX = "les deux";
