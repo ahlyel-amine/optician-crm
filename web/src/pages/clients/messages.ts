@@ -108,3 +108,37 @@ export const AVERTISSEMENT_SANS_TELEPHONE =
 
 /** Le nom du groupe de la palette du shell. Il s'affiche en en-tete de groupe. */
 export const GROUPE_PALETTE = "Clients";
+
+// --------------------------------------------------------------------------
+// Le dossier : la fiche et ses onglets (19)
+// --------------------------------------------------------------------------
+
+/**
+ * Le nom accessible de la rangee d'onglets du dossier.
+ *
+ * Elle est VISUELLEMENT le motif de `NavSecondaire` (`03` 5.3) et
+ * deliberement pas le meme mecanisme : ces onglets sont lies a un
+ * ENREGISTREMENT — leurs routes portent un identifiant — et non a une section.
+ * Le pretendre dans `NAV` mettrait une route parametree dans un tableau de
+ * constantes. Ce qui EST herite, et c'est ce qui comptait, est le predicat :
+ * une entree dont le code n'est pas detenu est ABSENTE, jamais grisee.
+ */
+export const NAV_DOSSIER = "Dossier du client";
+export const ONGLET_FICHE = "Fiche";
+export const ONGLET_ORDONNANCES = "Ordonnances";
+
+/** `Client depuis le 14/03/2025.` — le sous-titre discret de 19.1. */
+export const clientDepuis = (date: string): string => `Client depuis le ${date}.`;
+
+export const TITRE_COORDONNEES = "Coordonnées";
+export const LABEL_CLIENT_DEPUIS = "Client depuis";
+
+/**
+ * L'echec d'un enregistrement de champ se rend SUR CE CHAMP, jamais en toast
+ * (`03` 7.8) : un toast d'echec d'ecriture disparait et laisse une valeur que
+ * l'utilisateur croit enregistree.
+ */
+export const ECHEC_ENREGISTREMENT_DU_CHAMP =
+  "Ce champ n'a pas été enregistré. Réessayez.";
+
+export const QUOI_CHARGER_LA_FICHE = "la fiche du client";

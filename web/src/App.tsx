@@ -13,6 +13,7 @@ import { NAV, sousEntreesVisibles, type EntreeNav } from "@/layout/nav";
 import { Connexion } from "@/pages/Connexion";
 import { MotDePasse } from "@/pages/MotDePasse";
 import { ListeClients } from "@/pages/clients/ListeClients";
+import { DossierClient } from "@/pages/clients/OngletsDuClient";
 import { useFournisseurDeRechercheDesClients } from "@/pages/clients/rechercheClients";
 import { SaisieOrdonnance } from "@/pages/clients/ordonnances/SaisieOrdonnance";
 import { DetailCompte } from "@/pages/comptes/DetailCompte";
@@ -206,6 +207,20 @@ function Clients() {
             </RequireDroit>
           }
         />
+        {/*
+          LE DOSSIER D'UN CLIENT (plan 04-09) : sa fiche, ses onglets et son
+          historique d'ordonnances. Il prend un SOUS-ARBRE (`:id/*`) parce que
+          les onglets sont de vraies routes — un onglet qui ne serait qu'un
+          etat local ne se partagerait pas, ne se rafraichirait pas et ne
+          reviendrait pas au bon endroit apres un retour arriere.
+
+          **L'ordre de declaration ne decide de rien ici** : react-router
+          classe les routes par specificite, et `:id/ordonnances/nouvelle`,
+          entierement statique apres le parametre, l'emporte sur `:id/*`. Ce
+          n'est pas une subtilite a retenir mais une raison de ne pas
+          « reordonner pour que ca marche » : ca marche deja.
+        */}
+        <Route path=":id/*" element={<DossierClient />} />
         {/*
           Une adresse de clients qui n'existe pas est un 404, pas un titre
           d'attente.

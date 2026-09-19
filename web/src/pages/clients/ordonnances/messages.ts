@@ -302,3 +302,65 @@ export const SUJET_CYLINDRE = "Le cylindre";
 export const SUJET_AXE = "L'axe";
 export const SUJET_ADDITION = "L'addition";
 export const SUJET_EP = "L'écart pupillaire";
+
+// --------------------------------------------------------------------------
+// L'historique des versions (21) et la carte de version
+// --------------------------------------------------------------------------
+
+export const TITRE_HISTORIQUE = "Ordonnances";
+export const ACTION_SAISIR = "Saisir une ordonnance";
+export const ACTION_VOIR_HISTORIQUE = "Voir l'historique";
+export const TITRE_DERNIERE = "Dernière ordonnance";
+export const QUOI_CHARGER_LES_ORDONNANCES = "les ordonnances";
+
+export const VIDE_TITRE = "Aucune ordonnance";
+export const VIDE_CORPS =
+  "Saisissez l'ordonnance du client pour commander ses verres et déclencher ses rappels.";
+
+/**
+ * Les badges de 21.1 — **neutres, et porteurs du MOT** (`03` 4).
+ *
+ * **Rien n'est rouge ici.** Une version remplacee n'est pas une erreur : c'est
+ * la forme normale d'une correction dans un modele ou l'on n'efface jamais. La
+ * phase 4 n'introduit aucune couleur, et c'est la revendication verifiable de
+ * toute la conception de l'avertissement (17.3).
+ */
+export const BADGE_EN_COURS = "Version en cours";
+export const BADGE_REMPLACEE = "Remplacée";
+export const BADGE_CORRECTION = "Correction";
+export const BADGE_RENOUVELLEMENT = "Renouvellement";
+
+/** `Version 3 — 12/02/2026` */
+export const titreDeVersion = (version: number, date: string): string =>
+  `Version ${String(version)} — ${date}`;
+
+/** `Ordonnance médicale · Dr. Bennani · prescrite le 10/02/2026` */
+export const prescriteLe = (date: string): string => `prescrite le ${date}`;
+
+/** `Remplace la version 2` — un lien qui defile jusqu'a cette carte et la focalise. */
+export const remplaceLaVersion = (version: number): string =>
+  `Remplace la version ${String(version)}`;
+
+/** `motif : « axe OD saisi 90 au lieu de 9 »` — il restera lisible, comme promis. */
+export const motifDit = (motif: string): string => `motif : « ${motif} »`;
+
+/**
+ * `Saisie au magasin Anfa par Karim Benali le 12/02/2026 à 09:14`.
+ *
+ * Le magasin est de la PROVENANCE, jamais un filtre (D-4a) : un gerant qui voit
+ * le client voit tout son historique, quel que soit le comptoir.
+ */
+export const saisieAu = (magasin: string, par: string, quand: string): string =>
+  `Saisie au magasin ${magasin} par ${par} le ${quand}`;
+
+export const ACTION_IMPRIMER = "Imprimer";
+
+// --------------------------------------------------------------------------
+// La feuille imprimee (21.5)
+// --------------------------------------------------------------------------
+
+/**
+ * **Le pied de la feuille imprimee.** Une correction imprimee sans convention
+ * enoncee est la mauvaise paire de verres en attente d'etre commandee.
+ */
+export const PIED_IMPRESSION = "Cylindre négatif.";

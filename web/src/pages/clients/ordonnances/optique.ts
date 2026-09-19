@@ -143,3 +143,35 @@ export function transposer(valeur: Correction, borne: BorneAxe): Correction {
     axe: axeTranspose,
   };
 }
+
+/**
+ * Une decimale SERVIE, rendue exactement avec le nombre de decimales qu'elle
+ * porte — `"2.00"` donne `+2,00`, `"31.5"` donne `31,5`.
+ *
+ * **C'est la forme executable de « une version enregistree se rend telle
+ * qu'elle a ete saisie » (CLIENT-06, 21.2).** Le nombre de decimales vient de
+ * la CHAINE recue et non d'un pas servi : une version affichee n'a besoin
+ * d'aucune borne pour se rendre, donc elle ne peut pas paraitre fausse le jour
+ * ou le proprietaire change les bornes — ce qu'il a deja fait une fois.
+ *
+ * Aucun `parseFloat` : la valeur transite en chaine depuis Postgres pour la
+ * raison de CLAUDE.md #7, et la reconvertir en binaire ici annulerait tout le
+ * soin pris en amont.
+ */
+export function afficherTelQuel(
+  brut: string | number | null | undefined,
+  avecSigne = false,
+): string {
+  if (brut === null || brut === undefined || brut === "") {
+    return "";
+  }
+  const texte = typeof brut === "number" ? String(brut) : brut;
+  const milliemes = enMilliemes(texte);
+  if (milliemes === null) {
+    return "";
+  }
+  const point = texte.search(/[.,]/);
+  const brutes = point === -1 ? 0 : texte.length - point - 1;
+  const decimales = (brutes > 2 ? 2 : brutes) as 0 | 1 | 2;
+  return rendreMilliemes(milliemes, decimales, avecSigne);
+}
